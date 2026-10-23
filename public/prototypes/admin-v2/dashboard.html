@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Tổng quan — Security Manager</title>
+        <script>
+            try {
+                const params = new URLSearchParams(location.search);
+                document.documentElement.dataset.theme = params.get('theme') || localStorage.getItem('psm-theme') || 'graphite';
+                document.documentElement.lang = params.get('lang') || localStorage.getItem('psm-lang') || 'vi';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'graphite';
+            }
+        </script>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body
+        data-page="dashboard"
+        data-states='{"target":"#content","label":"Trạng thái dữ liệu","options":{"ready":"Có dữ liệu","empty":"Không còn việc","loading":"Đang tải","error":"Lỗi tải trang","stale":"Nguồn dữ liệu lỗi"}}'
+    >
+        <main class="page" id="content">
+            <header class="page-header">
+                <div>
+                    <h1>Tổng quan</h1>
+                    <p>Thứ Sáu, 23/10/2026 · cập nhật 09:42</p>
+                </div>
+                <div class="actions">
+                    <button class="btn secondary" type="button" data-loading="Đã gửi bản tổng hợp tới 3 team.">Gửi bản tổng hợp</button>
+                </div>
+            </header>
+
+            <!-- Nguồn dữ liệu lỗi: báo đỏ trên cùng vì hệ thống có thể đang im lặng. -->
+            <div class="callout danger" data-view="stale">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>
+                <div class="callout-body">
+                    <strong>OSV API lỗi 26 giờ — lỗ hổng package mới đang không được phát hiện</strong>
+                    <p>Ngưỡng cảnh báo là 6 giờ. Số liệu package dưới đây là của lần quét 07:40 ngày 22/10.</p>
+                </div>
+                <button class="btn secondary sm" type="button" data-loading="OSV API vẫn trả lỗi 503.|danger">Chạy lại</button>
+            </div>
+
+            <div class="callout" data-view="ready stale">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4Z" /><path d="M16 9a4 4 0 0 1 0 6" /></svg>
+                <div class="callout-body">
+                    <strong>php.net phát hành bản vá cho 2 lỗ hổng critical (CVSS 9.2)</strong>
+                    <p>21/10/2026, 21:00 giờ VN · 3 service PHP chưa lên bản vá · legacy-cms chạy PHP 8.1 đã hết hỗ trợ</p>
+                </div>
+                <a class="link" href="#" data-toast="Mở Findings lọc theo tin php.net.">Xem 4 service →</a>
+            </div>
+
+            <section class="stats" data-view="ready stale" aria-label="Số liệu">
+                <a class="stat" href="#" data-toast="Mở Findings: đang mở.">
+                    <p class="stat-label">Finding đang mở</p>
+                    <p class="stat-value">14</p>
+                    <p class="stat-hint">2 Critical · 5 High</p>
+                </a>
+                <a class="stat" href="#" data-toast="Mở Findings: quá SLA.">
+                    <p class="stat-label">Quá SLA</p>
+                    <p class="stat-value danger">2</p>
+                    <p class="stat-hint">Lâu nhất: quá 2 ngày</p>
+                </a>
+                <a class="stat" href="#" data-toast="Mở Runtimes: hết hỗ trợ.">
+                    <p class="stat-label">Runtime hết hỗ trợ</p>
+                    <p class="stat-value">3</p>
+                    <p class="stat-hint">PHP 8.1 · Node.js 20 · Ruby 3.2</p>
+                </a>
+                <a class="stat" href="#" data-toast="Mở Assets: mất liên lạc.">
+                    <p class="stat-label">Asset mất liên lạc</p>
+                    <p class="stat-value">1</p>
+                    <p class="stat-hint">booking-worker-02 · 26 giờ</p>
+                </a>
+            </section>
+
+            <section class="stats" data-view="empty" aria-label="Số liệu">
+                <div class="stat"><p class="stat-label">Finding đang mở</p><p class="stat-value">0</p><p class="stat-hint">Không có</p></div>
+                <div class="stat"><p class="stat-label">Quá SLA</p><p class="stat-value">0</p><p class="stat-hint">Không có</p></div>
+                <div class="stat"><p class="stat-label">Runtime hết hỗ trợ</p><p class="stat-value">0</p><p class="stat-hint">Không có</p></div>
+                <a class="stat" href="#" data-toast="Mở Assets: thiếu dữ liệu."><p class="stat-label">Asset thiếu dữ liệu</p><p class="stat-value">1</p><p class="stat-hint">Không được tính là Đạt</p></a>
+            </section>
+
+            <div class="stack" data-view="ready stale empty">
+                <section class="card">
+                    <header class="card-header">
+                        <div class="views" role="group" aria-label="Chế độ xem">
+                            <button type="button" aria-pressed="true">Cần xử lý<span class="count">14</span></button>
+                            <button type="button" aria-pressed="false">Team của tôi<span class="count">6</span></button>
+                            <button type="button" aria-pressed="false">Quá SLA<span class="count">2</span></button>
+                        </div>
+                        <span class="faint hide-sm text-sm">j / k để di chuyển</span>
+                    </header>
+
+                    <div class="table-wrap" data-view="ready stale">
+                        <table class="min-table" data-keyboard>
+                            <thead>
+                                <tr>
+                                    <th style="width: 110px">Mức</th>
+                                    <th>Vấn đề</th>
+                                    <th>Service</th>
+                                    <th>Hạn</th>
+                                    <th>Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge" data-sev="critical">Critical</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết DEMO-GHSA-0002.">guzzlehttp/guzzle 7.4.5</a><span class="cell-sub">DEMO-GHSA-0002 · Package có lỗ hổng</span></td>
+                                    <td>shop-api<span class="cell-sub">Commerce · production</span></td>
+                                    <td><span class="sla overdue">Quá 6 giờ</span></td>
+                                    <td><span class="state warning">Đã nhận</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="critical">Critical</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết finding PHP thiếu bản vá.">PHP thiếu bản vá 21/10/2026</a><span class="cell-sub">Runtime thiếu bản vá bảo mật</span></td>
+                                    <td>3 service<span class="cell-sub">shop-api, partner-portal, hr-internal</span></td>
+                                    <td><span class="sla">Còn 14 giờ</span></td>
+                                    <td><span class="state danger">Mới</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="high">High</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết finding Node.js 20.">Node.js 20 hết hỗ trợ</a><span class="cell-sub">Đang chạy 20.18.0</span></td>
+                                    <td>realtime-gateway<span class="cell-sub">Booking · production</span></td>
+                                    <td><span class="sla overdue">Quá 2 ngày</span></td>
+                                    <td><span class="state warning">Đã nhận</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="high">High</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết DEMO-CVE-0003.">rack 2.2.8</a><span class="cell-sub">DEMO-CVE-0003 · Package có lỗ hổng</span></td>
+                                    <td>booking-api<span class="cell-sub">Booking · production</span></td>
+                                    <td><span class="sla">Còn 3 ngày</span></td>
+                                    <td><span class="state danger">Mới</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="high">High</span></td>
+                                    <td><a class="cell-title" href="project.html">PHP 8.1 hết hỗ trợ</a><span class="cell-sub">Đang chạy 8.1.29</span></td>
+                                    <td>legacy-cms<span class="cell-sub">Commerce · production</span></td>
+                                    <td><span class="sla">Còn 5 ngày</span></td>
+                                    <td><span class="state warning">Đã nhận</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="medium">Medium</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết DEMO-CVE-0004.">axios 1.6.2</a><span class="cell-sub">DEMO-CVE-0004 · Package có lỗ hổng</span></td>
+                                    <td>shop-web<span class="cell-sub">Commerce · production, staging</span></td>
+                                    <td><span class="sla">Còn 21 ngày</span></td>
+                                    <td><span class="state danger">Mới</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="empty" data-view="empty">
+                        <strong>Không còn việc cần xử lý</strong>
+                        Lần quét gần nhất 12 phút trước.
+                    </div>
+
+                    <footer class="card-footer" data-view="ready stale">
+                        <span>6 trên 14 finding</span>
+                        <a class="link" href="#" data-toast="Mở Findings.">Xem tất cả</a>
+                    </footer>
+                </section>
+
+                <div class="grid-2">
+                    <section class="card">
+                        <header class="card-header">
+                            <h2>Nguồn dữ liệu</h2>
+                            <a class="link text-sm" href="#" data-toast="Mở Sức khỏe hệ thống.">Chi tiết</a>
+                        </header>
+                        <ul class="list">
+                            <li data-view="stale"><span class="state danger">OSV API</span><span class="sla overdue">Lỗi 26 giờ</span></li>
+                            <li><span class="state success">php.net</span><span class="sla">12 phút trước</span></li>
+                            <li><span class="state success">nodejs.org</span><span class="sla">18 phút trước</span></li>
+                            <li data-view="ready empty"><span class="state success">OSV API</span><span class="sla">25 phút trước</span></li>
+                            <li><span class="state success">rubysec advisory-db</span><span class="sla">2 giờ trước</span></li>
+                        </ul>
+                    </section>
+
+                    <section class="card">
+                        <header class="card-header">
+                            <h2>Theo team</h2>
+                            <a class="link text-sm" href="teams.html">Teams</a>
+                        </header>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Team</th>
+                                        <th class="right">Đang mở</th>
+                                        <th class="right">Critical</th>
+                                        <th class="right">Quá SLA</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="tabular">
+                                    <tr data-view="ready stale"><td><a class="cell-title" href="team.html">Commerce</a></td><td class="right">6</td><td class="right">3</td><td class="right">1</td></tr>
+                                    <tr data-view="ready stale"><td><span class="cell-title">Booking</span></td><td class="right">6</td><td class="right">0</td><td class="right">1</td></tr>
+                                    <tr data-view="ready stale"><td><span class="cell-title">Internal Tools</span></td><td class="right">2</td><td class="right">1</td><td class="right">0</td></tr>
+                                    <tr data-view="empty"><td colspan="4" class="muted">Không team nào có finding đang mở.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Đang tải -->
+            <div data-view="loading" aria-busy="true">
+                <section class="stats">
+                    <div class="stat"><span class="skeleton" style="width: 50%"></span><span class="skeleton" style="width: 30%; height: 24px; margin-top: 12px"></span></div>
+                    <div class="stat"><span class="skeleton" style="width: 50%"></span><span class="skeleton" style="width: 30%; height: 24px; margin-top: 12px"></span></div>
+                    <div class="stat"><span class="skeleton" style="width: 50%"></span><span class="skeleton" style="width: 30%; height: 24px; margin-top: 12px"></span></div>
+                    <div class="stat"><span class="skeleton" style="width: 50%"></span><span class="skeleton" style="width: 30%; height: 24px; margin-top: 12px"></span></div>
+                </section>
+                <section class="card">
+                    <div class="card-body stack" style="gap: 18px">
+                        <span class="skeleton" style="width: 40%"></span>
+                        <span class="skeleton" style="width: 75%"></span>
+                        <span class="skeleton" style="width: 60%"></span>
+                        <span class="skeleton" style="width: 70%"></span>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Lỗi -->
+            <section class="card" data-view="error">
+                <div class="empty">
+                    <strong>Không tải được trang tổng quan</strong>
+                    Máy chủ trả lỗi lúc 09:42. Cảnh báo Google Chat vẫn được gửi bình thường.
+                    <button class="btn secondary" type="button" data-loading="Đã tải lại.">Thử lại</button>
+                </div>
+            </section>
+        </main>
+
+        <script src="i18n.js"></script>
+        <script src="app.js"></script>
+    </body>
+</html>

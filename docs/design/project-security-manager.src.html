@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="vi" data-register="blueprint">
+<head>
+<title>Project Security Manager — Kiến trúc dự kiến</title>
+<link rel="stylesheet" href="kit.css" data-ve-kit>
+<style>
+:root{--accent:#176d88;--accent-dim:#e2f0f4}
+body{font-family:"IBM Plex Sans","Segoe UI",sans-serif}h1,h2,h3{font-family:"IBM Plex Sans","Segoe UI",sans-serif}main{max-width:1240px;margin:auto;padding:var(--s-6)}header{margin-bottom:var(--s-4)}h1{font-size:var(--t-h1);max-width:25ch;line-height:1.1}.lead{max-width:78ch}.meta{font-family:"IBM Plex Mono",monospace}.layout{display:grid;grid-template-columns:166px minmax(0,1fr);gap:var(--s-6);max-width:1490px;margin:auto}.layout main{min-width:0;width:100%;box-sizing:border-box;padding-left:0}.toc{position:sticky;top:var(--s-5);align-self:start;padding:var(--s-6) 0 0 var(--s-4);font-size:var(--t-small)}.toc a{display:block;padding:var(--s-2);text-decoration:none;color:var(--text-dim);border-left:2px solid var(--border)}.toc a[aria-current=true]{color:var(--accent);border-color:var(--accent);font-weight:600}section{scroll-margin-top:var(--s-6);margin-top:var(--s-8)}figure{margin:var(--s-4) 0}.frame{background:var(--surface)}.sec-head{margin-bottom:var(--s-4)}.summary{display:grid;grid-template-columns:1.4fr 1fr;gap:var(--s-5);padding:var(--s-4) 0;border-bottom:1px solid var(--border)}.summary p{margin:0}.note{padding:var(--s-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2);font-size:var(--t-small)}.note p{margin:var(--s-2) 0 0}.grid-two{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-5)}.grid-three{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s-5)}.brief{padding:var(--s-4) 0;border-top:1px solid var(--border)}.brief h3{font-size:var(--t-h3);margin:var(--s-2) 0}.brief p{font-size:var(--t-small);color:var(--text-dim);margin:var(--s-2) 0;max-width:50ch}.tag{font-family:"IBM Plex Mono",monospace;font-size:var(--t-label);color:var(--accent)}.wide-table{overflow-x:auto}.ve-table th{white-space:nowrap}.ve-table td{vertical-align:top}.ve-table small{display:block;line-height:1.55}.foot{font-size:var(--t-small);color:var(--text-dim)}details{padding:var(--s-4);border:1px solid var(--border);border-radius:var(--r-2);margin-top:var(--s-4)}summary{cursor:pointer;font-weight:600}pre{overflow:auto;font-size:var(--t-small);background:var(--surface);padding:var(--s-4);border-radius:var(--r-2)}a{overflow-wrap:anywhere}.option-title{display:flex;gap:var(--s-2);align-items:center;flex-wrap:wrap}.option-title h3{margin:0}.ve-n .sub{font-size:14px}.ve-svg .small-label{font-family:"IBM Plex Mono",monospace;font-size:14px;fill:var(--text-dim)}.ve-svg .schema-key{font-family:"IBM Plex Mono",monospace;font-size:14px;font-weight:500;fill:var(--text);text-anchor:start}.ve-svg .schema-title{font-size:17px}.ve-n.is-off .sh{stroke-dasharray:6 4}.sources{padding-bottom:var(--s-7)}.sources p{max-width:90ch}.ve-player{margin-top:var(--s-4)}
+.rt-rail{fill:none;stroke:var(--border-bright);stroke-width:1.5}.rt-rail.is-off{stroke-dasharray:5 4}.rt-latest{fill:none;stroke:var(--text-dim);stroke-width:1.5}.rt-gap{fill:none;stroke:var(--st);stroke-width:2;stroke-dasharray:4 3}.rt-run{fill:var(--st);stroke:var(--st);stroke-width:2}.rt-run.is-off{fill:var(--surface);stroke-dasharray:4 3}.rt-t{fill:var(--text-dim);font:500 14px "IBM Plex Mono",monospace}.rt-t.st{fill:var(--st);font-weight:600}
+.roadmap{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s-5);margin-top:var(--s-4);padding-top:var(--s-5);border-top:2px solid var(--border-bright)}.roadmap .ph{position:relative}.roadmap .ph::before{content:'';position:absolute;top:calc(-1 * var(--s-5) - 8px);left:0;width:14px;height:14px;border-radius:50%;background:var(--bg);border:2px solid var(--border-bright)}.roadmap .ph.now::before{background:var(--accent);border-color:var(--accent)}.roadmap h3{margin:var(--s-2) 0}.roadmap ul{padding-left:1.1em;font-size:var(--t-small);color:var(--text-dim)}.roadmap li{margin:var(--s-1) 0}.roadmap .catch{font-size:var(--t-small);margin-top:var(--s-3);padding-top:var(--s-2);border-top:1px solid var(--border)}
+@media(prefers-color-scheme:dark){:root{--accent:#73c6df;--accent-dim:#173742}}
+@media(max-width:1050px){.layout{display:block}.toc{z-index:4;top:0;display:flex;overflow-x:auto;white-space:nowrap;padding:var(--s-2);background:var(--bg);border-bottom:1px solid var(--border);gap:var(--s-2)}.toc a{border-left:0;border-bottom:2px solid transparent}.toc a[aria-current=true]{border-bottom-color:var(--accent)}.layout main{padding:var(--s-4)}section{scroll-margin-top:70px}.roadmap{grid-template-columns:1fr 1fr}}
+@media(max-width:680px){.summary,.grid-two,.grid-three,.roadmap{grid-template-columns:1fr}.summary{gap:var(--s-3)}h1{font-size:var(--t-h2)}.ve-table{font-size:var(--t-small)}}
+@media print{.toc,.ve-player{display:none}.layout{display:block}main,.layout main{padding:0;max-width:none}section{margin-top:var(--s-6)}figure,.brief,tr,.ph{break-inside:avoid}body{background:white}h1{font-size:30pt}.frame{overflow:visible}.ve-svg{max-width:100%}details> *{display:block}a{color:inherit}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Mục lục">
+<a href="#overview" aria-current="true">Tổng thể</a><a href="#changes">Thay đổi v2</a><a href="#stack">Stack</a><a href="#model">Data model</a><a href="#inventory">Thu thập thực tế</a><a href="#analysis">Phân tích</a><a href="#response">Luồng xử lý</a><a href="#trust">Tự giám sát &amp; bảo mật</a><a href="#deployment">Vận hành</a><a href="#roadmap">Lộ trình</a><a href="#decisions">Phần cần chốt</a><a href="#sources">Nguồn</a>
+</nav>
+<main>
+<header id="overview">
+<p class="eyebrow">10KN / Project Security Manager / Kiến trúc dự kiến v2</p>
+<h1>Biết đang chạy gì.<br>Biết nơi nào cần vá.</h1>
+<p class="lead">Laravel Hub giữ inventory, owner và workflow. <b>Dependency-Track và scanner tìm lỗ hổng.</b> Cảnh báo đến đúng dự án, môi trường và team phụ trách.</p>
+<p class="meta">Bản cập nhật v2 • 23/10/2026 • Đổi stack sang Laravel + Filament, bổ sung 9 điểm từ review thiết kế</p>
+</header>
+<figure>
+<div class="frame"><svg class="ve-svg" viewBox="0 0 1080 470" role="img" aria-label="CI, inventory và thông báo hãng đi vào Laravel Hub. Hub gửi SBOM cho Dependency-Track, lưu PostgreSQL và gửi cảnh báo.">
+<path class="ve-e" d="M265 95H325V225H390"/><text class="ve-el" x="339" y="145">gửi SBOM</text>
+<path class="ve-e is-hot" d="M265 245H390"/><text class="ve-el" x="327" y="237">trạng thái</text>
+<path class="ve-e" d="M265 395H325V265H390"/><text class="ve-el" x="341" y="355">đồng bộ tin</text>
+<path class="ve-e" d="M650 225H715V95H770"/><text class="ve-el" x="716" y="145">nhận finding</text>
+<path class="ve-e" d="M650 245H770"/><text class="ve-el" x="708" y="231">lưu / lấy job</text>
+<path class="ve-e" d="M650 265H715V395H770"/><text class="ve-el" x="715" y="355">phân luồng</text>
+<g class="ve-n" data-ref="sbom"><rect class="sh" x="40" y="55" width="225" height="80" rx="5"/><text x="152" y="82">Git / CI / CD</text><text class="sub" x="152" y="108">SBOM · PHP · digest</text></g>
+<g class="ve-n" data-ref="inventory"><rect class="sh" x="40" y="205" width="225" height="80" rx="5"/><text x="152" y="232">Production inventory</text><text class="sub" x="152" y="258">Collector · ECS · commit</text></g>
+<g class="ve-n"><rect class="sh" x="40" y="355" width="225" height="80" rx="5"/><text x="152" y="382">Thông báo chính thức</text><text class="sub" x="152" y="408">PHP · Laravel · OS</text></g>
+<g class="ve-n is-key" data-ref="hub"><rect class="sh" x="390" y="205" width="260" height="80" rx="5"/><text x="520" y="232">Laravel Hub + Queue</text><text class="sub" x="520" y="258">Owner · workflow · ưu tiên</text></g>
+<g class="ve-n"><rect class="sh" x="770" y="55" width="270" height="80" rx="5"/><text x="905" y="82">Dependency-Track</text><text class="sub" x="905" y="108">So khớp · quét lại khi DB đổi</text></g>
+<g class="ve-n"><path class="sh" d="M770 225V277C770 294 1040 294 1040 277V225Z"/><ellipse class="sh lid" cx="905" cy="225" rx="135" ry="14"/><text x="905" y="250">PostgreSQL</text><text class="sub" x="905" y="274">Inventory · finding · queue</text></g>
+<g class="ve-n"><rect class="sh" x="770" y="355" width="270" height="80" rx="5"/><text x="905" y="382">Filament / Google Chat / Jira</text><text class="sub" x="905" y="408">Team nhận cảnh báo và xử lý</text></g>
+</svg></div>
+<figcaption><span class="fig-n">Hình A</span>Hub nối bằng chứng triển khai với kết quả phân tích và là nơi duy nhất giữ trạng thái xử lý.</figcaption>
+</figure>
+<div class="summary"><p><b>Đề xuất v2: Laravel + Filament + PostgreSQL trong một codebase.</b> Một người phát triển với AI. Dependency-Track làm engine so khớp lỗ hổng; Hub giữ inventory, owner và workflow.</p><p><span class="chip warn">Còn chờ xác nhận</span> Dependency-Track (phương án A), ngưỡng ưu tiên, SLA và hosting chốt trong pilot.</p></div>
+
+<section id="changes">
+<div class="sec-head"><p class="ve-label caps">Changes</p><h2>v2 đổi stack và bổ sung 9 điểm từ review</h2></div>
+<div class="ve-table wide-table"><table><thead><tr><th>Loại</th><th>Thay đổi</th><th>Lý do</th><th>Phần</th></tr></thead><tbody>
+<tr><td><span class="chip">Đổi</span></td><td>Go + React → Laravel + Filament</td><td>Một người phát triển với AI. Anh review được code Laravel; người khác trong công ty tiếp quản được.</td><td><a href="#stack">Stack</a></td></tr>
+<tr><td><span class="chip risk">Mới</span></td><td>Quy tắc riêng cho PHP runtime: bản patch mới nhất của nhánh + EOL</td><td>Image <code>php</code> chính thức build PHP từ source, không có trong <code>dpkg</code>. Dữ liệu CVE cho bản thân PHP về chậm.</td><td><a href="#analysis">Phân tích</a></td></tr>
+<tr><td><span class="chip risk">Mới</span></td><td>Hub là nguồn duy nhất của trạng thái finding</td><td>Tránh hai nơi cùng giữ trạng thái (Hub và Dependency-Track).</td><td><a href="#analysis">Phân tích</a></td></tr>
+<tr><td><span class="chip risk">Mới</span></td><td>Heartbeat cho watcher, worker và kênh gửi tin</td><td>Hệ thống im lặng trông giống hệt “không có lỗ hổng”.</td><td><a href="#trust">Tự giám sát</a></td></tr>
+<tr><td><span class="chip risk">Mới</span></td><td>Bảo vệ chính Hub: SSO, mạng nội bộ, token collector, secret</td><td>Hub giữ bản đồ lỗ hổng chưa vá và token của mọi tích hợp.</td><td><a href="#trust">Bảo mật Hub</a></td></tr>
+<tr><td><span class="chip risk">Mới</span></td><td>Collector gửi commit SHA và hash <code>composer.lock</code></td><td>Server deploy bằng git pull / rsync: lockfile trên nhánh main có thể khác bản đang chạy.</td><td><a href="#inventory">Thu thập</a></td></tr>
+<tr><td><span class="chip warn">Bổ sung</span></td><td>Chính sách ưu tiên, gộp tin, SLA, chấp nhận rủi ro có hạn</td><td>Không có chính sách thì kênh cảnh báo bị mute sau vài tuần.</td><td><a href="#response">Luồng xử lý</a></td></tr>
+<tr><td><span class="chip warn">Bổ sung</span></td><td>Data model: owner là team, asset lạ vào hàng chờ</td><td>Cảnh báo phải đến đúng người, kể cả khi có người nghỉ việc.</td><td><a href="#model">Data model</a></td></tr>
+<tr><td><span class="chip warn">Bổ sung</span></td><td>Renovate; chỉ đóng finding khi mọi instance đã vá</td><td>Phát hiện chưa đủ. Rolling deploy có thể còn task chạy bản cũ.</td><td><a href="#response">Luồng xử lý</a></td></tr>
+<tr><td><span class="chip warn">Bổ sung</span></td><td>Lộ trình 4 giai đoạn, giai đoạn 0 dùng được sau 1–2 tuần</td><td>Một người làm: mỗi giai đoạn phải tự có giá trị.</td><td><a href="#roadmap">Lộ trình</a></td></tr>
+</tbody></table></div>
+</section>
+
+<section id="stack">
+<div class="sec-head"><p class="ve-label caps">Stack</p><h2>Một codebase Laravel cho dashboard, API, queue và scheduler</h2></div>
+<div class="ve-table wide-table"><table><thead><tr><th>Thành phần</th><th>Lựa chọn v2</th><th>Vai trò / ranh giới</th></tr></thead><tbody>
+<tr><td>Dashboard quản trị</td><td>Filament</td><td>Danh mục dự án, inventory, finding, owner, lịch sử, cấu hình tích hợp.<small>Thay React: không cần SPA, API riêng cho frontend và build pipeline thứ hai.</small></td></tr>
+<tr><td>Backend + API nhận dữ liệu</td><td>Laravel</td><td>Nhận báo cáo collector và SBOM từ CI, gọi Dependency-Track, gửi cảnh báo.</td></tr>
+<tr><td>Scheduler + queue</td><td>Laravel Scheduler + queue driver <code>database</code></td><td>Watcher, đồng bộ finding, heartbeat, gửi tin.<small>Worker chạy tiến trình riêng (<code>queue:work</code>) với retry và timeout; <code>withoutOverlapping</code> và job unique chống chạy trùng. Chuyển Redis + Horizon khi queue cần.</small></td></tr>
+<tr><td>Database</td><td>PostgreSQL</td><td>Dữ liệu nghiệp vụ và bảng queue.</td></tr>
+<tr><td>Đăng nhập</td><td>Google Workspace SSO (Socialite)</td><td>Chỉ tài khoản công ty. Policy của Laravel phân quyền theo team.</td></tr>
+<tr><td>Collector</td><td>Shell script (giai đoạn 0) → Go binary</td><td>Đọc OS, runtime, commit và gửi snapshot qua HTTPS.<small>Tách khỏi ứng dụng PHP đang được giám sát.</small></td></tr>
+<tr><td>Phân tích</td><td>Dependency-Track + Trivy / Syft trong CI</td><td>CI tạo SBOM và chạy <code>composer audit</code>; Dependency-Track so khớp và quét lại.</td></tr>
+<tr><td>Tự động vá</td><td>Renovate hoặc Dependabot</td><td>Tạo PR nâng version; dùng nguyên bản có sẵn, không tự viết.</td></tr>
+</tbody></table></div>
+<div class="grid-three">
+<div class="brief"><span class="tag">VÌ SAO LARAVEL</span><h3>Anh review được code AI viết</h3><p>Đây là tool bảo mật. Auth, phân quyền và xử lý secret phải được người đọc và kiểm tra.</p></div>
+<div class="brief"><span class="tag">VÌ SAO FILAMENT</span><h3>Bớt một codebase</h3><p>Bảng, filter, form và phân quyền có sẵn. Khối lượng frontend giảm gần một nửa.</p></div>
+<div class="brief"><span class="tag">QUY TẮC VIBE CODE</span><h3>Không để AI tự viết auth</h3><p>Dùng Socialite, policy, gate. CI chạy Larastan, test phân quyền, <code>composer audit</code>. Hub tự đăng ký làm một project.</p></div>
+</div>
+<p class="foot">Laravel + Filament được anh xác nhận ngày 23/10/2026, thay đề xuất Go + React của v1. Go chỉ còn cho collector khi cần một binary độc lập.</p>
+</section>
+
+<section id="model">
+<div class="sec-head"><p class="ve-label caps">Data model</p><h2>Owner là team; mọi finding gắn với một deployment cụ thể</h2></div>
+<figure><div class="frame"><svg class="ve-svg" viewBox="0 0 1120 400" role="img" aria-label="Team sở hữu Project, Project gồm Service, Service có Deployment. Deployment chạy trên Asset. Advisory sinh Finding, Finding thuộc Deployment. Asset chưa có chủ chờ gán.">
+<path class="ve-e" d="M240 100H320"/><text class="ve-el" x="280" y="91">sở hữu</text>
+<path class="ve-e" d="M520 100H600"/><text class="ve-el" x="560" y="91">gồm</text>
+<path class="ve-e" d="M800 100H880"/><text class="ve-el" x="840" y="91">deploy</text>
+<path class="ve-e" d="M1040 164V250"/><text class="ve-el l" x="1028" y="212">chạy trên</text>
+<path class="ve-e is-hot" d="M760 250V207H920V164"/><text class="ve-el" x="840" y="198">thuộc</text>
+<path class="ve-e" d="M520 312H600"/><text class="ve-el" x="560" y="303">sinh ra</text>
+<g class="ve-n"><rect class="sh" x="40" y="40" width="200" height="124" rx="5"/><text class="schema-title" x="140" y="66">Team</text><text class="schema-key" x="56" y="96">google_chat_space</text><text class="schema-key" x="56" y="118">members</text><text class="schema-key" x="56" y="140">escalation</text></g>
+<g class="ve-n"><rect class="sh" x="320" y="40" width="200" height="124" rx="5"/><text class="schema-title" x="420" y="66">Project</text><text class="schema-key" x="336" y="96">team_id</text><text class="schema-key" x="336" y="118">repo_url</text><text class="schema-key" x="336" y="140">criticality</text></g>
+<g class="ve-n"><rect class="sh" x="600" y="40" width="200" height="124" rx="5"/><text class="schema-title" x="700" y="66">Service</text><text class="schema-key" x="616" y="96">project_id</text><text class="schema-key" x="616" y="118">kind: ecs | server</text><text class="schema-key" x="616" y="140">exposure</text></g>
+<g class="ve-n is-key"><rect class="sh" x="880" y="40" width="200" height="124" rx="5"/><text class="schema-title" x="980" y="66">Deployment</text><text class="schema-key" x="896" y="96">environment</text><text class="schema-key" x="896" y="118">digest | commit_sha</text><text class="schema-key" x="896" y="140">sbom_id (D-Track)</text></g>
+<g class="ve-n is-off"><rect class="sh" x="40" y="250" width="200" height="124" rx="5"/><text class="schema-title" x="140" y="276">Asset chưa có chủ</text><text class="schema-key" x="56" y="306">team_id: null</text><text class="schema-key" x="56" y="328">→ cảnh báo admin</text></g>
+<g class="ve-n"><rect class="sh" x="320" y="250" width="200" height="124" rx="5"/><text class="schema-title" x="420" y="276">Advisory</text><text class="schema-key" x="336" y="306">source · url</text><text class="schema-key" x="336" y="328">cve | pre-notice</text><text class="schema-key" x="336" y="350">affected_range</text></g>
+<g class="ve-n"><rect class="sh" x="600" y="250" width="200" height="124" rx="5"/><text class="schema-title" x="700" y="276">Finding</text><text class="schema-key" x="616" y="306">deployment_id</text><text class="schema-key" x="616" y="328">vuln_id · state</text><text class="schema-key" x="616" y="350">sla_due</text></g>
+<g class="ve-n"><rect class="sh" x="880" y="250" width="200" height="124" rx="5"/><text class="schema-title" x="980" y="276">Asset</text><text class="schema-key" x="896" y="306">deployment_id</text><text class="schema-key" x="896" y="328">host | ecs_task</text><text class="schema-key" x="896" y="350">last_seen</text></g>
+</svg></div><figcaption><span class="fig-n">Hình B</span>Finding thuộc deployment (digest hoặc commit), nên một lỗ hổng chỉ báo cho môi trường thật sự chạy bản đó.</figcaption></figure>
+<div class="grid-three">
+<div class="brief"><span class="tag">OWNER</span><h3>Gán cho team, không gán cho người</h3><p>Mỗi team có một space Google Chat và người leo thang. Người nghỉ việc không làm đứt luồng cảnh báo.</p></div>
+<div class="brief"><span class="tag">ASSET LẠ</span><h3>Không bỏ qua báo cáo không rõ chủ</h3><p>Collector chưa đăng ký tạo asset với <code>team_id: null</code> và cảnh báo admin để gán.</p></div>
+<div class="brief"><span class="tag">ĐỊNH DANH</span><h3>Component theo PURL / CPE</h3><p>Package dùng PURL (<code>pkg:composer/laravel/framework@…</code>). Runtime PHP dùng CPE để Dependency-Track so khớp.</p></div>
+</div>
+</section>
+
+<section id="inventory">
+<div class="sec-head"><p class="ve-label caps">Inventory</p><h2>Server truyền thống và ECS đi hai đường thu thập</h2></div>
+<div class="grid-two">
+<figure><div class="frame"><svg class="ve-svg" style="--ve-min:420px" viewBox="0 0 480 410" role="img" aria-label="Collector trên server đọc OS, package, runtime và commit đã deploy, sau đó gửi snapshot qua HTTPS đến Hub.">
+<rect class="ve-bnd" x="25" y="25" width="430" height="240" rx="6"/><text class="ve-bnd-t" x="45" y="49">SERVER TRUYỀN THỐNG</text>
+<path class="ve-e" d="M240 120V175"/><text class="ve-el r" x="254" y="152">đọc theo danh sách cho phép</text>
+<path class="ve-e is-hot" d="M240 235V325"/><text class="ve-el r" x="254" y="297">POST qua HTTPS</text>
+<g class="ve-n"><rect class="sh" x="45" y="70" width="390" height="50" rx="5"/><text x="240" y="95">OS · package · runtime · commit</text></g>
+<g class="ve-n is-key"><rect class="sh" x="95" y="175" width="290" height="60" rx="5"/><text x="240" y="195">Collector</text><text class="sub" x="240" y="218">Cron / systemd timer</text></g>
+<g class="ve-n"><rect class="sh" x="95" y="325" width="290" height="60" rx="5"/><text x="240" y="346">Laravel ingest API</text><text class="sub" x="240" y="369">Snapshot · last_seen · thay đổi</text></g>
+</svg></div><figcaption><span class="fig-n">Hình C</span>Collector gửi thêm commit SHA và hash <code>composer.lock</code> đã deploy, để Hub ghép đúng SBOM.</figcaption></figure>
+<figure><div class="frame"><svg class="ve-svg" style="--ve-min:420px" viewBox="0 0 480 410" role="img" aria-label="CI tạo SBOM có PHP runtime, gắn image digest. ECS báo digest đang chạy. Hub đối chiếu hai nguồn.">
+<rect class="ve-bnd" x="25" y="25" width="430" height="240" rx="6"/><text class="ve-bnd-t" x="45" y="49">DOCKER / ECS</text>
+<path class="ve-e" d="M150 125V280H210V325"/><text class="ve-el" x="143" y="223">gửi SBOM</text>
+<path class="ve-e is-hot" d="M350 235V280H270V325"/><text class="ve-el" x="343" y="305">báo digest</text>
+<g class="ve-n"><rect class="sh" x="45" y="70" width="225" height="55" rx="5"/><text x="157" y="88">CI build image</text><text class="sub" x="157" y="110">SBOM + PHP · digest</text></g>
+<g class="ve-n"><rect class="sh" x="220" y="180" width="205" height="55" rx="5"/><text x="322" y="198">ECS đang chạy</text><text class="sub" x="322" y="220">describe-tasks API</text></g>
+<g class="ve-n is-key"><rect class="sh" x="75" y="325" width="330" height="60" rx="5"/><text x="240" y="346">Hub đối chiếu image digest</text><text class="sub" x="240" y="369">Gắn SBOM với đúng deployment</text></g>
+</svg></div><figcaption><span class="fig-n">Hình D</span>CI đọc <code>PHP_VERSION</code> của image và thêm PHP vào SBOM; tag image chưa đủ để xác định bản đang chạy.</figcaption></figure>
+</div>
+<div class="grid-three">
+<div class="brief"><span class="tag">OS / HOST</span><h3>Lấy phiên bản đầy đủ</h3><p><code>/etc/os-release</code>, <code>uname -r</code>, <code>dpkg-query</code> hoặc <code>rpm</code>. Giữ cả nguồn cài đặt và phiên bản package đầy đủ.</p></div>
+<div class="brief"><span class="tag">RUNTIME / CONTAINER</span><h3>PHP chính thức không nằm trong dpkg</h3><p>Image <code>php:8.x-fpm</code> build PHP vào <code>/usr/local</code>. Đọc <code>PHP_VERSION</code> hoặc <code>php -v</code>; PHP trên host có thể khác trong container.</p></div>
+<div class="brief"><span class="tag">FRESHNESS</span><h3>Mất báo cáo là thiếu dữ liệu</h3><p>Lưu <code>collected_at</code> và <code>last_seen</code>. Cảnh báo khi ngừng gửi; không suy diễn “không có rủi ro”.</p></div>
+</div>
+<details><summary>Payload inventory minh họa</summary><pre><code>{
+  "asset_id": "project-a-prod-api-01",
+  "environment": "production",
+  "collected_at": "2026-10-22T15:00:00Z",
+  "os": { "id": "debian", "version_id": "12" },
+  "runtimes": [{
+    "name": "php", "version": "8.4.27",
+    "scope": "container", "source": "runtime-binary"
+  }],
+  "app": {
+    "path": "/var/www/project-a",
+    "commit_sha": "9f3c2e1…",
+    "composer_lock_sha256": "…"
+  },
+  "deployment": {
+    "release": "release-123", "image_digest": "sha256:..."
+  }
+}</code></pre><p class="foot">Schema đề xuất cho Hub; không phải CycloneDX SBOM. Khối <code>app</code> mới trong v2. Giá trị chỉ là ví dụ, không xác nhận hiện trạng production.</p></details>
+<p class="foot">Có thể lấy inventory qua Wazuh hoặc AWS Systems Manager thay cho collector tự xây. Với Fargate, tập trung vào image/container của ứng dụng; không giả định có quyền quản lý host bên dưới.</p>
+</section>
+
+<section id="analysis">
+<div class="sec-head"><p class="ve-label caps">Analysis</p><h2>Dependency-Track tìm lỗ hổng; Hub giữ trạng thái xử lý</h2></div>
+<div class="grid-two">
+<figure><div class="option-title"><span class="chip ok">Đề xuất · A</span><h3>Laravel Hub + Dependency-Track</h3></div><div class="frame"><svg class="ve-svg" style="--ve-min:420px" viewBox="0 0 480 330" role="img" aria-label="Hub gửi SBOM cho Dependency-Track và nhận sự kiện finding. Dependency-Track tự quét lại khi dữ liệu lỗ hổng cập nhật.">
+<path class="ve-e" d="M240 100V175"/><text class="ve-el r" x="253" y="135">gửi SBOM</text>
+<path class="ve-e is-async" d="M390 205H440V70H390"/><text class="ve-el l" x="430" y="151">finding</text>
+<g class="ve-n"><rect class="sh" x="90" y="40" width="300" height="60" rx="5"/><text x="240" y="60">Laravel Hub</text><text class="sub" x="240" y="83">Inventory · owner · workflow</text></g>
+<g class="ve-n is-key"><rect class="sh" x="90" y="175" width="300" height="60" rx="5"/><text x="240" y="195">Dependency-Track</text><text class="sub" x="240" y="218">SBOM · analyzer · quét lại</text></g>
+<text class="small-label" x="90" y="283">Có sẵn quét lại khi DB cập nhật</text>
+<text class="small-label" x="90" y="305">Dịch vụ JVM + DB riêng, cần sizing</text>
+</svg></div><figcaption><span class="fig-n">Hình E</span>Ít code tự viết nhất cho một người làm; đổi lại phải vận hành thêm một dịch vụ.</figcaption></figure>
+<figure><div class="option-title"><span class="chip">Dự phòng · B</span><h3>Laravel Hub + scanner CLI</h3></div><div class="frame"><svg class="ve-svg" style="--ve-min:420px" viewBox="0 0 480 330" role="img" aria-label="Hub lưu SBOM và chạy scanner CLI theo lịch trên SBOM đã lưu.">
+<path class="ve-e" d="M240 100V175"/><text class="ve-el r" x="253" y="135">job theo lịch</text>
+<path class="ve-e is-async" d="M390 205H440V70H390"/><text class="ve-el l" x="430" y="151">kết quả</text>
+<g class="ve-n is-key"><rect class="sh" x="90" y="40" width="300" height="60" rx="5"/><text x="240" y="60">Laravel Hub</text><text class="sub" x="240" y="83">Lưu SBOM · finding · workflow</text></g>
+<g class="ve-n"><rect class="sh" x="90" y="175" width="300" height="60" rx="5"/><text x="240" y="195">grype / osv-scanner / trivy</text><text class="sub" x="240" y="218">quét SBOM đã lưu</text></g>
+<text class="small-label" x="90" y="283">Phải tự lên lịch quét lại mọi SBOM</text>
+<text class="small-label" x="90" y="305">khi dữ liệu lỗ hổng cập nhật</text>
+</svg></div><figcaption><span class="fig-n">Hình F</span>Bớt một dịch vụ thường trực; thiếu job quét lại thì mất giá trị cốt lõi.</figcaption></figure>
+</div>
+<figure><div class="frame"><svg class="ve-svg" viewBox="0 0 1100 295" role="img" aria-label="Dependency-Track báo finding vào Hub. Hub chuyển trạng thái Mới, Đã nhận, Đã vá, Đã xác minh. Không bị ảnh hưởng và Chấp nhận rủi ro đồng bộ ngược về Dependency-Track. Chấp nhận rủi ro hết hạn thì mở lại.">
+<rect class="ve-bnd" x="320" y="20" width="760" height="262" rx="6"/><text class="ve-bnd-t" x="340" y="43">LARAVEL HUB · NGUỒN SỰ THẬT CỦA WORKFLOW</text>
+<path class="ve-e is-hot" d="M260 88H350"/><text class="ve-el" x="305" y="79">finding</text>
+<path class="ve-e" d="M470 88H550"/><text class="ve-el" x="510" y="79">giao</text>
+<path class="ve-e" d="M670 88H750"/><text class="ve-el" x="710" y="79">vá</text>
+<path class="ve-e" d="M870 88H950"/><text class="ve-el" x="910" y="79">quét lại</text>
+<path class="ve-e" d="M600 116V185"/><text class="ve-el l" x="590" y="152">triage</text>
+<path class="ve-e" d="M640 116V150H885V185"/><text class="ve-el" x="760" y="141">duyệt ngoại lệ</text>
+<path class="ve-e is-async" d="M885 245V268H440V116"/><text class="ve-el" x="660" y="259">hết hạn → mở lại</text>
+<path class="ve-e is-async" d="M520 215H150V116"/><text class="ve-el" x="300" y="206">đồng bộ trạng thái</text>
+<g class="ve-n"><rect class="sh" x="40" y="60" width="220" height="56" rx="5"/><text x="150" y="88">Dependency-Track</text></g>
+<g class="ve-n"><rect class="sh" x="350" y="60" width="120" height="56" rx="5"/><text x="410" y="88">Mới</text></g>
+<g class="ve-n"><rect class="sh" x="550" y="60" width="120" height="56" rx="5"/><text x="610" y="88">Đã nhận</text></g>
+<g class="ve-n"><rect class="sh" x="750" y="60" width="120" height="56" rx="5"/><text x="810" y="88">Đã vá</text></g>
+<g class="ve-n is-key"><rect class="sh" x="950" y="60" width="120" height="56" rx="5"/><text x="1010" y="88">Đã xác minh</text></g>
+<g class="ve-n"><rect class="sh" x="520" y="185" width="200" height="60" rx="5"/><text x="620" y="205">Không ảnh hưởng</text><text class="sub" x="620" y="228">người xác nhận</text></g>
+<g class="ve-n"><rect class="sh" x="780" y="185" width="210" height="60" rx="5"/><text x="885" y="205">Chấp nhận rủi ro</text><text class="sub" x="885" y="228">có ngày hết hạn</text></g>
+</svg></div><figcaption><span class="fig-n">Hình G</span>Chỉ Hub đổi trạng thái finding; Dependency-Track nhận lại trạng thái để không báo lại lỗi đã xử lý.</figcaption></figure>
+
+<figure>
+<div class="cases">
+<div class="case" data-st="ok"><span class="chip ok">Đạt</span><h3>Bản patch mới nhất</h3><svg class="ve-mini" viewBox="0 0 240 128" role="img" aria-label="Bản đang chạy trùng bản patch mới nhất của nhánh.">
+<text class="rt-t" x="200" y="24" text-anchor="middle">mới nhất</text><path class="rt-latest" d="M200 34V58"/>
+<path class="rt-rail" d="M20 70H220M40 64V76M80 64V76M120 64V76M160 64V76"/>
+<circle class="rt-run" cx="200" cy="70" r="8"/><text class="rt-t st" x="212" y="102" text-anchor="end">đang chạy</text>
+</svg></div>
+<div class="case" data-st="risk"><span class="chip risk">Thiếu bản vá</span><h3>Chậm hơn nhánh</h3><svg class="ve-mini" viewBox="0 0 240 128" role="img" aria-label="Bản đang chạy chậm 3 bản patch so với bản mới nhất của nhánh.">
+<text class="rt-t" x="200" y="24" text-anchor="middle">mới nhất</text><path class="rt-latest" d="M200 34V58"/>
+<path class="rt-rail" d="M20 70H220M40 64V76M120 64V76M160 64V76M200 64V76"/>
+<path class="rt-gap" d="M92 50H188"/><text class="rt-t st" x="140" y="42" text-anchor="middle">chậm 3 patch</text>
+<circle class="rt-run" cx="80" cy="70" r="8"/><text class="rt-t st" x="80" y="102" text-anchor="middle">đang chạy</text>
+</svg></div>
+<div class="case" data-st="risk"><span class="chip risk">Hết hỗ trợ</span><h3>Nhánh EOL</h3><svg class="ve-mini" viewBox="0 0 240 128" role="img" aria-label="Nhánh 8.1 đã hết hỗ trợ bảo mật; không còn bản vá mới.">
+<text class="rt-t st" x="20" y="24">nhánh 8.1 · EOL</text>
+<path class="rt-rail is-off" d="M20 70H220M40 64V76M80 64V76M120 64V76M160 64V76"/>
+<circle class="rt-run" cx="200" cy="70" r="8"/><text class="rt-t st" x="212" y="102" text-anchor="end">đang chạy</text>
+</svg></div>
+<div class="case" data-st="warn"><span class="chip warn">Thiếu dữ liệu</span><h3>Không có báo cáo</h3><svg class="ve-mini" viewBox="0 0 240 128" role="img" aria-label="Collector không báo cáo quá 24 giờ; không biết bản đang chạy.">
+<text class="rt-t" x="200" y="24" text-anchor="middle">mới nhất</text><path class="rt-latest" d="M200 34V58"/>
+<path class="rt-rail" d="M20 70H220M40 64V76M80 64V76M160 64V76M200 64V76"/>
+<circle class="rt-run is-off" cx="120" cy="70" r="8"/><text class="rt-t st" x="120" y="102" text-anchor="middle">last_seen &gt; 24h</text>
+</svg></div>
+</div>
+<figcaption><span class="fig-n">Hình H</span>Runtime PHP dùng quy tắc riêng: so bản đang chạy với bản patch mới nhất của nhánh và ngày EOL, không chờ CVE.</figcaption>
+</figure>
+
+<div class="ve-table wide-table"><table><thead><tr><th>Lớp cần theo dõi</th><th>Đầu vào / công cụ dự kiến</th><th>Giới hạn phải giữ rõ</th></tr></thead><tbody>
+<tr><td>Dependency ứng dụng</td><td>SBOM từ lockfile/artifact → Dependency-Track; <code>composer audit</code> trong CI</td><td>Chỉ phát hiện lỗ hổng đã biết trong nguồn dữ liệu tương ứng.</td></tr>
+<tr><td>Runtime PHP / Node.js</td><td>Inventory runtime thực tế + API releases của php.net + endoflife.date</td><td>Quy tắc: cũ hơn bản patch mới nhất của nhánh → cảnh báo; nhánh EOL → cảnh báo.<small>OSV gần như không có dữ liệu cho bản thân PHP; NVD gắn CPE chậm.</small></td></tr>
+<tr><td>OS / container / host</td><td>Inventory và Trivy, Inspector hoặc Wazuh theo hạ tầng</td><td>Dùng dữ liệu của distro: Ubuntu/Debian vá ngược vào version cũ, so version thô sẽ báo sai.</td></tr>
+<tr><td>Thông báo sớm từ hãng</td><td>Watcher PHP.net, Laravel (GHSA), Node.js, nguồn chính thức của OS, CISA KEV</td><td>Có thể chưa có CVE hoặc phạm vi phiên bản; lúc đó chỉ gửi cảnh báo chuẩn bị.<small>Danh sách nguồn suy ra từ inventory: nginx, MySQL, Redis, OpenSSL… khi có trong hệ thống.</small></td></tr>
+</tbody></table></div>
+<div class="note"><b>Phạm vi hệ thống</b><p>Không thay thế SAST, review phân quyền, kiểm tra cấu hình hạ tầng, đánh giá đường khai thác hoặc regression test sau nâng cấp. “Khớp phiên bản bị ảnh hưởng” chưa chứng minh ứng dụng có đường khai thác.</p></div>
+</section>
+
+<section id="response">
+<div class="sec-head"><p class="ve-label caps">Response</p><h2>Cảnh báo sớm trước, xác nhận ảnh hưởng khi có đủ bằng chứng</h2></div>
+<figure class="ve-steps">
+<div class="frame"><svg class="ve-svg" viewBox="0 0 1000 380" role="img" aria-label="Luồng minh họa PHP advisory: nhận tin, tìm inventory, cảnh báo chuẩn bị, xác định ảnh hưởng, giao team, xác minh mọi instance trước khi đóng.">
+<path class="ve-e" data-s="0 2" d="M260 90H380"/><text class="ve-el" x="320" y="76">tìm service</text>
+<path class="ve-e" data-s="0 3" d="M610 90H730"/><text class="ve-el" x="670" y="76">thiếu phạm vi</text>
+<path class="ve-e is-async" data-s="0 4" d="M845 125V205H145V255"/><text class="ve-el" x="495" y="191">khi advisory đầy đủ → đối chiếu lại</text>
+<path class="ve-e" data-s="0 5" d="M260 290H380"/><text class="ve-el" x="320" y="276">giao team</text>
+<path class="ve-e" data-s="0 6" d="M610 290H730"/><text class="ve-el" x="670" y="276">deploy bản vá</text>
+<g class="ve-n" data-s="0 1"><rect class="sh" x="30" y="55" width="230" height="70" rx="5"/><text x="145" y="78">Nhận thông báo PHP</text><text class="sub" x="145" y="103">Lưu nguồn và thời điểm</text></g>
+<g class="ve-n" data-s="0 2"><rect class="sh" x="380" y="55" width="230" height="70" rx="5"/><text x="495" y="78">Đối chiếu inventory</text><text class="sub" x="495" y="103">Service nào dùng PHP?</text></g>
+<g class="ve-n" data-s="0 3"><rect class="sh" x="730" y="55" width="230" height="70" rx="5"/><text x="845" y="78">Cảnh báo chuẩn bị</text><text class="sub" x="845" y="103">Chờ xác nhận ảnh hưởng</text></g>
+<g class="ve-n" data-s="0 4"><rect class="sh" x="30" y="255" width="230" height="70" rx="5"/><text x="145" y="278">Xác định ảnh hưởng</text><text class="sub" x="145" y="303">Phiên bản · điều kiện</text></g>
+<g class="ve-n" data-s="0 5"><rect class="sh" x="380" y="255" width="230" height="70" rx="5"/><text x="495" y="278">Finding + Chat / Jira</text><text class="sub" x="495" y="303">Theo mức ưu tiên và SLA</text></g>
+<g class="ve-n" data-s="0 6"><rect class="sh" x="730" y="255" width="230" height="70" rx="5"/><text x="845" y="278">Xác minh rồi đóng</text><text class="sub" x="845" y="303">Mọi instance đã vá</text></g>
+</svg></div>
+<div class="ve-player"><ol class="ve-cap">
+<li data-n="1/6">Watcher nhận thông báo từ hãng và giữ bằng chứng nguồn.</li>
+<li data-n="2/6">Hub tìm service đang dùng PHP qua inventory, không chỉ xem khai báo trong repository.</li>
+<li data-n="3/6">Nếu chưa đủ phạm vi phiên bản, gửi cảnh báo chuẩn bị; chưa kết luận đã bị ảnh hưởng.</li>
+<li data-n="4/6">Khi advisory đầy đủ, đối chiếu lại phiên bản và điều kiện khai thác.</li>
+<li data-n="5/6">Tạo finding cho môi trường liên quan; mức ưu tiên quyết định kênh và hạn SLA.</li>
+<li data-n="6/6">Chỉ đóng khi mọi host và mọi ECS task đang chạy báo bản đã vá.</li>
+</ol><button data-go="-1" aria-label="Bước trước">←</button><button data-play>Chạy lại luồng</button><input type="range" min="1" max="6" value="6" aria-label="Bước minh họa"><button data-go="1" aria-label="Bước tiếp">→</button></div>
+<figcaption><span class="fig-n">Hình I</span>Kịch bản thiết kế, không phải kết quả chạy thật; nếu đủ advisory ngay, bỏ qua bước chờ.</figcaption>
+</figure>
+<div class="ve-table wide-table"><table><thead><tr><th>Mức</th><th>Điều kiện (ví dụ)</th><th>Kênh</th><th class="num">SLA đề xuất</th></tr></thead><tbody>
+<tr><td><span class="chip risk">Báo ngay</span></td><td>Critical, hoặc có trong CISA KEV, hoặc EPSS cao; production; dependency production<small>Ưu tiên thêm khi service có <code>exposure: public</code>.</small></td><td>Google Chat ngay + Jira</td><td class="num">48 giờ</td></tr>
+<tr><td><span class="chip warn">Cao</span></td><td>High trên production</td><td>Tổng hợp hằng ngày + Jira</td><td class="num">7 ngày</td></tr>
+<tr><td><span class="chip">Thường</span></td><td>Medium / Low, staging, dependency dev</td><td>Tổng hợp hằng tuần</td><td class="num">30 ngày</td></tr>
+<tr><td><span class="chip warn">Chuẩn bị</span></td><td>Thông báo sớm chưa có CVE, khớp runtime trong inventory</td><td>Google Chat ngay</td><td class="num">kế hoạch trong ngày</td></tr>
+</tbody></table></div>
+<div class="grid-three">
+<div class="brief"><span class="tag">GỘP TIN</span><h3>Một lỗ hổng, một tin</h3><p>Cùng lỗ hổng trên N project gửi một tin, liệt kê project và team.</p></div>
+<div class="brief"><span class="tag">NGOẠI LỆ</span><h3>Chấp nhận rủi ro có hạn</h3><p>Bắt buộc có lý do, người duyệt và ngày hết hạn. Hết hạn thì finding tự mở lại.</p></div>
+<div class="brief"><span class="tag">TỰ VÁ</span><h3>Renovate và rebuild định kỳ</h3><p>Renovate tạo PR nâng version. Image rebuild hằng tuần, kể cả khi code không đổi, để nhận bản vá OS và PHP.</p></div>
+</div>
+<figure><div class="frame"><svg class="ve-svg" viewBox="0 0 1000 210" role="img" aria-label="Độ trễ cảnh báo gồm nguồn công bố, đồng bộ, phân tích và chuyển thông báo; không cam kết phát hiện ngay lập tức.">
+<path class="ve-e" d="M215 90H295"/><text class="ve-el" x="255" y="80">cấp tin</text>
+<path class="ve-e" d="M475 90H555"/><text class="ve-el" x="515" y="80">lên lịch</text>
+<path class="ve-e" d="M735 90H815"/><text class="ve-el" x="775" y="80">gửi tin</text>
+<g class="ve-n"><rect class="sh" x="35" y="60" width="180" height="60" rx="5"/><text x="125" y="80">Nguồn công bố</text><text class="sub" x="125" y="103">Ngoài kiểm soát</text></g>
+<g class="ve-n"><rect class="sh" x="295" y="60" width="180" height="60" rx="5"/><text x="385" y="80">Đồng bộ dữ liệu</text><text class="sub" x="385" y="103">Watcher mỗi 15–30′</text></g>
+<g class="ve-n"><rect class="sh" x="555" y="60" width="180" height="60" rx="5"/><text x="645" y="80">Queue + phân tích</text><text class="sub" x="645" y="103">Theo workload</text></g>
+<g class="ve-n"><rect class="sh" x="815" y="60" width="180" height="60" rx="5"/><text x="905" y="80">Kênh cảnh báo</text><text class="sub" x="905" y="103">Chat · Jira</text></g>
+<g class="ve-dim"><path class="ext" d="M35 130V175M995 130V175"/><path class="ln" d="M35 166H995M31 170l8-8M991 170l8-8"/><text x="515" y="157">Tổng độ trễ = toàn bộ chuỗi, không chỉ thời gian scanner</text></g>
+</svg></div><figcaption><span class="fig-n">Hình J</span>Upload SBOM thường xuyên không bù được nguồn advisory chậm; phải đo từ lúc nguồn công bố đến lúc nhận tin.</figcaption></figure>
+<p class="foot">Ngưỡng ưu tiên và SLA trên là đề xuất ban đầu, chốt trong pilot. Nhịp watcher 15–30 phút và nhịp collector mỗi giờ là cấu hình đề xuất, chưa phải cam kết.</p>
+</section>
+
+<section id="trust">
+<div class="sec-head"><p class="ve-label caps">Trust</p><h2>Hệ thống im lặng không có nghĩa là an toàn</h2></div>
+<figure><div class="frame"><svg class="ve-svg" viewBox="0 0 1140 350" role="img" aria-label="Watcher, worker và Google Chat ghi last_success. Heartbeat check đọc trạng thái mỗi 15 phút, cảnh báo qua email khi Chat lỗi. Uptime monitor bên ngoài ping Hub.">
+<path class="ve-e" d="M230 85H330"/><text class="ve-el" x="280" y="76">mỗi 15–30′</text>
+<path class="ve-e" d="M520 85H620"/><text class="ve-el" x="570" y="76">xếp job</text>
+<path class="ve-e" d="M810 85H910"/><text class="ve-el" x="860" y="76">gửi tin</text>
+<path class="ve-e is-async" d="M425 120V260"/><text class="ve-el r" x="437" y="195">ghi last_success</text>
+<path class="ve-e is-async" d="M715 120V260"/><text class="ve-el r" x="727" y="160">ghi last_success</text>
+<path class="ve-e is-async" d="M1005 120V225H780V260"/><text class="ve-el" x="890" y="216">báo lỗi gửi</text>
+<path class="ve-e is-hot" d="M810 295H910"/><text class="ve-el" x="860" y="286">Chat lỗi</text>
+<path class="ve-e" d="M230 295H330"/><text class="ve-el" x="280" y="286">ping 5′</text>
+<g class="ve-n"><rect class="sh" x="40" y="50" width="190" height="70" rx="5"/><text x="135" y="75">Nguồn tin</text><text class="sub" x="135" y="100">php.net · GHSA</text></g>
+<g class="ve-n"><rect class="sh" x="330" y="50" width="190" height="70" rx="5"/><text x="425" y="75">Watcher</text><text class="sub" x="425" y="100">theo từng nguồn</text></g>
+<g class="ve-n"><rect class="sh" x="620" y="50" width="190" height="70" rx="5"/><text x="715" y="75">Queue worker</text><text class="sub" x="715" y="100">phân tích · gộp</text></g>
+<g class="ve-n"><rect class="sh" x="910" y="50" width="190" height="70" rx="5"/><text x="1005" y="75">Google Chat</text><text class="sub" x="1005" y="100">webhook</text></g>
+<g class="ve-n"><rect class="sh" x="40" y="260" width="190" height="70" rx="5"/><text x="135" y="285">Uptime monitor</text><text class="sub" x="135" y="310">ngoài hạ tầng Hub</text></g>
+<g class="ve-n is-key"><rect class="sh" x="330" y="260" width="480" height="70" rx="5"/><text x="570" y="285">Heartbeat check · mỗi 15′</text><text class="sub" x="570" y="310">last_success quá ngưỡng → cảnh báo</text></g>
+<g class="ve-n"><rect class="sh" x="910" y="260" width="190" height="70" rx="5"/><text x="1005" y="285">Email dự phòng</text><text class="sub" x="1005" y="310">kênh thứ hai</text></g>
+</svg></div><figcaption><span class="fig-n">Hình K</span>Mỗi khâu ghi lần chạy thành công gần nhất; khâu nào quá ngưỡng thì chính hệ thống phát cảnh báo.</figcaption></figure>
+<div class="grid-three">
+<div class="brief"><span class="tag">NGƯỠNG</span><h3>Theo từng nguồn tin</h3><p>Ví dụ: php.net quá 2 giờ không lấy được, hoặc feed trả về rỗng, là lỗi watcher.</p></div>
+<div class="brief"><span class="tag">BẢN TIN SỐNG</span><h3>Tổng hợp hằng ngày lúc 08:00</h3><p>Số nguồn đã đọc, số asset đã báo cáo, số finding mở. Không nhận bản tin là dấu hiệu lỗi.</p></div>
+<div class="brief"><span class="tag">KIỂM THỬ</span><h3>Cố tình làm hỏng trong pilot</h3><p>Tắt watcher, đổi webhook sai: phải nhận cảnh báo trong ngưỡng đã đặt.</p></div>
+</div>
+
+<figure><div class="frame"><svg class="ve-svg" viewBox="0 0 1100 420" role="img" aria-label="Nhân viên đăng nhập qua Google SSO. Collector gửi dữ liệu qua ingest API có token và validate. Internet bị chặn. Hub đọc token từ Secrets Manager và giao job cho scanner runner dùng deploy key read-only.">
+<rect class="ve-bnd" x="320" y="25" width="755" height="375" rx="6"/><text class="ve-bnd-t" x="340" y="48">MẠNG NỘI BỘ / VPN</text>
+<path class="ve-e" d="M240 102H370"/><text class="ve-el" x="305" y="93">đăng nhập</text>
+<path class="ve-e" d="M570 102H660V175H680"/><text class="ve-el" x="615" y="93">cấp phiên</text>
+<path class="ve-e" d="M240 222H370"/><text class="ve-el" x="305" y="213">POST HTTPS</text>
+<path class="ve-e is-hot" d="M570 222H680"/><text class="ve-el" x="625" y="213">dữ liệu sạch</text>
+<path class="ve-e" d="M240 342H320"/><text class="ve-el" x="280" y="333">truy cập</text><text class="ve-x" x="320" y="342">✕</text>
+<path class="ve-e" d="M680 235H650V342H570"/><text class="ve-el" x="610" y="333">giao job</text>
+<path class="ve-e" d="M805 250V310"/><text class="ve-el r" x="817" y="284">đọc token</text>
+<g class="ve-n"><rect class="sh" x="40" y="70" width="200" height="64" rx="5"/><text x="140" y="92">Nhân viên</text><text class="sub" x="140" y="115">trình duyệt</text></g>
+<g class="ve-n"><rect class="sh" x="40" y="190" width="200" height="64" rx="5"/><text x="140" y="212">Collector</text><text class="sub" x="140" y="235">1 token / host</text></g>
+<g class="ve-n"><rect class="sh" x="40" y="310" width="200" height="64" rx="5"/><text x="140" y="332">Internet</text><text class="sub" x="140" y="355">không có đường vào</text></g>
+<g class="ve-n"><rect class="sh" x="370" y="70" width="200" height="64" rx="5"/><text x="470" y="92">Google SSO</text><text class="sub" x="470" y="115">domain công ty</text></g>
+<g class="ve-n"><rect class="sh" x="370" y="190" width="200" height="64" rx="5"/><text x="470" y="212">Ingest API</text><text class="sub" x="470" y="235">validate · rate limit</text></g>
+<g class="ve-n"><rect class="sh" x="370" y="310" width="200" height="64" rx="5"/><text x="470" y="332">Scanner runner</text><text class="sub" x="470" y="355">deploy key read-only</text></g>
+<g class="ve-n is-key"><rect class="sh" x="680" y="150" width="250" height="100" rx="5"/><text x="805" y="185">Laravel Hub</text><text class="sub" x="805" y="212">policy theo team</text><text class="sub" x="805" y="232">audit log</text></g>
+<g class="ve-n"><rect class="sh" x="680" y="310" width="250" height="64" rx="5"/><text x="805" y="332">Secrets Manager</text><text class="sub" x="805" y="355">token Git · Jira · D-Track</text></g>
+</svg></div><figcaption><span class="fig-n">Hình L</span>Hub giữ bản đồ lỗ hổng chưa vá, nên chỉ mở trong mạng nội bộ và mỗi đường vào có kiểm soát riêng.</figcaption></figure>
+<div class="grid-three">
+<div class="brief"><span class="tag">COLLECTOR</span><h3>Token thu hồi được</h3><p>Mỗi host một token, có xoay vòng. Payload sai schema bị từ chối: host bị chiếm không được gửi inventory giả để che lỗ hổng.</p></div>
+<div class="brief"><span class="tag">RUNNER</span><h3>Không chạy code của repo</h3><p>Chỉ đọc lockfile và image. Nếu phải cài dependency thì dùng <code>composer install --no-scripts</code>.</p></div>
+<div class="brief"><span class="tag">DOGFOOD</span><h3>Hub tự giám sát chính nó</h3><p>Hub là một project trong hệ thống: có SBOM, Renovate, <code>composer audit</code> và owner.</p></div>
+</div>
+</section>
+
+<section id="deployment">
+<div class="sec-head"><p class="ve-label caps">Operations</p><h2>Một ứng dụng Laravel, worker chạy riêng, scan ở môi trường khác</h2></div>
+<figure><div class="frame"><svg class="ve-svg" viewBox="0 0 1040 440" role="img" aria-label="Trình duyệt gọi Laravel web với Filament. Web và worker dùng PostgreSQL. Worker gọi scanner runner và Dependency-Track ở môi trường riêng.">
+<rect class="ve-bnd" x="300" y="25" width="410" height="385" rx="6"/><text class="ve-bnd-t" x="320" y="49">DỊCH VỤ THƯỜNG TRỰC</text>
+<rect class="ve-bnd" x="750" y="25" width="265" height="385" rx="6"/><text class="ve-bnd-t" x="770" y="49">MÔI TRƯỜNG RIÊNG</text>
+<path class="ve-e" d="M260 105H340"/><text class="ve-el" x="300" y="89">HTTPS</text>
+<path class="ve-e" d="M500 135V185"/><text class="ve-el r" x="514" y="163">lưu nghiệp vụ</text>
+<path class="ve-e" d="M500 300V255"/><text class="ve-el r" x="514" y="282">lấy job / lưu kết quả</text>
+<path class="ve-e" d="M660 330H728V105H780"/><text class="ve-el r" x="733" y="184">gọi scan</text>
+<path class="ve-e" d="M660 350H780"/><text class="ve-el" x="720" y="337">API</text>
+<g class="ve-n"><rect class="sh" x="35" y="75" width="225" height="60" rx="5"/><text x="147" y="95">Trình duyệt</text><text class="sub" x="147" y="118">qua VPN · SSO</text></g>
+<g class="ve-n"><rect class="sh" x="340" y="75" width="320" height="60" rx="5"/><text x="500" y="95">Laravel web</text><text class="sub" x="500" y="118">Filament · ingest API</text></g>
+<g class="ve-n"><path class="sh" d="M340 200V242C340 258 660 258 660 242V200Z"/><ellipse class="sh lid" cx="500" cy="200" rx="160" ry="13"/><text x="500" y="220">PostgreSQL</text><text class="sub" x="500" y="242">Dữ liệu + bảng queue</text></g>
+<g class="ve-n is-key"><rect class="sh" x="340" y="300" width="320" height="70" rx="5"/><text x="500" y="322">Queue worker + Scheduler</text><text class="sub" x="500" y="347">queue:work · schedule:run</text></g>
+<g class="ve-n"><rect class="sh" x="780" y="75" width="205" height="60" rx="5"/><text x="882" y="95">Scanner runner</text><text class="sub" x="882" y="118">CI hoặc job theo lịch</text></g>
+<g class="ve-n"><rect class="sh" x="780" y="300" width="205" height="70" rx="5"/><text x="882" y="322">Dependency-Track</text><text class="sub" x="882" y="347">Sizing riêng</text></g>
+</svg></div><figcaption><span class="fig-n">Hình M</span>Web và worker là hai tiến trình của cùng một codebase; scan nặng không chạy trên máy phục vụ dashboard.</figcaption></figure>
+<div class="grid-three">
+<div class="brief"><span class="tag">TÁI SỬ DỤNG</span><h3>Inventory theo digest</h3><p>Nhiều deployment dùng cùng artifact chia sẻ inventory và kết quả. Khi advisory thay đổi, phân tích lại dữ liệu đã lưu.</p></div>
+<div class="brief"><span class="tag">GIỚI HẠN TẢI</span><h3>Queue hấp thụ đợt scan</h3><p>Giới hạn scan đồng thời. Tránh clone và build lại toàn bộ repository cho mỗi lần kiểm tra.</p></div>
+<div class="brief"><span class="tag">VÒNG ĐỜI DỮ LIỆU</span><h3>Giữ bằng chứng cần dùng</h3><p>Đặt retention cho log và kết quả thô. Tính cả database, Dependency-Track và phút CI khi tính chi phí.</p></div>
+</div>
+<div class="note"><b>Chi phí chưa có số đo</b><p>Chưa có benchmark hoặc báo giá hạ tầng. Cần đo CPU/RAM đỉnh, độ dài queue, thời gian phân tích, dung lượng dữ liệu và RAM của Dependency-Track trong pilot.</p></div>
+</section>
+
+<section id="roadmap">
+<div class="sec-head"><p class="ve-label caps">Roadmap</p><h2>Mỗi giai đoạn tự dùng được; giai đoạn 0 đã bắt được tin như PHP 20/10</h2></div>
+<div class="roadmap">
+<div class="ph now"><span class="tag">GĐ 0 · TUẦN 1–2</span><h3>Tin sớm + runtime</h3><ul><li>Watcher php.net, Laravel, Node.js</li><li>Collector dạng script: OS, PHP, commit</li><li>Quy tắc patch mới nhất + EOL</li><li>Google Chat + heartbeat</li></ul><p class="catch"><b>Bắt được:</b> thông báo sớm chưa có CVE; PHP chậm patch hoặc EOL.</p></div>
+<div class="ph"><span class="tag">GĐ 1 · TUẦN 3–6</span><h3>Dependency</h3><ul><li>CI tạo SBOM → Dependency-Track</li><li>Finding trong Filament theo team</li><li>Google SSO, policy theo team</li><li>Renovate cho các repo</li></ul><p class="catch"><b>Bắt được:</b> lỗ hổng trong package Composer và npm.</p></div>
+<div class="ph"><span class="tag">GĐ 2 · TUẦN 7–10</span><h3>Hạ tầng + quy trình</h3><ul><li>ECS digest qua AWS API</li><li>Collector Go cho server</li><li>Ưu tiên, gộp tin, SLA, Jira</li><li>Chấp nhận rủi ro có hạn</li></ul><p class="catch"><b>Bắt được:</b> lỗ hổng OS / container; finding quá SLA.</p></div>
+<div class="ph"><span class="tag">GĐ 3 · SAU PILOT</span><h3>AI + báo cáo</h3><ul><li>AI phân loại và tóm tắt tin tiếng Việt</li><li>AI chỉ đề xuất, không đổi trạng thái</li><li>Báo cáo MTTR, tỷ lệ đạt SLA</li></ul><p class="catch"><b>Bắt được:</b> tin dài, khó đọc; xu hướng vá chậm theo team.</p></div>
+</div>
+<p class="foot">Thời gian là ước lượng cho một người làm với AI; điều chỉnh sau giai đoạn 0. Nội dung AI đọc từ nguồn tin là dữ liệu không tin cậy, nên AI không có quyền đóng finding, merge PR hay truy cập production.</p>
+</section>
+
+<section id="decisions">
+<div class="sec-head"><p class="ve-label caps">Decisions</p><h2>Stack đã chốt; công cụ phân tích và ngưỡng còn chờ pilot</h2></div>
+<div class="ve-table wide-table"><table><thead><tr><th>Hạng mục</th><th>Trạng thái</th><th>Việc tiếp theo</th></tr></thead><tbody>
+<tr><td>Laravel + Filament</td><td><span class="chip ok">Đã chốt</span></td><td>Một codebase; web và worker là hai tiến trình.</td></tr>
+<tr><td>PostgreSQL + queue <code>database</code></td><td><span class="chip ok">Đề xuất</span></td><td>Kiểm chứng retry, timeout, chống chạy trùng; chuyển Redis + Horizon khi cần.</td></tr>
+<tr><td>Dependency-Track (phương án A)</td><td><span class="chip warn">Chờ xác nhận</span></td><td>Đo RAM và thời gian phân tích trong pilot; phương án B làm dự phòng.</td></tr>
+<tr><td>Hub giữ trạng thái finding</td><td><span class="chip ok">Đề xuất</span></td><td>Đồng bộ trạng thái “Không ảnh hưởng” và “Chấp nhận rủi ro” sang Dependency-Track qua API.</td></tr>
+<tr><td>Quy tắc runtime PHP</td><td><span class="chip ok">Đề xuất</span></td><td>Dùng API releases của php.net và endoflife.date; kiểm tra với các service hiện có.</td></tr>
+<tr><td>Thu thập production</td><td><span class="chip">Theo hạ tầng</span></td><td>Server: script → Go collector. ECS: SBOM + digest + AWS API.</td></tr>
+<tr><td>OS / host scanner</td><td><span class="chip">Chưa chốt công cụ</span></td><td>Chọn Trivy / Inspector / Wazuh theo phạm vi thực tế.</td></tr>
+<tr><td>Ngưỡng ưu tiên / SLA</td><td><span class="chip warn">Chốt trong pilot</span></td><td>Bắt đầu với bảng đề xuất; đo số tin mỗi tuần mỗi team.</td></tr>
+<tr><td>Hosting / sizing / retention</td><td><span class="chip warn">Chưa có số đo</span></td><td>Đo pilot trước khi cam kết tài nguyên và tốc độ.</td></tr>
+</tbody></table></div>
+<div class="grid-two">
+<div class="brief"><span class="tag">PILOT / RUNTIME</span><h3>PHP có thông báo mới</h3><p>Nhận tin sớm; phân biệt chờ thông tin và xác nhận ảnh hưởng; báo đúng service chậm patch.</p></div>
+<div class="brief"><span class="tag">PILOT / DEPENDENCY</span><h3>Package có advisory</h3><p>SBOM được nhận, phát hiện component, ánh xạ đúng deployment và chuyển cảnh báo đến team.</p></div>
+<div class="brief"><span class="tag">PILOT / OS</span><h3>Package hệ thống có lỗi</h3><p>Inventory và scanner nhìn đúng host/container, không báo sai vì bản vá ngược của distro.</p></div>
+<div class="brief"><span class="tag">PILOT / HEARTBEAT</span><h3>Cố tình làm hỏng một khâu</h3><p>Tắt watcher hoặc đổi webhook sai; cảnh báo phải đến trong ngưỡng đã đặt.</p></div>
+</div>
+<p class="foot">Laravel + Filament được anh xác nhận ngày 23/10/2026. Các điểm “đề xuất” còn lại chưa được phê duyệt triển khai. Bản này không tự thực hiện cài đặt, scan hoặc gửi thông báo.</p>
+</section>
+
+<section class="sources" id="sources" aria-label="Nguồn và ghi chú">
+<div class="sec-head"><p class="ve-label caps">Source</p><h2>Tổng hợp từ hai phiên trao đổi và tài liệu công cụ</h2></div>
+<p><a href="https://chatgpt.com/share/6adad3e9-43f0-83ec-9551-f01e64bf7527" target="_blank" rel="noopener">Session “Đề xuất giám sát bảo mật”</a> — nguồn của v1: kiến trúc, collector, hai phương án Dependency-Track.</p>
+<p>Review thiết kế trong phiên Claude Code ngày 23/10/2026 — nguồn của v2: đổi stack sang Laravel + Filament và 9 điểm bổ sung.</p>
+<p>Tham khảo: <a href="https://www.php.net/releases/?json" target="_blank" rel="noopener">php.net releases JSON</a> · <a href="https://endoflife.date/php" target="_blank" rel="noopener">endoflife.date/php</a> · <a href="https://docs.dependencytrack.org/" target="_blank" rel="noopener">Dependency-Track docs</a> · <a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener">CISA KEV</a> · <a href="https://www.first.org/epss/" target="_blank" rel="noopener">FIRST EPSS</a></p>
+<p class="foot">Sơ đồ diễn giải đề xuất, không phải tài liệu triển khai đã được kiểm chứng. Bản v1 được lưu tại <code>project-security-manager.v1.html</code>.</p>
+</section>
+</main></div>
+<script>
+const entries=document.querySelectorAll('main section[id],header[id]');const links=document.querySelectorAll('.toc a');const observer=new IntersectionObserver(items=>{for(const item of items){if(item.isIntersecting){links.forEach(a=>a.setAttribute('aria-current',String(a.hash==='#'+item.target.id)));try{history.replaceState(null,'','#'+item.target.id)}catch(e){}}}},{rootMargin:'-8% 0px -78% 0px'});entries.forEach(s=>observer.observe(s));
+</script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="vi" data-theme="graphite">
+    <head>
+        <meta charset="utf-8" />
+        <script>
+            try {
+                document.documentElement.lang =
+                    new URLSearchParams(location.search).get('lang') || localStorage.getItem('psm-lang') || 'vi';
+            } catch (error) {
+                document.documentElement.lang = 'vi';
+            }
+        </script>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>So sánh tone màu — Security Manager</title>
+        <link rel="stylesheet" href="styles.css" />
+        <style>
+            .tone-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 24px;
+            }
+
+            .tone {
+                overflow: hidden;
+            }
+
+            .tone-frame {
+                position: relative;
+                height: 360px;
+                overflow: hidden;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .tone-frame iframe {
+                width: 1440px;
+                height: 1000px;
+                border: 0;
+                transform: scale(var(--scale, 0.4));
+                transform-origin: 0 0;
+                pointer-events: none;
+            }
+
+            .tone-meta {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 14px 20px;
+            }
+
+            .tone-meta p {
+                margin-top: 2px;
+                color: var(--text-2);
+                font-size: 13px;
+            }
+
+            .chips {
+                display: flex;
+                gap: 4px;
+            }
+
+            .chips i {
+                width: 16px;
+                height: 16px;
+                border: 1px solid rgba(0, 0, 0, 0.08);
+                border-radius: 4px;
+            }
+
+            @media (max-width: 900px) {
+                .tone-grid {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main class="page" style="max-width: 1280px">
+            <header class="page-header">
+                <div>
+                    <h1>Chọn tone màu</h1>
+                    <p>Cùng một màn Tổng quan với 4 tone. Bấm một tone để mở prototype với tone đó.</p>
+                </div>
+                <div class="actions" data-lang-slot></div>
+            </header>
+
+            <div class="tone-grid">
+                <a class="card tone" href="dashboard.html?theme=graphite">
+                    <div class="tone-frame"><iframe src="dashboard.html?theme=graphite&embed" title="Graphite" tabindex="-1" loading="lazy"></iframe></div>
+                    <div class="tone-meta">
+                        <div><strong>Graphite</strong><p>Trắng – đen, kiểu Vercel / Linear. Ít màu nhất. Filament: primary Zinc, gray Zinc.</p></div>
+                        <div class="chips"><i style="background: #18181b"></i><i style="background: #e4e4e7"></i><i style="background: #fafafa"></i></div>
+                    </div>
+                </a>
+                <a class="card tone" href="dashboard.html?theme=ocean">
+                    <div class="tone-frame"><iframe src="dashboard.html?theme=ocean&embed" title="Ocean" tabindex="-1" loading="lazy"></iframe></div>
+                    <div class="tone-meta">
+                        <div><strong>Ocean</strong><p>Xanh dương trên nền slate, kiểu GitHub / Stripe. Filament: primary Blue, gray Slate.</p></div>
+                        <div class="chips"><i style="background: #2563eb"></i><i style="background: #e2e8f0"></i><i style="background: #f8fafc"></i></div>
+                    </div>
+                </a>
+                <a class="card tone" href="dashboard.html?theme=forest">
+                    <div class="tone-frame"><iframe src="dashboard.html?theme=forest&embed" title="Forest" tabindex="-1" loading="lazy"></iframe></div>
+                    <div class="tone-meta">
+                        <div><strong>Forest</strong><p>Teal trên nền stone ấm, kiểu Supabase. Filament: primary Teal, gray Stone.</p></div>
+                        <div class="chips"><i style="background: #0f766e"></i><i style="background: #e7e5e4"></i><i style="background: #fafaf9"></i></div>
+                    </div>
+                </a>
+                <a class="card tone" href="dashboard.html?theme=night">
+                    <div class="tone-frame"><iframe src="dashboard.html?theme=night&embed" title="Night" tabindex="-1" loading="lazy"></iframe></div>
+                    <div class="tone-meta">
+                        <div><strong>Night</strong><p>Dark mode, nhấn indigo, kiểu Linear. Filament: dark mode + primary Indigo.</p></div>
+                        <div class="chips"><i style="background: #4f46e5"></i><i style="background: #26262b"></i><i style="background: #09090b"></i></div>
+                    </div>
+                </a>
+            </div>
+        </main>
+        <script src="i18n.js"></script>
+        <script>
+            document.querySelector('[data-lang-slot]').innerHTML = I18N.switchMarkup();
+            I18N.bindSwitches();
+            document.addEventListener('i18n:change', (event) => {
+                document.querySelectorAll('.tone-frame iframe').forEach((frame) => {
+                    const url = new URL(frame.getAttribute('src'), location.href);
+                    url.searchParams.set('lang', event.detail);
+                    frame.src = `${url.pathname.split('/').pop()}${url.search}`;
+                });
+            });
+            I18N.init();
+
+            const fit = () =>
+                document.querySelectorAll('.tone-frame').forEach((frame) => {
+                    frame.style.setProperty('--scale', String(frame.clientWidth / 1440));
+                    frame.style.height = `${Math.round((frame.clientWidth / 1440) * 900)}px`;
+                });
+            addEventListener('resize', fit);
+            fit();
+        </script>
+    </body>
+</html>

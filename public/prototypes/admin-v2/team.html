@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Commerce — Security Manager</title>
+        <script>
+            try {
+                const params = new URLSearchParams(location.search);
+                document.documentElement.dataset.theme = params.get('theme') || localStorage.getItem('psm-theme') || 'graphite';
+                document.documentElement.lang = params.get('lang') || localStorage.getItem('psm-lang') || 'vi';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'graphite';
+            }
+        </script>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body
+        data-page="teams"
+        data-states='{"target":"#webhook","label":"Webhook Google Chat","options":{"ready":"Hoạt động","error":"Gửi lỗi","empty":"Chưa cấu hình"}}'
+    >
+        <main class="page">
+            <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="teams.html">Teams</a><span>/</span><span>Commerce</span></nav>
+            <header class="page-header">
+                <div>
+                    <h1>Commerce</h1>
+                    <p>6 thành viên · 2 project · 6 finding đang mở</p>
+                </div>
+                <div class="actions">
+                    <button class="btn secondary" type="button" data-loading="Đã gửi tin thử tới space commerce-security.">Gửi tin thử</button>
+                </div>
+            </header>
+
+            <div class="tabs-row">
+                <div class="tabs" role="tablist" data-tabs="team" aria-label="Team">
+                    <button class="tab" type="button" role="tab" data-tab="settings">Cài đặt</button>
+                    <button class="tab" type="button" role="tab" data-tab="members">Thành viên <span class="count">6</span></button>
+                    <button class="tab" type="button" role="tab" data-tab="projects">Projects <span class="count">2</span></button>
+                </div>
+            </div>
+
+            <!-- Cài đặt -->
+            <section id="settings" data-panel="team">
+                <form class="card card-body" data-submit="Đã lưu cài đặt team Commerce." novalidate>
+                    <div class="section">
+                        <div class="section-head">
+                            <h2>Thông tin chung</h2>
+                            <p>Slug dùng trong URL. Đổi slug làm hỏng link cũ trong tin Chat.</p>
+                        </div>
+                        <div class="fields two">
+                            <div class="field">
+                                <label for="team-name">Tên team <span class="req">*</span></label>
+                                <input class="input" id="team-name" value="Commerce" required data-validate />
+                                <p class="error hidden" data-error="team-name">Nhập tên team.</p>
+                            </div>
+                            <div class="field">
+                                <label for="team-slug">Slug <span class="req">*</span></label>
+                                <input class="input mono" id="team-slug" value="commerce" required data-validate data-pattern="^[a-z0-9]+(-[a-z0-9]+)*$" />
+                                <p class="error hidden" data-error="team-slug">Chỉ dùng chữ thường, số và dấu gạch ngang.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section" id="webhook">
+                        <div class="section-head">
+                            <h2>Google Chat</h2>
+                            <p>Kênh cảnh báo chính. Một lỗ hổng ảnh hưởng nhiều service chỉ gửi một tin.</p>
+                        </div>
+                        <div class="fields">
+                            <div class="field" data-view="ready error">
+                                <label for="webhook-url">Webhook URL</label>
+                                <div class="input-row">
+                                    <input class="input mono" id="webhook-url" readonly value="https://chat.googleapis.com/v1/spaces/AAAA…/messages?key=••••" />
+                                    <button class="btn secondary" type="button" data-loading="Gửi thử thành công.">Gửi thử</button>
+                                    <button class="btn ghost" type="button" data-modal="webhook-modal">Thay</button>
+                                </div>
+                                <p class="help" data-view="ready"><span class="state success">Hoạt động</span> · tin gần nhất 08:00 hôm nay</p>
+                                <p class="help" data-view="error"><span class="state danger">Gửi lỗi 3 lần liên tiếp (HTTP 404)</span> · cảnh báo đang gửi qua email leo thang</p>
+                            </div>
+                            <div data-view="empty">
+                                <p class="muted" style="margin-bottom: 12px">Chưa có webhook. Team chỉ nhận cảnh báo qua email leo thang.</p>
+                                <button class="btn secondary" type="button" data-modal="webhook-modal">Thêm webhook</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-head">
+                            <h2>Khi nào gửi</h2>
+                            <p>Medium và Low luôn có trong bản tổng hợp hằng ngày.</p>
+                        </div>
+                        <div class="fields">
+                            <label class="toggle-row">
+                                <span><strong>Gửi ngay khi có Critical hoặc High</strong><span>Kể cả ngoài giờ làm việc</span></span>
+                                <input class="toggle" type="checkbox" checked />
+                            </label>
+                            <label class="toggle-row">
+                                <span><strong>Bản tổng hợp lúc 08:00</strong><span>Thứ Hai – Thứ Sáu</span></span>
+                                <input class="toggle" type="checkbox" checked />
+                            </label>
+                            <label class="toggle-row">
+                                <span><strong>Thông báo sớm từ hãng</strong><span>Ví dụ: php.net báo trước ngày phát hành bản vá</span></span>
+                                <input class="toggle" type="checkbox" checked />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <div class="section-head">
+                            <h2>Email leo thang</h2>
+                            <p>Dùng khi webhook lỗi, hoặc finding Critical quá SLA mà chưa ai nhận.</p>
+                        </div>
+                        <div class="fields">
+                            <div class="field">
+                                <label for="escalation">Email <span class="req">*</span></label>
+                                <input class="input" id="escalation" type="email" value="commerce-leads@example.com" required data-validate data-pattern="^[^@\s]+@[^@\s]+\.[^@\s]+$" />
+                                <p class="error hidden" data-error="escalation">Nhập email hợp lệ.</p>
+                                <p class="help">Nên dùng email nhóm thay vì email cá nhân.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="btn" type="submit">Lưu thay đổi</button>
+                        <button class="btn secondary" type="reset">Hủy</button>
+                        <span class="saved" data-saved></span>
+                    </div>
+                </form>
+
+                <section class="card card-body" style="margin-top: 24px">
+                    <div class="section" style="padding: 0">
+                        <div class="section-head">
+                            <h2>Xóa team</h2>
+                            <p>Chỉ xóa được khi team không còn project.</p>
+                        </div>
+                        <div>
+                            <button class="btn danger-ghost" type="button" disabled>Xóa team</button>
+                            <p class="help">Team còn 2 project. Chuyển project sang team khác trước.</p>
+                        </div>
+                    </div>
+                </section>
+            </section>
+
+            <!-- Thành viên -->
+            <section id="members" data-panel="team" hidden>
+                <div class="card">
+                    <header class="card-header">
+                        <div>
+                            <h2>Thành viên</h2>
+                            <p>Đăng nhập bằng tài khoản Google Workspace</p>
+                        </div>
+                        <button class="btn sm" type="button" data-modal="member-modal">Thêm thành viên</button>
+                    </header>
+                    <div class="table-wrap">
+                        <table class="min-table">
+                            <thead>
+                                <tr>
+                                    <th>Tên</th>
+                                    <th>Vai trò</th>
+                                    <th>Nhận cảnh báo</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="cell-title">Giang Nguyễn</span><span class="cell-sub">giang.nguyen@example.com</span></td>
+                                    <td>Tech lead</td>
+                                    <td><input class="toggle" type="checkbox" checked aria-label="Giang Nguyễn nhận cảnh báo" /></td>
+                                    <td class="right"><span class="faint text-sm">Bạn</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="cell-title">Minh Trần</span><span class="cell-sub">minh.tran@example.com</span></td>
+                                    <td>Developer</td>
+                                    <td><input class="toggle" type="checkbox" checked aria-label="Minh Trần nhận cảnh báo" /></td>
+                                    <td class="right"><button class="btn danger-ghost sm" type="button" data-modal="remove-modal">Xóa</button></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="cell-title">Lan Phạm</span><span class="cell-sub">lan.pham@example.com</span></td>
+                                    <td>Developer</td>
+                                    <td><input class="toggle" type="checkbox" checked aria-label="Lan Phạm nhận cảnh báo" /></td>
+                                    <td class="right"><button class="btn danger-ghost sm" type="button" data-modal="remove-modal">Xóa</button></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="cell-title">Hoàng Lê</span><span class="cell-sub">hoang.le@example.com</span></td>
+                                    <td>Developer</td>
+                                    <td><input class="toggle" type="checkbox" aria-label="Hoàng Lê nhận cảnh báo" /></td>
+                                    <td class="right"><button class="btn danger-ghost sm" type="button" data-modal="remove-modal">Xóa</button></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="cell-title">Thảo Vũ</span><span class="cell-sub">thao.vu@example.com</span></td>
+                                    <td>Developer</td>
+                                    <td><input class="toggle" type="checkbox" checked aria-label="Thảo Vũ nhận cảnh báo" /></td>
+                                    <td class="right"><button class="btn danger-ghost sm" type="button" data-modal="remove-modal">Xóa</button></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="cell-title">Quân Đỗ</span><span class="cell-sub">quan.do@example.com · chưa đăng nhập</span></td>
+                                    <td>Chỉ xem</td>
+                                    <td><input class="toggle" type="checkbox" aria-label="Quân Đỗ nhận cảnh báo" /></td>
+                                    <td class="right"><button class="btn danger-ghost sm" type="button" data-modal="remove-modal">Xóa</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Projects -->
+            <section id="projects" data-panel="team" hidden>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table class="min-table">
+                            <thead>
+                                <tr>
+                                    <th>Project</th>
+                                    <th>Repository</th>
+                                    <th class="right">Services</th>
+                                    <th class="right">Finding mở</th>
+                                    <th>Báo cáo gần nhất</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="clickable" data-href="project.html">
+                                    <td><a class="cell-title" href="project.html">Shop Platform</a></td>
+                                    <td class="mono muted">git.example.com/commerce/shop-platform</td>
+                                    <td class="right tabular">3</td>
+                                    <td class="right tabular">4</td>
+                                    <td class="muted">4 phút trước</td>
+                                </tr>
+                                <tr>
+                                    <td><a class="cell-title" href="#" data-toast="Prototype chỉ dựng Shop Platform.">Partner Portal</a></td>
+                                    <td class="mono muted">git.example.com/commerce/partner-portal</td>
+                                    <td class="right tabular">1</td>
+                                    <td class="right tabular">2</td>
+                                    <td class="muted">11 phút trước</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <div class="modal" id="member-modal">
+            <form class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="member-title" data-submit="Đã thêm thành viên." novalidate>
+                <div class="modal-head">
+                    <h2 id="member-title">Thêm thành viên</h2>
+                    <p>Chỉ thêm được tài khoản @example.com.</p>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <label for="member-email">Email <span class="req">*</span></label>
+                        <input class="input" id="member-email" type="email" placeholder="ten.ho@example.com" required data-validate data-pattern="^[^@\s]+@example\.com$" />
+                        <p class="error hidden" data-error="member-email">Email phải thuộc tên miền @example.com.</p>
+                    </div>
+                    <div class="field">
+                        <label for="member-role">Vai trò</label>
+                        <select class="input" id="member-role"><option>Developer</option><option>Tech lead</option><option>Chỉ xem</option></select>
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn secondary" type="button" data-close>Hủy</button>
+                    <button class="btn" type="submit">Thêm</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal" id="remove-modal">
+            <form class="modal-panel" role="alertdialog" aria-modal="true" aria-labelledby="remove-title" data-submit="Đã xóa thành viên khỏi team." style="width: min(420px, 100%)">
+                <div class="modal-head">
+                    <h2 id="remove-title">Xóa khỏi team?</h2>
+                    <p>Người này sẽ không còn thấy finding của Commerce. Lịch sử xử lý vẫn được giữ.</p>
+                </div>
+                <div class="modal-foot" style="padding-top: 20px">
+                    <button class="btn secondary" type="button" data-close>Hủy</button>
+                    <button class="btn danger" type="submit">Xóa</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal" id="webhook-modal">
+            <form class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="webhook-title" data-submit="Đã lưu webhook và gửi thử thành công." novalidate>
+                <div class="modal-head">
+                    <h2 id="webhook-title">Webhook Google Chat</h2>
+                    <p>Trong Google Chat: Space → Apps &amp; integrations → Webhooks.</p>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <label for="webhook-new">Webhook URL <span class="req">*</span></label>
+                        <input class="input mono" id="webhook-new" type="url" placeholder="https://chat.googleapis.com/v1/spaces/…" required data-validate data-pattern="^https://chat\.googleapis\.com/v1/spaces/.+" />
+                        <p class="error hidden" data-error="webhook-new">URL phải bắt đầu bằng https://chat.googleapis.com/v1/spaces/</p>
+                        <p class="help">Hệ thống gửi một tin thử trước khi lưu. Sau đó URL chỉ hiện một phần.</p>
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn secondary" type="button" data-close>Hủy</button>
+                    <button class="btn" type="submit">Gửi thử &amp; lưu</button>
+                </div>
+            </form>
+        </div>
+
+        <script src="i18n.js"></script>
+        <script src="app.js"></script>
+    </body>
+</html>

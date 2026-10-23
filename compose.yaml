@@ -1,0 +1,18 @@
+services:
+  pgsql:
+    image: postgres:17-alpine
+    ports:
+      - "${FORWARD_DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: "${DB_DATABASE:-psm}"
+      POSTGRES_USER: "${DB_USERNAME:-psm}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-secret}"
+    volumes:
+      - pgsql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USERNAME:-psm}", "-d", "${DB_DATABASE:-psm}"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgsql-data:

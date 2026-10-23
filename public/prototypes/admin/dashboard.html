@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="Prototype màn Tổng quan của Project Security Manager." />
+        <title>Tổng quan — Security Manager Prototype</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body data-page="dashboard" data-crumbs='[{"label":"Tổng quan"}]'>
+        <main class="page" id="dashboard" data-view-state="ready">
+            <header class="page-header">
+                <div class="page-title-group">
+                    <p class="eyebrow">Thứ Sáu, 23/10/2026 · cập nhật 09:42</p>
+                    <h1>Hôm nay cần làm gì</h1>
+                    <p class="page-description">
+                        Việc cần xử lý sắp theo hạn SLA. Mọi con số đều mở được danh sách đã lọc.
+                    </p>
+                </div>
+                <div class="page-actions">
+                    <button class="button secondary" type="button" data-loading-action="Đã gửi bản tổng hợp tới 3 team qua Google Chat.">
+                        Gửi bản tổng hợp ngay
+                    </button>
+                    <a class="button" href="#" data-prototype-action="Mở Findings inbox — thuộc vòng prototype sau.">Mở Findings</a>
+                </div>
+            </header>
+
+            <div class="proto-bar">
+                <span>Prototype · trạng thái hiển thị</span>
+                <div class="segmented" data-view-switcher="#dashboard">
+                    <button type="button" data-state="ready">Có dữ liệu</button>
+                    <button type="button" data-state="empty">Rỗng</button>
+                    <button type="button" data-state="loading">Đang tải</button>
+                    <button type="button" data-state="error">Lỗi</button>
+                    <button type="button" data-state="stale">Dữ liệu cũ</button>
+                </div>
+            </div>
+
+            <!-- Dữ liệu cũ: banner đỏ toàn trang vì hệ thống có thể đang im lặng. -->
+            <div class="notice danger" data-view="stale" style="margin-bottom: 18px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+                    <path d="M12 9.5v4M12 17h.01" />
+                </svg>
+                <div style="flex: 1">
+                    <strong>Hệ thống có thể đang im lặng vì lỗi.</strong>
+                    OSV API lỗi liên tục từ 07:40 hôm qua (26 giờ, ngưỡng 6 giờ). Lỗ hổng package mới sẽ không
+                    được phát hiện cho tới khi nguồn hoạt động lại. Số liệu bên dưới là của lần quét 07:40 ngày 22/10.
+                </div>
+                <button class="button small danger" type="button" data-loading-action="Đã xếp lịch chạy lại OSV API. Kết quả sẽ có trong vài phút.">
+                    Chạy lại nguồn
+                </button>
+            </div>
+
+            <section class="alert-banner" data-view="ready stale" aria-label="Thông báo sớm">
+                <span class="alert-banner-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                        <path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1Z" />
+                        <path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" />
+                    </svg>
+                </span>
+                <div>
+                    <p class="eyebrow">Thông báo sớm · php.net · 20/10/2026</p>
+                    <strong>PHP phát hành bản vá cho 2 lỗ hổng critical (CVSS 9.2) — 3 service chưa lên bản vá</strong>
+                    <span class="cell-meta">
+                        Phát hành 21/10/2026 lúc 14:00 UTC (21:00 giờ VN). 4 service chạy PHP:
+                        shop-api, partner-portal, hr-internal cần nâng bản vá; legacy-cms (PHP 8.1) đã hết hỗ trợ nên không có bản vá.
+                    </span>
+                </div>
+                <div class="button-row">
+                    <a class="button small secondary" href="#" data-prototype-action="Mở tin bảo mật php.net — thuộc vòng prototype sau.">Chi tiết tin</a>
+                    <a class="button small" href="#" data-prototype-action="Mở Findings lọc theo tin php.net 20/10.">Xem 4 service</a>
+                </div>
+            </section>
+
+            <!-- Hàng stat card: có dữ liệu / dữ liệu cũ. -->
+            <section class="stat-grid" data-view="ready stale" aria-label="Số liệu chính">
+                <a class="stat-card critical" href="#" data-prototype-action="Mở Findings: mức Critical, đang mở.">
+                    <span class="stat-card-label">Critical đang mở</span>
+                    <span class="stat-card-value">2</span>
+                    <span class="stat-card-foot">4 service bị ảnh hưởng</span>
+                </a>
+                <a class="stat-card high" href="#" data-prototype-action="Mở Findings: mức High, đang mở.">
+                    <span class="stat-card-label">High đang mở</span>
+                    <span class="stat-card-value">5</span>
+                    <span class="stat-card-foot">Hạn gần nhất còn 3 ngày</span>
+                </a>
+                <a class="stat-card overdue is-alert" href="#" data-prototype-action="Mở Findings: quá SLA.">
+                    <span class="stat-card-label">Quá SLA</span>
+                    <span class="stat-card-value">2</span>
+                    <span class="stat-card-foot">1 Critical · 1 High</span>
+                </a>
+                <a class="stat-card eol" href="#" data-prototype-action="Mở Runtimes: lọc Hết hỗ trợ.">
+                    <span class="stat-card-label">Runtime hết hỗ trợ</span>
+                    <span class="stat-card-value">3</span>
+                    <span class="stat-card-foot">PHP 8.1 · Node.js 20 · Ruby 3.2</span>
+                </a>
+                <a class="stat-card offline" href="#" data-prototype-action="Mở Assets: mất liên lạc.">
+                    <span class="stat-card-label">Asset mất liên lạc</span>
+                    <span class="stat-card-value">1</span>
+                    <span class="stat-card-foot">booking-worker-02 · 26 giờ</span>
+                </a>
+                <a class="stat-card source" href="#" data-prototype-action="Mở Sức khỏe hệ thống.">
+                    <span class="stat-card-label">Nguồn dữ liệu</span>
+                    <span class="stat-card-value">7/8</span>
+                    <span class="stat-card-foot">1 nguồn đang lỗi</span>
+                </a>
+            </section>
+
+            <!-- Hàng stat card: rỗng (không còn việc). -->
+            <section class="stat-grid hidden" data-view="empty" aria-label="Số liệu chính">
+                <a class="stat-card calm" href="#" data-prototype-action="Mở Findings: Critical.">
+                    <span class="stat-card-label">Critical đang mở</span>
+                    <span class="stat-card-value">0</span>
+                    <span class="stat-card-foot">Không có</span>
+                </a>
+                <a class="stat-card calm" href="#" data-prototype-action="Mở Findings: High.">
+                    <span class="stat-card-label">High đang mở</span>
+                    <span class="stat-card-value">0</span>
+                    <span class="stat-card-foot">Không có</span>
+                </a>
+                <a class="stat-card calm" href="#" data-prototype-action="Mở Findings: quá SLA.">
+                    <span class="stat-card-label">Quá SLA</span>
+                    <span class="stat-card-value">0</span>
+                    <span class="stat-card-foot">Không có</span>
+                </a>
+                <a class="stat-card calm" href="#" data-prototype-action="Mở Runtimes.">
+                    <span class="stat-card-label">Runtime hết hỗ trợ</span>
+                    <span class="stat-card-value">0</span>
+                    <span class="stat-card-foot">Không có</span>
+                </a>
+                <a class="stat-card offline" href="#" data-prototype-action="Mở Assets: thiếu dữ liệu.">
+                    <span class="stat-card-label">Asset thiếu dữ liệu</span>
+                    <span class="stat-card-value">1</span>
+                    <span class="stat-card-foot">Không được tính là Đạt</span>
+                </a>
+                <a class="stat-card calm" href="#" data-prototype-action="Mở Sức khỏe hệ thống.">
+                    <span class="stat-card-label">Nguồn dữ liệu</span>
+                    <span class="stat-card-value">8/8</span>
+                    <span class="stat-card-foot">Tất cả ổn định</span>
+                </a>
+            </section>
+
+            <!-- Nội dung chính: có dữ liệu / dữ liệu cũ / rỗng. -->
+            <div class="columns" data-view="ready stale empty">
+                <section class="panel" aria-labelledby="todo-heading">
+                    <header class="panel-header">
+                        <div>
+                            <h2 id="todo-heading">Việc cần làm</h2>
+                            <span class="cell-meta">Sắp theo hạn SLA · <span class="kbd">j</span> <span class="kbd">k</span> di chuyển, <span class="kbd">Enter</span> mở</span>
+                        </div>
+                        <div class="segmented" role="group" aria-label="Phạm vi">
+                            <button type="button" aria-pressed="true" data-prototype-action="Đang xem: tất cả team.">Tất cả team</button>
+                            <button type="button" aria-pressed="false" data-prototype-action="Lọc theo team của bạn (Commerce).">Team của tôi</button>
+                        </div>
+                    </header>
+
+                    <ul class="task-list" data-keyboard-list data-view="ready stale">
+                        <li class="task-row" data-keyboard-row>
+                            <span class="task-sev"><span class="sev critical">Critical</span></span>
+                            <div>
+                                <a class="task-title" href="#" data-prototype-action="Mở chi tiết finding DEMO-GHSA-0002.">DEMO-GHSA-0002 · guzzlehttp/guzzle 7.4.5</a>
+                                <div class="task-meta">
+                                    <span class="tag">shop-api</span>
+                                    <span class="tag env-production">production</span>
+                                    <span>Commerce</span><span class="dot"></span>
+                                    <span>Package có lỗ hổng</span>
+                                </div>
+                            </div>
+                            <span class="sla overdue">Quá 6 giờ</span>
+                            <span class="task-state"><span class="status warning">Đã nhận</span></span>
+                            <a class="button small secondary task-action" href="#" data-prototype-action="Mở chi tiết finding DEMO-GHSA-0002.">Xử lý</a>
+                        </li>
+                        <li class="task-row" data-keyboard-row>
+                            <span class="task-sev"><span class="sev critical">Critical</span></span>
+                            <div>
+                                <a class="task-title" href="#" data-prototype-action="Mở chi tiết finding PHP thiếu bản vá 21/10.">PHP thiếu bản vá bảo mật 21/10/2026</a>
+                                <div class="task-meta">
+                                    <span class="tag">shop-api · 8.3</span>
+                                    <span class="tag">partner-portal · 8.4</span>
+                                    <span class="tag">hr-internal · 8.2</span>
+                                    <span>Commerce, Internal Tools</span><span class="dot"></span>
+                                    <span>Runtime thiếu bản vá</span>
+                                </div>
+                            </div>
+                            <span class="sla soon">Còn 14 giờ</span>
+                            <span class="task-state"><span class="status danger">Mới</span></span>
+                            <a class="button small secondary task-action" href="#" data-prototype-action="Mở chi tiết finding PHP thiếu bản vá 21/10.">Xử lý</a>
+                        </li>
+                        <li class="task-row" data-keyboard-row>
+                            <span class="task-sev"><span class="sev high">High</span></span>
+                            <div>
+                                <a class="task-title" href="#" data-prototype-action="Mở chi tiết finding Node.js 20 hết hỗ trợ.">Node.js 20 đã hết hỗ trợ</a>
+                                <div class="task-meta">
+                                    <span class="tag">realtime-gateway · 20.18.0</span>
+                                    <span class="tag env-production">production</span>
+                                    <span>Booking</span><span class="dot"></span>
+                                    <span>Runtime hết hỗ trợ</span>
+                                </div>
+                            </div>
+                            <span class="sla overdue">Quá 2 ngày</span>
+                            <span class="task-state"><span class="status warning">Đã nhận</span></span>
+                            <a class="button small secondary task-action" href="#" data-prototype-action="Mở chi tiết finding Node.js 20 hết hỗ trợ.">Xử lý</a>
+                        </li>
+                        <li class="task-row" data-keyboard-row>
+                            <span class="task-sev"><span class="sev high">High</span></span>
+                            <div>
+                                <a class="task-title" href="#" data-prototype-action="Mở chi tiết finding DEMO-CVE-0003.">DEMO-CVE-0003 · rack 2.2.8</a>
+                                <div class="task-meta">
+                                    <span class="tag">booking-api</span>
+                                    <span class="tag env-production">production</span>
+                                    <span>Booking</span><span class="dot"></span>
+                                    <span>Package có lỗ hổng</span>
+                                </div>
+                            </div>
+                            <span class="sla soon">Còn 3 ngày</span>
+                            <span class="task-state"><span class="status danger">Mới</span></span>
+                            <a class="button small secondary task-action" href="#" data-prototype-action="Mở chi tiết finding DEMO-CVE-0003.">Xử lý</a>
+                        </li>
+                        <li class="task-row" data-keyboard-row>
+                            <span class="task-sev"><span class="sev high">High</span></span>
+                            <div>
+                                <a class="task-title" href="project.html#services">PHP 8.1 đã hết hỗ trợ</a>
+                                <div class="task-meta">
+                                    <span class="tag">legacy-cms · 8.1.29</span>
+                                    <span class="tag env-production">production</span>
+                                    <span>Commerce</span><span class="dot"></span>
+                                    <span>Runtime hết hỗ trợ</span>
+                                </div>
+                            </div>
+                            <span class="sla">Còn 5 ngày</span>
+                            <span class="task-state"><span class="status warning">Đã nhận</span></span>
+                            <a class="button small secondary task-action" href="project.html#services">Xem service</a>
+                        </li>
+                        <li class="task-row" data-keyboard-row>
+                            <span class="task-sev"><span class="sev medium">Medium</span></span>
+                            <div>
+                                <a class="task-title" href="#" data-prototype-action="Mở chi tiết finding DEMO-CVE-0004.">DEMO-CVE-0004 · axios 1.6.2</a>
+                                <div class="task-meta">
+                                    <span class="tag">shop-web</span>
+                                    <span class="tag env-production">production</span>
+                                    <span class="tag env-staging">staging</span>
+                                    <span>Commerce</span><span class="dot"></span>
+                                    <span>Package có lỗ hổng</span>
+                                </div>
+                            </div>
+                            <span class="sla">Còn 21 ngày</span>
+                            <span class="task-state"><span class="status danger">Mới</span></span>
+                            <a class="button small secondary task-action" href="#" data-prototype-action="Mở chi tiết finding DEMO-CVE-0004.">Xử lý</a>
+                        </li>
+                    </ul>
+
+                    <div class="empty-state hidden" data-view="empty">
+                        <span class="empty-state-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+                        </span>
+                        <strong>Không còn việc cần làm</strong>
+                        Mọi finding đã được xử lý. Lần quét gần nhất 12 phút trước.
+                        <a class="button small secondary" href="#" data-prototype-action="Mở Assets: thiếu dữ liệu.">Kiểm tra 1 asset thiếu dữ liệu</a>
+                    </div>
+
+                    <footer class="panel-footer" data-view="ready stale">
+                        <span>Hiển thị 6 / 14 finding đang mở</span>
+                        <a class="link" href="#" data-prototype-action="Mở Findings inbox.">Mở toàn bộ trong Findings →</a>
+                    </footer>
+                </section>
+
+                <div class="stack">
+                    <section class="panel" aria-labelledby="team-heading" data-view="ready stale">
+                        <header class="panel-header">
+                            <div>
+                                <h2 id="team-heading">Finding đang mở theo team</h2>
+                                <span class="cell-meta">Đếm theo service bị ảnh hưởng</span>
+                            </div>
+                            <a class="link" href="teams.html" style="font-size: 12px">Teams</a>
+                        </header>
+                        <div class="panel-body">
+                            <ul class="meter-list">
+                                <li class="meter-row">
+                                    <strong>Commerce</strong>
+                                    <span class="meter-track" aria-label="3 Critical, 1 High, 2 Medium">
+                                        <span class="critical" style="width: 50%"></span>
+                                        <span class="high" style="width: 17%"></span>
+                                        <span class="medium" style="width: 33%"></span>
+                                    </span>
+                                    <span class="tabular cell-right">6</span>
+                                </li>
+                                <li class="meter-row">
+                                    <strong>Booking</strong>
+                                    <span class="meter-track" aria-label="3 High, 2 Medium, 1 Low">
+                                        <span class="high" style="width: 50%"></span>
+                                        <span class="medium" style="width: 33%"></span>
+                                        <span class="low" style="width: 17%"></span>
+                                    </span>
+                                    <span class="tabular cell-right">6</span>
+                                </li>
+                                <li class="meter-row">
+                                    <strong>Internal Tools</strong>
+                                    <span class="meter-track" aria-label="1 Critical, 1 Medium" style="max-width: 33%">
+                                        <span class="critical" style="width: 50%"></span>
+                                        <span class="medium" style="width: 50%"></span>
+                                    </span>
+                                    <span class="tabular cell-right">2</span>
+                                </li>
+                            </ul>
+                            <div class="legend">
+                                <span><i style="background: var(--danger)"></i>Critical</span>
+                                <span><i style="background: #d9773f"></i>High</span>
+                                <span><i style="background: #6f97c0"></i>Medium</span>
+                                <span><i style="background: #b3b9c9"></i>Low</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel" aria-labelledby="source-heading">
+                        <header class="panel-header">
+                            <div>
+                                <h2 id="source-heading">Nguồn dữ liệu</h2>
+                                <span class="cell-meta">Nguồn lỗi luôn nằm trên cùng</span>
+                            </div>
+                            <a class="link" href="#" style="font-size: 12px" data-prototype-action="Mở Sức khỏe hệ thống.">Chi tiết</a>
+                        </header>
+                        <ul class="source-list">
+                            <li class="source-row" data-view="ready">
+                                <span class="pulse warning"></span>
+                                <span><strong>nodejs.org · vulnerability feed</strong><span class="muted">Timeout · thành công gần nhất 3 giờ trước (ngưỡng 6 giờ)</span></span>
+                                <button class="button small secondary" type="button" data-loading-action="nodejs.org feed: chạy lại thành công.">Chạy lại</button>
+                            </li>
+                            <li class="source-row" data-view="stale">
+                                <span class="pulse danger"></span>
+                                <span><strong>OSV API</strong><span class="muted">HTTP 503 · thành công gần nhất 26 giờ trước (ngưỡng 6 giờ)</span></span>
+                                <button class="button small danger" type="button" data-loading-action="OSV API vẫn trả lỗi 503. Đã gửi cảnh báo cho admin.|danger">Chạy lại</button>
+                            </li>
+                            <li class="source-row">
+                                <span class="pulse"></span>
+                                <span><strong>php.net · releases &amp; feed</strong><span class="muted">Thành công 12 phút trước</span></span>
+                                <span class="chip success" data-icon="check">Ổn định</span>
+                            </li>
+                            <li class="source-row" data-view="ready empty">
+                                <span class="pulse"></span>
+                                <span><strong>OSV API</strong><span class="muted">Thành công 25 phút trước</span></span>
+                                <span class="chip success" data-icon="check">Ổn định</span>
+                            </li>
+                            <li class="source-row">
+                                <span class="pulse"></span>
+                                <span><strong>rubysec advisory-db</strong><span class="muted">Thành công 2 giờ trước</span></span>
+                                <span class="chip success" data-icon="check">Ổn định</span>
+                            </li>
+                            <li class="source-row" data-view="stale empty">
+                                <span class="pulse"></span>
+                                <span><strong>nodejs.org · vulnerability feed</strong><span class="muted">Thành công 18 phút trước</span></span>
+                                <span class="chip success" data-icon="check">Ổn định</span>
+                            </li>
+                        </ul>
+                        <footer class="panel-footer">
+                            <span>+ 3 nguồn ổn định khác</span>
+                        </footer>
+                    </section>
+
+                    <section class="panel" aria-labelledby="eol-heading" data-view="ready stale">
+                        <header class="panel-header">
+                            <div>
+                                <h2 id="eol-heading">Runtime hết hỗ trợ</h2>
+                                <span class="cell-meta">Không còn bản vá bảo mật</span>
+                            </div>
+                        </header>
+                        <ul class="source-list">
+                            <li class="source-row">
+                                <span class="pulse danger"></span>
+                                <span><strong>legacy-cms</strong><span class="muted">PHP 8.1.29 · EOL 31/12/2025 · Commerce</span></span>
+                                <a class="button small secondary" href="project.html#services">Mở</a>
+                            </li>
+                            <li class="source-row">
+                                <span class="pulse danger"></span>
+                                <span><strong>realtime-gateway</strong><span class="muted">Node.js 20.18.0 · EOL 30/04/2026 · Booking</span></span>
+                                <a class="button small secondary" href="#" data-prototype-action="Mở service realtime-gateway.">Mở</a>
+                            </li>
+                            <li class="source-row">
+                                <span class="pulse danger"></span>
+                                <span><strong>booking-worker</strong><span class="muted">Ruby 3.2.6 · EOL 31/03/2026 · Booking</span></span>
+                                <a class="button small secondary" href="#" data-prototype-action="Mở service booking-worker.">Mở</a>
+                            </li>
+                        </ul>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Đang tải. -->
+            <div class="hidden" data-view="loading" aria-busy="true" aria-label="Đang tải">
+                <div class="stat-grid">
+                    <div class="stat-card"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 30%; height: 26px"></span><span class="skeleton" style="width: 80%"></span></div>
+                    <div class="stat-card"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 30%; height: 26px"></span><span class="skeleton" style="width: 80%"></span></div>
+                    <div class="stat-card"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 30%; height: 26px"></span><span class="skeleton" style="width: 80%"></span></div>
+                    <div class="stat-card"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 30%; height: 26px"></span><span class="skeleton" style="width: 80%"></span></div>
+                    <div class="stat-card"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 30%; height: 26px"></span><span class="skeleton" style="width: 80%"></span></div>
+                    <div class="stat-card"><span class="skeleton" style="width: 60%"></span><span class="skeleton" style="width: 30%; height: 26px"></span><span class="skeleton" style="width: 80%"></span></div>
+                </div>
+                <section class="panel">
+                    <header class="panel-header"><span class="skeleton" style="width: 160px; height: 16px"></span></header>
+                    <div class="skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>
+                    <div class="skeleton-row"><span class="skeleton"></span><span class="skeleton" style="width: 70%"></span><span class="skeleton"></span></div>
+                    <div class="skeleton-row"><span class="skeleton"></span><span class="skeleton" style="width: 85%"></span><span class="skeleton"></span></div>
+                    <div class="skeleton-row"><span class="skeleton"></span><span class="skeleton" style="width: 60%"></span><span class="skeleton"></span></div>
+                </section>
+            </div>
+
+            <!-- Lỗi. -->
+            <section class="panel hidden" data-view="error">
+                <div class="empty-state">
+                    <span class="empty-state-icon danger">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+                            <path d="M12 9.5v4M12 17h.01" />
+                        </svg>
+                    </span>
+                    <strong>Không tải được dữ liệu tổng quan</strong>
+                    Máy chủ trả lỗi 500 lúc 09:42. Cảnh báo Google Chat vẫn được gửi bình thường.
+                    <button class="button small" type="button" data-loading-action="Đã tải lại dữ liệu tổng quan.">Thử lại</button>
+                </div>
+            </section>
+        </main>
+
+        <script src="app.js"></script>
+    </body>
+</html>

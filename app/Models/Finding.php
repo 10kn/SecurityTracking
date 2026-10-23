@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Models;
+
+use App\Enums\FindingRule;
+use App\Enums\FindingState;
+use App\Enums\Severity;
+use Database\Factories\FindingFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+#[Fillable(['fingerprint', 'team_id', 'deployment_id', 'advisory_id', 'runtime_id', 'component_id', 'rule', 'severity', 'state', 'title', 'first_seen_at', 'last_seen_at', 'sla_due_at', 'resolved_at', 'accepted_until'])]
+class Finding extends Model
+{
+    /** @use HasFactory<FindingFactory> */
+    use HasFactory;
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'rule' => FindingRule::class,
+            'severity' => Severity::class,
+            'state' => FindingState::class,
+            'first_seen_at' => 'datetime',
+            'last_seen_at' => 'datetime',
+            'sla_due_at' => 'datetime',
+            'resolved_at' => 'datetime',
+            'accepted_until' => 'datetime',
+        ];
+    }
+
+    /**
+     * @param  Builder<Finding>  $query
+     * @return Builder<Finding>
+     */
+    #[Scope]
+    protected function open(Builder $query): Builder
+    {
+        return $query->where('state', FindingState::Open);
+    }
+
+    /**
+     * @return BelongsTo<Team, $this>
+     */
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    /**
+     * @return BelongsTo<Deployment, $this>
+     */
+    public function deployment(): BelongsTo
+    {
+        return $this->belongsTo(Deployment::class);
+    }
+
+    /**
+     * @return BelongsTo<Advisory, $this>
+     */
+    public function advisory(): BelongsTo
+    {
+        return $this->belongsTo(Advisory::class);
+    }
+
+    /**
+     * @return BelongsTo<Runtime, $this>
+     */
+    public function runtime(): BelongsTo
+    {
+        return $this->belongsTo(Runtime::class);
+    }
+
+    /**
+     * @return BelongsTo<Component, $this>
+     */
+    public function component(): BelongsTo
+    {
+        return $this->belongsTo(Component::class);
+    }
+
+    /**
+     * @return HasMany<FindingEvent, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(FindingEvent::class);
+    }
+}

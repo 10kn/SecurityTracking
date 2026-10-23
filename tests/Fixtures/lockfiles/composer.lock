@@ -1,0 +1,8 @@
+{
+    "_readme": ["Fixture for tests; not a real project."],
+    "content-hash": "demo",
+    "packages": [
+        {"name": "guzzlehttp/guzzle", "version": "7.4.5", "type": "library"}
+    ],
+    "packages-dev": []
+}

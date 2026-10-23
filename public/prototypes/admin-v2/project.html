@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Shop Platform — Security Manager</title>
+        <script>
+            try {
+                const params = new URLSearchParams(location.search);
+                document.documentElement.dataset.theme = params.get('theme') || localStorage.getItem('psm-theme') || 'graphite';
+                document.documentElement.lang = params.get('lang') || localStorage.getItem('psm-lang') || 'vi';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'graphite';
+            }
+        </script>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body data-page="projects">
+        <main class="page">
+            <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#" data-toast="Danh sách Projects thuộc vòng sau.">Projects</a><span>/</span><span>Shop Platform</span></nav>
+            <header class="page-header">
+                <div>
+                    <h1>Shop Platform</h1>
+                    <p>Team <a class="link" href="team.html">Commerce</a> · 3 service · monorepo</p>
+                </div>
+                <div class="actions">
+                    <button class="btn secondary" type="button" data-modal="edit-modal">Sửa</button>
+                    <button class="btn" type="button" data-toast="Wizard Thêm service thuộc vòng sau.">Thêm service</button>
+                </div>
+            </header>
+
+            <section class="card card-body" style="margin-bottom: 24px">
+                <dl class="infolist">
+                    <div><dt>Repository</dt><dd class="mono">git.example.com/commerce/shop-platform</dd></div>
+                    <div><dt>Finding đang mở</dt><dd>4 <span class="muted">· 2 Critical · 1 quá SLA</span></dd></div>
+                    <div><dt>Báo cáo gần nhất</dt><dd>4 phút trước</dd></div>
+                    <div><dt>Team sở hữu</dt><dd><a class="link" href="team.html">Commerce</a></dd></div>
+                    <div><dt>Kênh cảnh báo</dt><dd>Google Chat của team <span class="muted">· commerce-security</span></dd></div>
+                    <div><dt>Tạo lúc</dt><dd>12/03/2026 <span class="muted">· Giang Nguyễn</span></dd></div>
+                </dl>
+            </section>
+
+            <div class="tabs-row">
+                <div class="tabs" role="tablist" data-tabs="project" aria-label="Project">
+                    <button class="tab" type="button" role="tab" data-tab="services">Services <span class="count">3</span></button>
+                    <button class="tab" type="button" role="tab" data-tab="deployments">Deployments</button>
+                    <button class="tab" type="button" role="tab" data-tab="findings">Findings <span class="count">4</span></button>
+                </div>
+            </div>
+
+            <section id="services" data-panel="project">
+                <div class="card">
+                    <div class="table-wrap">
+                        <table class="min-table">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Runtime</th>
+                                    <th>Packages</th>
+                                    <th class="right">Finding mở</th>
+                                    <th>Báo cáo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><a class="cell-title" href="#" data-toast="Trang service thuộc vòng sau.">shop-api</a><span class="cell-sub">ECS · Public · <span class="mono">/apps/api</span></span></td>
+                                    <td><span class="mono">PHP 8.3.12</span><span class="cell-sub"><span class="state warning">Thiếu bản vá bảo mật</span></span></td>
+                                    <td>142<span class="cell-sub mono">composer.lock</span></td>
+                                    <td class="right tabular">2</td>
+                                    <td class="muted">4 phút trước<span class="cell-sub">3 ECS task</span></td>
+                                </tr>
+                                <tr>
+                                    <td><a class="cell-title" href="#" data-toast="Trang service thuộc vòng sau.">shop-web</a><span class="cell-sub">ECS · Public · <span class="mono">/apps/web</span></span></td>
+                                    <td><span class="mono">Node.js 22.11.0</span><span class="cell-sub"><span class="state success">Đạt</span></span></td>
+                                    <td>812<span class="cell-sub mono">pnpm-lock.yaml</span></td>
+                                    <td class="right tabular">1</td>
+                                    <td class="muted">6 phút trước<span class="cell-sub">2 ECS task</span></td>
+                                </tr>
+                                <tr>
+                                    <td><a class="cell-title" href="#" data-toast="Trang service thuộc vòng sau.">legacy-cms</a><span class="cell-sub">Server · Nội bộ · <span class="mono">/legacy/cms</span></span></td>
+                                    <td><span class="mono">PHP 8.1.29</span><span class="cell-sub"><span class="state danger">Hết hỗ trợ</span></span></td>
+                                    <td><span class="state unknown">Thiếu dữ liệu</span><span class="cell-sub">Không tìm thấy composer.lock</span></td>
+                                    <td class="right tabular">1</td>
+                                    <td class="muted">38 phút trước<span class="cell-sub">1 host</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="deployments" data-panel="project" hidden>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table class="min-table">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Môi trường</th>
+                                    <th>Commit</th>
+                                    <th>Release</th>
+                                    <th>Deploy lúc</th>
+                                    <th>Instance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="cell-title">shop-api</td><td>production</td><td class="mono">a1b2c3d</td><td>v2026.10.20</td><td class="muted">20/10 16:05</td><td>3 / 3</td></tr>
+                                <tr><td class="cell-title">shop-api</td><td>staging</td><td class="mono">e4f5a6b</td><td>v2026.10.22-rc1</td><td class="muted">22/10 10:31</td><td>1 / 1</td></tr>
+                                <tr><td class="cell-title">shop-web</td><td>production</td><td class="mono">7c8d9e0</td><td>v2026.10.21</td><td class="muted">21/10 09:12</td><td>2 / 2</td></tr>
+                                <tr><td class="cell-title">shop-web</td><td>staging</td><td class="mono">7c8d9e0</td><td>v2026.10.21</td><td class="muted">21/10 08:40</td><td>1 / 1</td></tr>
+                                <tr><td class="cell-title">legacy-cms</td><td>production</td><td class="mono">3f4e5d6</td><td class="faint">—</td><td class="muted">02/09 14:20</td><td>1 / 1</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="card-footer"><span>Instance: số asset đã báo cáo trong 10 phút / tổng số asset của môi trường.</span></footer>
+                </div>
+            </section>
+
+            <section id="findings" data-panel="project" hidden>
+                <div class="card">
+                    <div class="table-wrap">
+                        <table class="min-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 110px">Mức</th>
+                                    <th>Vấn đề</th>
+                                    <th>Service</th>
+                                    <th>Hạn</th>
+                                    <th>Trạng thái</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge" data-sev="critical">Critical</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết DEMO-GHSA-0002.">guzzlehttp/guzzle 7.4.5</a><span class="cell-sub">DEMO-GHSA-0002</span></td>
+                                    <td>shop-api</td>
+                                    <td><span class="sla overdue">Quá 6 giờ</span></td>
+                                    <td><span class="state warning">Đã nhận</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="critical">Critical</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết finding PHP thiếu bản vá.">PHP 8.3.12 thiếu bản vá 21/10</a><span class="cell-sub">Runtime thiếu bản vá bảo mật</span></td>
+                                    <td>shop-api</td>
+                                    <td><span class="sla">Còn 14 giờ</span></td>
+                                    <td><span class="state danger">Mới</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="high">High</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết finding PHP 8.1.">PHP 8.1 hết hỗ trợ</a><span class="cell-sub">Runtime hết hỗ trợ</span></td>
+                                    <td>legacy-cms</td>
+                                    <td><span class="sla">Còn 5 ngày</span></td>
+                                    <td><span class="state warning">Đã nhận</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge" data-sev="medium">Medium</span></td>
+                                    <td><a class="cell-title" href="#" data-toast="Mở chi tiết DEMO-CVE-0004.">axios 1.6.2</a><span class="cell-sub">DEMO-CVE-0004</span></td>
+                                    <td>shop-web</td>
+                                    <td><span class="sla">Còn 21 ngày</span></td>
+                                    <td><span class="state danger">Mới</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <div class="modal" id="edit-modal">
+            <form class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="edit-title" data-submit="Đã lưu thông tin project." novalidate>
+                <div class="modal-head">
+                    <h2 id="edit-title">Sửa project</h2>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <label for="project-name">Tên <span class="req">*</span></label>
+                        <input class="input" id="project-name" value="Shop Platform" required data-validate />
+                        <p class="error hidden" data-error="project-name">Nhập tên project.</p>
+                    </div>
+                    <div class="field">
+                        <label for="project-team">Team sở hữu</label>
+                        <select class="input" id="project-team"><option>Commerce</option><option>Booking</option><option>Internal Tools</option></select>
+                        <p class="help">Đổi team: 4 finding đang mở chuyển sang team mới.</p>
+                    </div>
+                    <div class="field">
+                        <label for="project-repo">Repository URL</label>
+                        <input class="input mono" id="project-repo" type="url" value="https://git.example.com/commerce/shop-platform" data-validate data-pattern="^(https://|git@)\S+$" />
+                        <p class="error hidden" data-error="project-repo">Dùng URL https:// hoặc git@host:org/repo.</p>
+                        <p class="help">Dùng để đọc lockfile tại commit đang deploy. Chỉ cần quyền đọc.</p>
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn secondary" type="button" data-close>Hủy</button>
+                    <button class="btn" type="submit">Lưu</button>
+                </div>
+            </form>
+        </div>
+
+        <script src="i18n.js"></script>
+        <script src="app.js"></script>
+    </body>
+</html>

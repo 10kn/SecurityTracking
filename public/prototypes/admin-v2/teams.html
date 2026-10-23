@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Teams — Security Manager</title>
+        <script>
+            try {
+                const params = new URLSearchParams(location.search);
+                document.documentElement.dataset.theme = params.get('theme') || localStorage.getItem('psm-theme') || 'graphite';
+                document.documentElement.lang = params.get('lang') || localStorage.getItem('psm-lang') || 'vi';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'graphite';
+            }
+        </script>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body data-page="teams">
+        <main class="page">
+            <header class="page-header">
+                <div>
+                    <h1>Teams</h1>
+                    <p>Finding được gửi tới team sở hữu project bị ảnh hưởng.</p>
+                </div>
+                <div class="actions">
+                    <button class="btn" type="button" data-modal="create-team">Tạo team</button>
+                </div>
+            </header>
+
+            <section class="card">
+                <header class="card-header">
+                    <input class="input" type="search" placeholder="Tìm team" style="max-width: 280px" aria-label="Tìm team" />
+                    <span class="faint text-sm">3 team</span>
+                </header>
+                <div class="table-wrap">
+                    <table class="min-table">
+                        <thead>
+                            <tr>
+                                <th>Team</th>
+                                <th>Thành viên</th>
+                                <th class="right">Projects</th>
+                                <th>Google Chat</th>
+                                <th class="right">Finding mở</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="clickable" data-href="team.html">
+                                <td><a class="cell-title" href="team.html">Commerce</a><span class="cell-sub">commerce</span></td>
+                                <td>
+                                    <div class="avatar-stack" aria-label="6 thành viên">
+                                        <span class="avatar">GN</span><span class="avatar">MT</span><span class="avatar">LP</span><span class="avatar">+3</span>
+                                    </div>
+                                </td>
+                                <td class="right tabular">2</td>
+                                <td><span class="state success">Hoạt động</span></td>
+                                <td class="right tabular">6</td>
+                                <td class="right"><a class="btn ghost sm" href="team.html">Sửa</a></td>
+                            </tr>
+                            <tr>
+                                <td><a class="cell-title" href="#" data-toast="Prototype chỉ dựng chi tiết Commerce. Trạng thái webhook lỗi / chưa cấu hình xem ở bảng Prototype trong trang Commerce.">Booking</a><span class="cell-sub">booking</span></td>
+                                <td>
+                                    <div class="avatar-stack" aria-label="4 thành viên">
+                                        <span class="avatar">HL</span><span class="avatar">TV</span><span class="avatar">+2</span>
+                                    </div>
+                                </td>
+                                <td class="right tabular">2</td>
+                                <td><span class="state danger">Lỗi gửi</span><span class="cell-sub">3 lần liên tiếp · đang dùng email</span></td>
+                                <td class="right tabular">6</td>
+                                <td class="right"><a class="btn ghost sm" href="#" data-toast="Prototype chỉ dựng chi tiết Commerce. Trạng thái webhook lỗi / chưa cấu hình xem ở bảng Prototype trong trang Commerce.">Sửa</a></td>
+                            </tr>
+                            <tr>
+                                <td><a class="cell-title" href="#" data-toast="Prototype chỉ dựng chi tiết Commerce. Trạng thái webhook lỗi / chưa cấu hình xem ở bảng Prototype trong trang Commerce.">Internal Tools</a><span class="cell-sub">internal-tools</span></td>
+                                <td>
+                                    <div class="avatar-stack" aria-label="3 thành viên">
+                                        <span class="avatar">QĐ</span><span class="avatar">+2</span>
+                                    </div>
+                                </td>
+                                <td class="right tabular">1</td>
+                                <td><span class="state">Chưa cấu hình</span></td>
+                                <td class="right tabular">2</td>
+                                <td class="right"><a class="btn ghost sm" href="#" data-toast="Prototype chỉ dựng chi tiết Commerce. Trạng thái webhook lỗi / chưa cấu hình xem ở bảng Prototype trong trang Commerce.">Sửa</a></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <div class="modal" id="create-team">
+            <form class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="create-team-title" data-submit="Đã tạo team." novalidate>
+                <div class="modal-head">
+                    <h2 id="create-team-title">Tạo team</h2>
+                    <p>Thành viên và webhook thêm sau khi tạo.</p>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <label for="new-team-name">Tên team <span class="req">*</span></label>
+                        <input class="input" id="new-team-name" required data-validate placeholder="Payments" />
+                        <p class="error hidden" data-error="new-team-name">Nhập tên team.</p>
+                    </div>
+                    <div class="field">
+                        <label for="new-team-email">Email leo thang</label>
+                        <input class="input" id="new-team-email" type="email" data-validate data-pattern="^[^@\s]+@[^@\s]+\.[^@\s]+$" placeholder="payments-leads@example.com" />
+                        <p class="error hidden" data-error="new-team-email">Email không hợp lệ.</p>
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn secondary" type="button" data-close>Hủy</button>
+                    <button class="btn" type="submit">Tạo team</button>
+                </div>
+            </form>
+        </div>
+
+        <script src="i18n.js"></script>
+        <script src="app.js"></script>
+    </body>
+</html>

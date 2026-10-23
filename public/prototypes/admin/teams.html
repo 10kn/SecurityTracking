@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="Prototype màn cài đặt Team của Project Security Manager." />
+        <title>Teams — Security Manager Prototype</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body data-page="teams" data-crumbs='[{"label":"Cài đặt"},{"label":"Teams","href":"teams.html"},{"label":"Commerce"}]'>
+        <main class="page">
+            <header class="page-header">
+                <div class="page-title-group">
+                    <p class="eyebrow">Cài đặt</p>
+                    <h1>Teams</h1>
+                    <p class="page-description">
+                        Team sở hữu project và nhận cảnh báo qua Google Chat. Finding được gửi tới team của
+                        project bị ảnh hưởng.
+                    </p>
+                </div>
+                <div class="page-actions">
+                    <button class="button" type="button" data-open-dialog="create-team-dialog">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                        Tạo team
+                    </button>
+                </div>
+            </header>
+
+            <div class="split">
+                <nav class="panel entity-list" aria-label="Danh sách team">
+                    <header class="panel-header">
+                        <h2>3 team</h2>
+                    </header>
+                    <ul>
+                        <li>
+                            <button class="entity-item" type="button" aria-current="true">
+                                <span class="entity-mark tone-1">CO</span>
+                                <span><strong>Commerce</strong><span class="cell-meta">6 thành viên · 2 project</span></span>
+                                <span class="chip success" data-icon="check" title="Webhook hoạt động"><span class="sr-only">Webhook </span>OK</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button class="entity-item" type="button" data-prototype-action="Prototype chỉ dựng chi tiết team Commerce.">
+                                <span class="entity-mark tone-2">BO</span>
+                                <span><strong>Booking</strong><span class="cell-meta">4 thành viên · 2 project</span></span>
+                                <span class="chip danger" data-icon="alert" title="Webhook lỗi"><span class="sr-only">Webhook </span>Lỗi</span>
+                            </button>
+                        </li>
+                        <li>
+                            <button class="entity-item" type="button" data-prototype-action="Prototype chỉ dựng chi tiết team Commerce.">
+                                <span class="entity-mark tone-3">IT</span>
+                                <span><strong>Internal Tools</strong><span class="cell-meta">3 thành viên · 1 project</span></span>
+                                <span class="chip warning" data-icon="help" title="Chưa cấu hình webhook"><span class="sr-only">Webhook </span>Chưa có</span>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+
+                <div>
+                    <section class="panel" style="margin-bottom: 18px">
+                        <div class="panel-body project-head">
+                            <span class="entity-mark large tone-1">CO</span>
+                            <div style="min-width: 0; flex: 1">
+                                <div class="title-row">
+                                    <h2 style="font-size: 20px">Commerce</h2>
+                                    <span class="chip success" data-icon="check">Webhook hoạt động</span>
+                                </div>
+                                <span class="cell-meta">
+                                    slug <code>commerce</code> · 6 thành viên · 2 project · 4 service · tạo 12/03/2026
+                                </span>
+                            </div>
+                            <a class="button small secondary" href="#" data-prototype-action="Mở Findings lọc theo team Commerce.">6 finding đang mở</a>
+                        </div>
+                    </section>
+
+                    <div class="tabs" role="tablist" data-tabs="team" data-tabs-hash aria-label="Cài đặt team">
+                        <button class="tab" type="button" role="tab" data-tab="notifications" aria-selected="true">Thông báo</button>
+                        <button class="tab" type="button" role="tab" data-tab="members" aria-selected="false">Thành viên <span class="tab-count">6</span></button>
+                        <button class="tab" type="button" role="tab" data-tab="projects" aria-selected="false">Projects <span class="tab-count">2</span></button>
+                        <button class="tab" type="button" role="tab" data-tab="general" aria-selected="false">Thông tin chung</button>
+                    </div>
+
+                    <!-- Tab: Thông báo -->
+                    <section id="notifications" role="tabpanel" data-tab-panel-group="team">
+                        <form id="team-notify" data-dirty-form data-static-submit="Đã lưu cài đặt thông báo của Commerce." novalidate>
+                            <div class="panel">
+                                <div class="panel-body">
+                                    <div class="form-section" id="webhook-section" data-view-state="ready">
+                                        <div class="form-section-header">
+                                            <h3>Google Chat</h3>
+                                            <p>Kênh cảnh báo chính. Một lỗ hổng ảnh hưởng nhiều service chỉ gửi 1 tin.</p>
+                                        </div>
+                                        <div>
+                                            <div class="proto-bar" style="margin-bottom: 14px">
+                                                <span>Prototype · webhook</span>
+                                                <div class="segmented" data-view-switcher="#webhook-section">
+                                                    <button type="button" data-state="ready">Hoạt động</button>
+                                                    <button type="button" data-state="empty">Chưa cấu hình</button>
+                                                    <button type="button" data-state="error">Lỗi gửi</button>
+                                                </div>
+                                            </div>
+
+                                            <div data-view="ready error">
+                                                <label class="field-label" for="webhook-url">Webhook URL</label>
+                                                <div class="input-group">
+                                                    <input class="control mono" id="webhook-url" type="text" readonly value="https://chat.googleapis.com/v1/spaces/AAAA…/messages?key=••••••••" />
+                                                    <button class="button secondary" type="button" data-loading-action="Đã gửi tin thử tới space “commerce-security”.">Gửi thử</button>
+                                                    <button class="button ghost" type="button" data-open-dialog="webhook-dialog">Thay</button>
+                                                </div>
+                                                <p class="field-help">URL chứa khóa bí mật nên chỉ hiện một phần. Thay mới nếu nghi bị lộ.</p>
+                                            </div>
+
+                                            <div class="webhook-state" data-view="ready">
+                                                <span class="chip success" data-icon="check">Hoạt động</span>
+                                                <span class="muted">Tin gần nhất: bản tổng hợp 08:00 hôm nay · 0 lỗi trong 30 ngày</span>
+                                            </div>
+
+                                            <div class="notice danger" data-view="error" style="margin-top: 12px">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                                    <path d="M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+                                                    <path d="M12 9.5v4M12 17h.01" />
+                                                </svg>
+                                                <span>
+                                                    <strong>Gửi thất bại 3 lần liên tiếp</strong> (HTTP 404, lần cuối 07:58). Có thể space đã bị xóa.
+                                                    Cảnh báo đang được gửi qua email leo thang cho tới khi webhook hoạt động lại.
+                                                </span>
+                                            </div>
+
+                                            <div class="notice warning" data-view="empty">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                                    <circle cx="12" cy="12" r="9" />
+                                                    <path d="M12 11v5M12 8h.01" />
+                                                </svg>
+                                                <span style="flex: 1">
+                                                    <strong>Chưa có webhook.</strong> Team chỉ nhận cảnh báo qua email leo thang.
+                                                </span>
+                                                <button class="button small" type="button" data-open-dialog="webhook-dialog">Thêm webhook</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-section">
+                                        <div class="form-section-header">
+                                            <h3>Quy tắc gửi</h3>
+                                            <p>Medium và Low luôn có trong bản tổng hợp. Bật gửi ngay nếu team muốn biết sớm hơn.</p>
+                                        </div>
+                                        <div>
+                                            <label class="switch-row">
+                                                <span><strong>Gửi ngay khi có Critical hoặc High</strong><span class="cell-meta">Kể cả ngoài giờ làm việc</span></span>
+                                                <input class="switch" type="checkbox" checked />
+                                            </label>
+                                            <label class="switch-row">
+                                                <span><strong>Gửi ngay cả Medium và Low</strong><span class="cell-meta">Dễ gây nhiễu với team nhiều service</span></span>
+                                                <input class="switch" type="checkbox" />
+                                            </label>
+                                            <label class="switch-row">
+                                                <span><strong>Thông báo sớm từ hãng</strong><span class="cell-meta">Ví dụ: php.net báo trước ngày phát hành bản vá</span></span>
+                                                <input class="switch" type="checkbox" checked />
+                                            </label>
+                                            <label class="switch-row">
+                                                <span><strong>Bản tổng hợp hằng ngày lúc 08:00</strong><span class="cell-meta">Thứ Hai – Thứ Sáu, giờ Việt Nam</span></span>
+                                                <input class="switch" type="checkbox" checked />
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-section">
+                                        <div class="form-section-header">
+                                            <h3>Email leo thang</h3>
+                                            <p>Dùng khi webhook lỗi, hoặc khi finding Critical quá SLA mà chưa ai nhận.</p>
+                                        </div>
+                                        <div class="field">
+                                            <label for="escalation-email">Email nhận leo thang <span class="required">*</span></label>
+                                            <input class="control" id="escalation-email" type="email" value="commerce-leads@example.com" required data-validate data-pattern="^[^@\s]+@[^@\s]+\.[^@\s]+$" />
+                                            <p class="field-error hidden" data-error-for="escalation-email">Nhập một địa chỉ email hợp lệ, ví dụ team-leads@example.com.</p>
+                                            <p class="field-help">Nên dùng email nhóm thay vì email cá nhân.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-section">
+                                        <div class="form-section-header">
+                                            <h3>Xem trước</h3>
+                                            <p>Tin team nhận được khi có finding Critical mới.</p>
+                                        </div>
+                                        <div class="chat-preview" style="max-width: 440px">
+                                            <div class="chat-preview-head">
+                                                <span class="brand-mark">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z" /><path d="m9 12 2 2 4-4" /></svg>
+                                                </span>
+                                                <span><strong>Security Manager</strong><span class="cell-meta">Ứng dụng · 09:12</span></span>
+                                            </div>
+                                            <div class="chat-preview-body">
+                                                <span><span class="sev critical">Critical</span></span>
+                                                <strong>DEMO-GHSA-0002 · guzzlehttp/guzzle 7.4.5</strong>
+                                                <span class="muted">shop-api (production) · Hạn xử lý: 48 giờ</span>
+                                                <span>Sửa: <code>composer update guzzlehttp/guzzle</code> lên ≥ 7.4.6</span>
+                                                <a class="chat-button" href="#" data-prototype-action="Nút này mở thẳng trang chi tiết finding.">MỞ FINDING</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="sticky-actions">
+                                <span class="save-state" data-save-state="team-notify">Đã lưu</span>
+                                <div class="button-row">
+                                    <button class="button ghost" type="reset">Hủy thay đổi</button>
+                                    <button class="button" type="submit" data-save-button="team-notify">Lưu thay đổi</button>
+                                </div>
+                            </div>
+                        </form>
+                    </section>
+
+                    <!-- Tab: Thành viên -->
+                    <section id="members" role="tabpanel" data-tab-panel-group="team" hidden>
+                        <div class="panel">
+                            <header class="panel-header">
+                                <div>
+                                    <h2>Thành viên</h2>
+                                    <span class="cell-meta">Đăng nhập bằng tài khoản Google Workspace của công ty</span>
+                                </div>
+                                <button class="button small" type="button" data-open-dialog="member-dialog">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                                    Thêm thành viên
+                                </button>
+                            </header>
+                            <div class="member-list">
+                                <div class="member-row">
+                                    <span class="avatar small">GN</span>
+                                    <span><strong>Giang Nguyễn <span class="muted" style="font-weight: 500">(bạn)</span></strong><span class="cell-meta">giang.nguyen@example.com</span></span>
+                                    <select class="control member-role" aria-label="Vai trò của Giang Nguyễn"><option selected>Tech lead</option><option>Developer</option><option>Chỉ xem</option></select>
+                                    <span class="member-alert"><span class="chip success" data-icon="check">Nhận cảnh báo</span></span>
+                                    <span></span>
+                                </div>
+                                <div class="member-row">
+                                    <span class="avatar small tone-2">MT</span>
+                                    <span><strong>Minh Trần</strong><span class="cell-meta">minh.tran@example.com</span></span>
+                                    <select class="control member-role" aria-label="Vai trò của Minh Trần"><option>Tech lead</option><option selected>Developer</option><option>Chỉ xem</option></select>
+                                    <span class="member-alert"><span class="chip success" data-icon="check">Nhận cảnh báo</span></span>
+                                    <button class="icon-button small" type="button" aria-label="Xóa Minh Trần khỏi team" data-open-dialog="remove-dialog">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div class="member-row">
+                                    <span class="avatar small tone-3">LP</span>
+                                    <span><strong>Lan Phạm</strong><span class="cell-meta">lan.pham@example.com</span></span>
+                                    <select class="control member-role" aria-label="Vai trò của Lan Phạm"><option>Tech lead</option><option selected>Developer</option><option>Chỉ xem</option></select>
+                                    <span class="member-alert"><span class="chip success" data-icon="check">Nhận cảnh báo</span></span>
+                                    <button class="icon-button small" type="button" aria-label="Xóa Lan Phạm khỏi team" data-open-dialog="remove-dialog">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div class="member-row">
+                                    <span class="avatar small tone-4">HL</span>
+                                    <span><strong>Hoàng Lê</strong><span class="cell-meta">hoang.le@example.com</span></span>
+                                    <select class="control member-role" aria-label="Vai trò của Hoàng Lê"><option>Tech lead</option><option selected>Developer</option><option>Chỉ xem</option></select>
+                                    <span class="member-alert"><span class="chip neutral" data-icon="ban">Đã tắt</span></span>
+                                    <button class="icon-button small" type="button" aria-label="Xóa Hoàng Lê khỏi team" data-open-dialog="remove-dialog">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div class="member-row">
+                                    <span class="avatar small tone-2">TV</span>
+                                    <span><strong>Thảo Vũ</strong><span class="cell-meta">thao.vu@example.com</span></span>
+                                    <select class="control member-role" aria-label="Vai trò của Thảo Vũ"><option>Tech lead</option><option selected>Developer</option><option>Chỉ xem</option></select>
+                                    <span class="member-alert"><span class="chip success" data-icon="check">Nhận cảnh báo</span></span>
+                                    <button class="icon-button small" type="button" aria-label="Xóa Thảo Vũ khỏi team" data-open-dialog="remove-dialog">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                <div class="member-row">
+                                    <span class="avatar small">QĐ</span>
+                                    <span><strong>Quân Đỗ</strong><span class="cell-meta">quan.do@example.com · chưa đăng nhập lần nào</span></span>
+                                    <select class="control member-role" aria-label="Vai trò của Quân Đỗ"><option>Tech lead</option><option>Developer</option><option selected>Chỉ xem</option></select>
+                                    <span class="member-alert"><span class="chip neutral" data-icon="ban">Đã tắt</span></span>
+                                    <button class="icon-button small" type="button" aria-label="Xóa Quân Đỗ khỏi team" data-open-dialog="remove-dialog">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <footer class="panel-footer">
+                                <span>Tech lead được đổi trạng thái finding và chấp nhận rủi ro. Chỉ xem không nhận tin Chat cá nhân.</span>
+                            </footer>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Projects -->
+                    <section id="projects" role="tabpanel" data-tab-panel-group="team" hidden>
+                        <div class="table-shell">
+                            <div class="table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Project</th>
+                                            <th>Repository</th>
+                                            <th>Services</th>
+                                            <th>Finding mở</th>
+                                            <th>Báo cáo gần nhất</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><a class="row-title" href="project.html">Shop Platform</a><span class="cell-meta">shop-platform</span></td>
+                                            <td><span class="repo-link">git.example.com/commerce/shop-platform</span></td>
+                                            <td class="tabular">3</td>
+                                            <td><div class="tag-list"><span class="sev critical">2</span><span class="sev high">1</span><span class="sev medium">1</span></div></td>
+                                            <td><span class="muted">4 phút trước</span></td>
+                                            <td class="cell-right"><a class="button small secondary" href="project.html">Mở</a></td>
+                                        </tr>
+                                        <tr>
+                                            <td><a class="row-title" href="#" data-prototype-action="Prototype chỉ dựng chi tiết Shop Platform.">Partner Portal</a><span class="cell-meta">partner-portal</span></td>
+                                            <td><span class="repo-link">git.example.com/commerce/partner-portal</span></td>
+                                            <td class="tabular">1</td>
+                                            <td><div class="tag-list"><span class="sev critical">1</span><span class="sev medium">1</span></div></td>
+                                            <td><span class="muted">11 phút trước</span></td>
+                                            <td class="cell-right"><a class="button small secondary" href="#" data-prototype-action="Prototype chỉ dựng chi tiết Shop Platform.">Mở</a></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Tab: Thông tin chung -->
+                    <section id="general" role="tabpanel" data-tab-panel-group="team" hidden>
+                        <form id="team-general" data-dirty-form data-static-submit="Đã lưu thông tin team." novalidate>
+                            <div class="panel">
+                                <div class="panel-body">
+                                    <div class="form-grid">
+                                        <div class="field">
+                                            <label for="team-name">Tên team <span class="required">*</span></label>
+                                            <input class="control" id="team-name" type="text" value="Commerce" required data-validate />
+                                            <p class="field-error hidden" data-error-for="team-name">Tên team không được để trống.</p>
+                                        </div>
+                                        <div class="field">
+                                            <label for="team-slug">Slug <span class="required">*</span></label>
+                                            <input class="control mono" id="team-slug" type="text" value="commerce" required data-validate data-pattern="^[a-z0-9]+(-[a-z0-9]+)*$" />
+                                            <p class="field-error hidden" data-error-for="team-slug">Chỉ dùng chữ thường, số và dấu gạch ngang.</p>
+                                            <p class="field-help">Dùng trong URL. Đổi slug sẽ làm hỏng link cũ trong tin Chat.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <footer class="panel-footer">
+                                    <span class="save-state" data-save-state="team-general">Đã lưu</span>
+                                    <button class="button small" type="submit" data-save-button="team-general">Lưu</button>
+                                </footer>
+                            </div>
+                        </form>
+
+                        <section class="panel" style="margin-top: 18px; border-color: var(--danger-border)">
+                            <div class="panel-body" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px">
+                                <div>
+                                    <h3>Xóa team</h3>
+                                    <span class="cell-meta">Không xóa được: team còn 2 project. Chuyển project sang team khác trước.</span>
+                                </div>
+                                <button class="button danger" type="button" disabled>Xóa team</button>
+                            </div>
+                        </section>
+                    </section>
+                </div>
+            </div>
+        </main>
+
+        <!-- Dialog: thêm thành viên -->
+        <div class="dialog-backdrop" id="member-dialog">
+            <form class="dialog" role="dialog" aria-modal="true" aria-labelledby="member-dialog-title" data-static-submit="Đã thêm thành viên. Họ sẽ thấy team sau lần đăng nhập tới." novalidate>
+                <header class="dialog-header">
+                    <div>
+                        <h2 id="member-dialog-title">Thêm thành viên vào Commerce</h2>
+                        <p>Chỉ thêm được tài khoản Google Workspace của công ty.</p>
+                    </div>
+                    <button class="icon-button small" type="button" data-close-dialog aria-label="Đóng">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                </header>
+                <div class="dialog-body">
+                    <div class="field">
+                        <label for="member-email">Email <span class="required">*</span></label>
+                        <input class="control" id="member-email" type="email" placeholder="ten.ho@example.com" required data-validate data-reset-on-submit data-pattern="^[^@\s]+@example\.com$" />
+                        <p class="field-error hidden" data-error-for="member-email">Email phải thuộc tên miền @example.com.</p>
+                    </div>
+                    <div class="field">
+                        <label for="member-role">Vai trò</label>
+                        <select class="control" id="member-role"><option>Developer</option><option>Tech lead</option><option>Chỉ xem</option></select>
+                    </div>
+                    <label class="switch-row" style="padding: 0; border: 0">
+                        <span><strong>Nhận cảnh báo qua Google Chat</strong><span class="cell-meta">Được nhắc tên trong tin Critical của team</span></span>
+                        <input class="switch" type="checkbox" checked />
+                    </label>
+                </div>
+                <footer class="dialog-footer">
+                    <button class="button ghost" type="button" data-close-dialog>Hủy</button>
+                    <button class="button" type="submit">Thêm thành viên</button>
+                </footer>
+            </form>
+        </div>
+
+        <!-- Dialog: xóa thành viên -->
+        <div class="dialog-backdrop" id="remove-dialog">
+            <form class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-dialog-title" data-static-submit="Đã xóa thành viên khỏi team." style="width: min(460px, 100%)">
+                <header class="dialog-header">
+                    <div>
+                        <h2 id="remove-dialog-title">Xóa thành viên khỏi team?</h2>
+                        <p>Họ sẽ không còn thấy finding của Commerce. Finding họ đã nhận vẫn giữ nguyên lịch sử.</p>
+                    </div>
+                </header>
+                <footer class="dialog-footer">
+                    <button class="button ghost" type="button" data-close-dialog>Hủy</button>
+                    <button class="button danger-solid" type="submit">Xóa khỏi team</button>
+                </footer>
+            </form>
+        </div>
+
+        <!-- Dialog: thay webhook -->
+        <div class="dialog-backdrop" id="webhook-dialog">
+            <form class="dialog" role="dialog" aria-modal="true" aria-labelledby="webhook-dialog-title" data-static-submit="Đã lưu webhook mới và gửi tin thử thành công." novalidate>
+                <header class="dialog-header">
+                    <div>
+                        <h2 id="webhook-dialog-title">Webhook Google Chat</h2>
+                        <p>Trong Google Chat: Space → Apps &amp; integrations → Webhooks → Add webhook.</p>
+                    </div>
+                    <button class="icon-button small" type="button" data-close-dialog aria-label="Đóng">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                </header>
+                <div class="dialog-body">
+                    <div class="field">
+                        <label for="webhook-new">Webhook URL <span class="required">*</span></label>
+                        <input class="control mono" id="webhook-new" type="url" placeholder="https://chat.googleapis.com/v1/spaces/…" required data-validate data-reset-on-submit data-pattern="^https://chat\.googleapis\.com/v1/spaces/.+" />
+                        <p class="field-error hidden" data-error-for="webhook-new">URL phải bắt đầu bằng https://chat.googleapis.com/v1/spaces/</p>
+                        <p class="field-help">Sau khi lưu, URL chỉ hiện một phần. Hệ thống gửi tin thử trước khi lưu.</p>
+                    </div>
+                </div>
+                <footer class="dialog-footer">
+                    <button class="button ghost" type="button" data-close-dialog>Hủy</button>
+                    <button class="button" type="submit">Gửi thử &amp; lưu</button>
+                </footer>
+            </form>
+        </div>
+
+        <!-- Dialog: tạo team -->
+        <div class="dialog-backdrop" id="create-team-dialog">
+            <form class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-team-title" data-static-submit="Đã tạo team. Tiếp theo: thêm thành viên và webhook." novalidate>
+                <header class="dialog-header">
+                    <div>
+                        <h2 id="create-team-title">Tạo team</h2>
+                        <p>Webhook và thành viên có thể thêm sau.</p>
+                    </div>
+                    <button class="icon-button small" type="button" data-close-dialog aria-label="Đóng">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                </header>
+                <div class="dialog-body">
+                    <div class="field">
+                        <label for="new-team-name">Tên team <span class="required">*</span></label>
+                        <input class="control" id="new-team-name" type="text" placeholder="Ví dụ: Payments" required data-validate data-reset-on-submit />
+                        <p class="field-error hidden" data-error-for="new-team-name">Nhập tên team.</p>
+                    </div>
+                    <div class="field">
+                        <label for="new-team-email">Email leo thang</label>
+                        <input class="control" id="new-team-email" type="email" placeholder="payments-leads@example.com" data-validate data-reset-on-submit data-pattern="^[^@\s]+@[^@\s]+\.[^@\s]+$" />
+                        <p class="field-error hidden" data-error-for="new-team-email">Email không hợp lệ.</p>
+                    </div>
+                </div>
+                <footer class="dialog-footer">
+                    <button class="button ghost" type="button" data-close-dialog>Hủy</button>
+                    <button class="button" type="submit">Tạo team</button>
+                </footer>
+            </form>
+        </div>
+
+        <script src="app.js"></script>
+    </body>
+</html>
