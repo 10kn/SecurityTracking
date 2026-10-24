@@ -3,51 +3,33 @@
 use App\Enums\Locale;
 use App\Enums\Theme;
 use App\Models\User;
-use Filament\Auth\Pages\Login;
-use Livewire\Livewire;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
+use function Pest\Laravel\post;
 
-it('renders the panel in the language the user chose', function () {
+it('renders the admin screens in the language the user chose', function () {
     actingAs(User::factory()->admin()->create(['locale' => Locale::Japanese]));
 
     get('/admin/teams')
         ->assertOk()
         ->assertSee('lang="ja"', escape: false)
-        ->assertSeeText('チーム');
+        ->assertSee('japanese', escape: false);
 });
 
-it('renders vietnamese by default', function () {
+it('renders vietnamese by default, without the japanese font', function () {
     actingAsAdmin();
 
     get('/admin/teams')
         ->assertSee('lang="vi"', escape: false)
-        ->assertSeeText('Cài đặt');
+        ->assertDontSee('japanese', escape: false);
 });
 
-it('forces dark mode only for the night theme', function (Theme $theme, bool $isDark) {
+it('renders the theme the user chose', function (Theme $theme) {
     actingAs(User::factory()->admin()->create(['theme' => $theme]));
 
-    $response = get('/admin/teams')
-        ->assertSee('document.documentElement.dataset.theme = "'.$theme->value.'"', escape: false);
-
-    $isDark
-        ? $response->assertSee("localStorage.setItem('filament:theme:mode', 'dark')", escape: false)
-        : $response->assertSee("localStorage.setItem('filament:theme:mode', 'light')", escape: false);
-})->with([
-    'graphite' => [Theme::Graphite, false],
-    'ocean' => [Theme::Ocean, false],
-    'forest' => [Theme::Forest, false],
-    'night' => [Theme::Night, true],
-]);
-
-it('uses the theme palette for the primary color', function () {
-    actingAs(User::factory()->admin()->create(['theme' => Theme::Ocean]));
-
-    get('/admin/teams')
-        ->assertSee('--primary-600:'.Theme::Ocean->colors()['primary'][600], escape: false);
-});
+    get('/admin/teams')->assertSee('data-theme="'.$theme->value.'"', escape: false);
+})->with(Theme::cases());
 
 it('keeps the chosen language and theme after signing in again', function () {
     User::factory()->admin()->create([
@@ -56,11 +38,9 @@ it('keeps the chosen language and theme after signing in again', function () {
         'locale' => Locale::Japanese,
     ]);
 
-    Livewire::test(Login::class)
-        ->fillForm(['email' => 'admin@example.com', 'password' => 'password'])
-        ->call('authenticate');
+    post('/admin/login', ['email' => 'admin@example.com', 'password' => 'password']);
 
     get('/admin/teams')
         ->assertSee('lang="ja"', escape: false)
-        ->assertSee('document.documentElement.dataset.theme = "forest"', escape: false);
+        ->assertSee('data-theme="forest"', escape: false);
 });

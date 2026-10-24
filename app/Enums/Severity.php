@@ -2,10 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasColor;
-use Filament\Support\Contracts\HasLabel;
-
-enum Severity: string implements HasColor, HasLabel
+enum Severity: string
 {
     case Critical = 'critical';
     case High = 'high';
@@ -21,16 +18,6 @@ enum Severity: string implements HasColor, HasLabel
             self::Medium => 'Medium',
             self::Low => 'Low',
             self::Unknown => __('Chưa rõ'),
-        };
-    }
-
-    public function getColor(): string
-    {
-        return match ($this) {
-            self::Critical => 'danger',
-            self::High => 'warning',
-            self::Medium => 'info',
-            self::Low, self::Unknown => 'gray',
         };
     }
 

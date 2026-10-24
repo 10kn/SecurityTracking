@@ -6,8 +6,6 @@ namespace App\Models;
 use App\Enums\Locale;
 use App\Enums\Theme;
 use Database\Factories\UserFactory;
-use Filament\Models\Contracts\FilamentUser;
-use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,7 +15,7 @@ use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['name', 'email', 'password', 'is_admin', 'theme', 'locale'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
@@ -50,11 +48,18 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * MVP: only admins sign in. Team members get access once SSO lands.
+     * Up to two initials for the avatar, e.g. "GN" for "Giang Nguyễn".
      */
-    public function canAccessPanel(Panel $panel): bool
+    public function initials(): string
     {
-        return $this->is_admin;
+        return str($this->name)
+            ->trim()
+            ->explode(' ')
+            ->map(fn (string $word): string => mb_substr((string) preg_replace('/^[^\p{L}\p{N}]+/u', '', $word), 0, 1))
+            ->filter()
+            ->take(2)
+            ->map(fn (string $initial): string => mb_strtoupper($initial))
+            ->join('');
     }
 
     /**

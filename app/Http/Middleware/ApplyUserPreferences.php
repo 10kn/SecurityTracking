@@ -2,16 +2,14 @@
 
 namespace App\Http\Middleware;
 
-use App\Enums\Theme;
 use App\Models\User;
 use Closure;
-use Filament\Support\Facades\FilamentColor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Applies the signed-in user's locale and theme palette. Guests get the defaults (Vietnamese, Graphite).
+ * Applies the signed-in user's locale. Guests get Vietnamese. The theme is read while rendering (Theme::current()).
  */
 class ApplyUserPreferences
 {
@@ -27,8 +25,6 @@ class ApplyUserPreferences
         if ($user instanceof User) {
             App::setLocale($user->locale->value);
         }
-
-        FilamentColor::register(fn (): array => Theme::current()->colors());
 
         return $next($request);
     }

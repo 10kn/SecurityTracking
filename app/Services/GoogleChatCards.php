@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\Severity;
-use App\Filament\Resources\Services\ServiceResource;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\Runtime;
@@ -185,7 +184,7 @@ class GoogleChatCards
 
     public function serviceUrl(Service $service): string
     {
-        return ServiceResource::getUrl('edit', ['record' => $service], panel: 'admin');
+        return route('admin.services.edit', $service);
     }
 
     /**

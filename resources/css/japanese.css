@@ -1,0 +1,5 @@
+/*
+ * Noto Sans JP for kana and kanji, loaded only when the interface is in Japanese: its @font-face rules alone are larger
+ * than the rest of the stylesheet. The browser downloads only the subsets a page uses.
+ */
+@import '@fontsource-variable/noto-sans-jp';

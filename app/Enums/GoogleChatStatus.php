@@ -2,10 +2,12 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
+use App\Enums\Concerns\HasStatusDot;
 
-enum GoogleChatStatus: string implements HasLabel
+enum GoogleChatStatus: string
 {
+    use HasStatusDot;
+
     case Active = 'active';
     case Failing = 'failing';
     case NotConfigured = 'not_configured';

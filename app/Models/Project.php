@@ -16,6 +16,11 @@ class Project extends Model
     use HasFactory;
 
     /**
+     * An https:// URL or an scp-style git remote such as git@host:org/repo.git.
+     */
+    public const string REPOSITORY_URL_PATTERN = '/^(https:\/\/\S+|git@[^\s:]+:\S+)$/';
+
+    /**
      * @return BelongsTo<Team, $this>
      */
     public function team(): BelongsTo

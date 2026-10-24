@@ -20,6 +20,11 @@ class Technology extends Model
     use HasFactory;
 
     /**
+     * endoflife.date product ids, e.g. "php", "nodejs", "amazon-linux", "dotnet".
+     */
+    public const string ENDOFLIFE_PRODUCT_PATTERN = '/^[a-z0-9][a-z0-9.+-]*$/';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -57,24 +62,17 @@ class Technology extends Model
     }
 
     /**
-     * Versions offered while an admin types, newest first: every known release of the branches still supported,
-     * optionally only those starting with the typed text, e.g. "8.3".
+     * Versions offered while an admin types, newest first: every known release, end-of-life branches included because
+     * legacy services still run them, optionally only those starting with the typed text, e.g. "8.3".
      *
      * @return list<string>
      */
-    public function versionSuggestions(int $limit = 60, ?string $startingWith = null): array
+    public function versionSuggestions(?string $startingWith = null): array
     {
-        $supportedBranches = $this->branches()
-            ->where('is_eol', false)
-            ->where(fn ($query) => $query->whereNull('security_support_until')->orWhereDate('security_support_until', '>=', today()))
-            ->pluck('branch');
-
         return $this->releases()
-            ->whereIn('branch', $supportedBranches)
             ->pluck('version')
             ->when(filled($startingWith), fn ($versions) => $versions->filter(fn (string $version): bool => str_starts_with($version, $startingWith)))
             ->sort(fn (string $a, string $b): int => version_compare($b, $a))
-            ->take($limit)
             ->values()
             ->all();
     }

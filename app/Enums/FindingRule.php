@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum FindingRule: string implements HasLabel
+enum FindingRule: string
 {
     case RuntimeVulnerable = 'runtime_vulnerable';
     case RuntimeEol = 'runtime_eol';

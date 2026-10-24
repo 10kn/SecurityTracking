@@ -17,6 +17,13 @@ class Runtime extends Model
     use HasFactory;
 
     /**
+     * Version as found on the server, e.g. "8.3.12", "v20.11.0" or "8.3.12-1+deb.sury.org+1".
+     */
+    public const string RAW_VERSION_PATTERN = '/^[0-9A-Za-z][0-9A-Za-z.+~_-]*$/';
+
+    public const int RAW_VERSION_MAX_LENGTH = 64;
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

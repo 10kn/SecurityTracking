@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Middleware\ApplyUserPreferences;
+use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,7 +15,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // The locale is set before Inertia shares its props, so shared labels are translated.
+        $middleware->web(append: [
+            ApplyUserPreferences::class,
+            HandleInertiaRequests::class,
+        ]);
+
+        $middleware->alias([
+            'admin' => EnsureUserIsAdmin::class,
+        ]);
+
+        $middleware->redirectGuestsTo(fn (): string => route('admin.login'));
+        $middleware->redirectUsersTo(fn (): string => route('admin.home'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

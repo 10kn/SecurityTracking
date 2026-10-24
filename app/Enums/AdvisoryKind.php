@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum AdvisoryKind: string implements HasLabel
+enum AdvisoryKind: string
 {
     case Vulnerability = 'vulnerability';
     case PreNotice = 'pre_notice';

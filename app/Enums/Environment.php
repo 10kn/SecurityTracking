@@ -2,10 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasColor;
-use Filament\Support\Contracts\HasLabel;
-
-enum Environment: string implements HasColor, HasLabel
+enum Environment: string
 {
     case Production = 'production';
     case Staging = 'staging';
@@ -14,14 +11,5 @@ enum Environment: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return ucfirst($this->value);
-    }
-
-    public function getColor(): string
-    {
-        return match ($this) {
-            self::Production => 'danger',
-            self::Staging => 'warning',
-            self::Development => 'gray',
-        };
     }
 }

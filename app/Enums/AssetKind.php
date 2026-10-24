@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum AssetKind: string implements HasLabel
+enum AssetKind: string
 {
     case Host = 'host';
     case EcsTask = 'ecs_task';

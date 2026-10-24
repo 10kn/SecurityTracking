@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum FindingEventType: string implements HasLabel
+enum FindingEventType: string
 {
     case Opened = 'opened';
     case Resolved = 'resolved';

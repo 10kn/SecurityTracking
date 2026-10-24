@@ -6,7 +6,8 @@
  * Theme (graphite / ocean / forest / night) đổi qua thuộc tính data-theme trên <html>.
  */
 
-@import url('../../fonts/filament/filament/inter/index.css');
+/* Only for viewing the prototype; the product self-hosts both fonts. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Noto+Sans+JP:wght@400..700&display=swap');
 
 :root,
 [data-theme='graphite'] {

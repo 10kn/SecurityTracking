@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum ChatNotificationKind: string implements HasLabel
+enum ChatNotificationKind: string
 {
     case Test = 'test';
     case Immediate = 'immediate';

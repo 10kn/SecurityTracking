@@ -1,7 +1,7 @@
 # Project Security Manager — Handover & kế hoạch tiếp theo
 
-> Cập nhật: 23/10/2026 (bản rút gọn phạm vi MVP; đã chốt prototype UI v2 — mục 10; **M0 → M5 xong**, còn Pilot — mục 3). Tài liệu bàn giao giữa các phiên làm việc (người hoặc AI).
-> Đọc mục 1–3 trước khi viết code. Mục 5 là logic phát hiện, phần lõi của MVP. Mục 9 là cách làm việc đã thống nhất với chủ dự án. Mục 10 là spec giao diện đã chốt — đọc trước khi làm bất kỳ màn hình Filament nào.
+> Cập nhật: 24/10/2026 (bản rút gọn phạm vi MVP; đã chốt prototype UI v2 — mục 10; **M0 → M5 xong**, admin UI chuyển từ Filament sang React + Inertia (D2), còn Pilot — mục 3). Tài liệu bàn giao giữa các phiên làm việc (người hoặc AI).
+> Đọc mục 1–3 trước khi viết code. Mục 5 là logic phát hiện, phần lõi của MVP. Mục 9 là cách làm việc đã thống nhất với chủ dự án. Mục 10 là spec giao diện đã chốt — đọc trước khi làm bất kỳ màn hình admin nào.
 
 ## 1. Bối cảnh
 
@@ -17,14 +17,14 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 | # | Quyết định | Ghi chú |
 |---|---|---|
 | D1 | Backend: **Laravel 13** + **PostgreSQL** | Chủ dự án review được code PHP; người khác trong công ty tiếp quản được. |
-| D2 | Admin UI cho MVP: **Filament 5, chỉ dùng resource chuẩn** (form, bảng) | Không làm custom page. Quyết định Filament hay React cho UI đầy đủ để sau MVP. |
+| D2 | Admin UI: **React + Inertia** (Laravel adapter `inertiajs/inertia-laravel` 3, React 19, TypeScript, shadcn/ui chỉnh theo token của prototype v2), đường dẫn `/admin` (24/10/2026) | Thay cho Filament 5 (dùng ở M1–M5): Filament khó tùy biến (vd. ô chọn version vừa lọc tại chỗ vừa nhận version mới) và mỗi thao tác đều gọi server. |
 | D3 | Phạm vi MVP: **runtime ngôn ngữ (PHP, Ruby, Node.js) + package từ lockfile** (Composer, Bundler, npm) | OS để giai đoạn sau. yarn / pnpm làm nếu còn thời gian. |
 | D4 | Engine lỗ hổng package: **OSV** (không dùng Dependency-Track) | Thiết kế để đổi được: lưu component theo PURL, interface `VulnerabilityMatcher`. |
 | D5 | Runtime dùng **quy tắc riêng**, không chờ CVE | MVP dùng 4 trạng thái: eol → outdated_security → outdated → ok, cộng `unknown`. `unknown` không bao giờ được coi là `ok`. Trạng thái `vulnerable` (đối chiếu dải CVE) để sau MVP. |
 | D6 | **Hub là nguồn sự thật duy nhất** của trạng thái finding | MVP chỉ có 2 trạng thái **tự động**: `open` / `resolved`. Vòng đời thủ công (Đã nhận, Không ảnh hưởng, Chấp nhận rủi ro) để sau MVP. |
 | D7 | Kênh cảnh báo: **Google Chat** (webhook theo team) | Gộp tin: 1 vấn đề × N service = 1 tin. Lỗi hệ thống gửi về một space riêng của admin (thay cho email dự phòng). |
-| D8 | Nguồn thông tin version ở MVP: **admin nhập tay** trong Filament | Version runtime theo service, upload lockfile. Collector, ingest API, đọc Git repo để sau. |
-| D9 | MVP **không có** màn hình finding, tìm kiếm, dashboard | Card Google Chat link về trang service trong Filament và link nguồn tin gốc. |
+| D8 | Nguồn thông tin version ở MVP: **admin nhập tay** trên màn hình admin | Version runtime theo service, upload lockfile. Collector, ingest API, đọc Git repo để sau. |
+| D9 | MVP **không có** màn hình finding, dashboard | Card Google Chat link về trang sửa service (`/admin/services/{id}/edit`) và link nguồn tin gốc. Tìm kiếm ⌘K có từ UI React (D2). |
 | D11 | **Công nghệ là dữ liệu**, admin tự thêm trên màn Công nghệ (23/10/2026) | Thay cho 3 ngôn ngữ cố định. Mỗi công nghệ gắn một mã sản phẩm endoflife.date (nhánh, ngày hết hỗ trợ, bản mới nhất). PHP / Node.js / Ruby có thêm nguồn chính thức liệt kê mọi bản (php.net, nodejs.org, ruby-lang.org). Form service: danh sách động "công nghệ + version"; version là ô tự nhập có gợi ý từ danh mục, không bắt buộc chọn trong danh sách. Không thêm ô framework: lỗ hổng framework lấy từ lockfile (M5); muốn theo dõi framework hết hỗ trợ thì thêm như một công nghệ (vd. `laravel`). Bỏ ý "nhắc dữ liệu nhập tay đã cũ". |
 | D10 | Giao diện admin theo **prototype v2** (`public/prototypes/admin-v2/`): flat, tối giản; **4 theme** người dùng tự chọn (Graphite, Ocean, Forest, Night); **song ngữ Việt / Nhật** với font và cỡ chữ riêng cho tiếng Nhật | Spec ở mục 10. Áp dụng cho các resource của MVP (Team, Project, Service). Màn Tổng quan và Findings trong prototype là mẫu cho giai đoạn sau MVP; D9 giữ nguyên. Prototype v1 (`public/prototypes/admin/`) bị loại vì rối mắt, chỉ giữ để đối chiếu. |
 
@@ -33,12 +33,11 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 ### 3.1 Đã có
 
 - App Laravel 13 ở thư mục gốc (PHP 8.5, Pest 5). Đã `git init` (nhánh `main`), **chưa có commit**.
-- Package: `filament/filament` 5.10, `larastan/larastan` (dev), `laravel/boost` (dev).
+- Package: `inertiajs/inertia-laravel` 3.5, `laravel/wayfinder` 0.1, `larastan/larastan` (dev), `laravel/boost` (dev). `filament/filament` đã gỡ (24/10/2026).
 - Laravel Boost đã cài: `CLAUDE.md`, `AGENTS.md`, `.claude/skills/`, `.agents/`, `.mcp.json`, `boost.json`.
 - Database: `compose.yaml` chạy Postgres 17 ở cổng 5432 (user `psm` / mật khẩu `secret`). Docker chạy qua OrbStack.
   - `psm`: database dev. `php artisan migrate:fresh --seed` chạy được.
   - `psm_testing`: database cho test (`phpunit.xml`). Volume mới thì tạo lại: `docker compose exec -T pgsql psql -U psm -d psm -c "CREATE DATABASE psm_testing OWNER psm;"`.
-- Filament panel: `app/Providers/Filament/AdminPanelProvider.php`, đường dẫn `/admin`, màu mặc định. Chưa có resource nào. Chỉ admin vào được (`User::canAccessPanel`).
 - Tài khoản seed: `admin@example.com` / `password`. `DatabaseSeeder` từ chối chạy ở production.
 - Data model (đã chỉnh theo mục 3.4, migration nháp sửa tại chỗ vì chưa deploy):
   - `app/Enums/`: 18 enum (thêm `Theme`, `Locale`, `FindingEventType`, `ChatNotificationKind`, `GoogleChatStatus`; `FindingState` chỉ còn `open` / `resolved`; `RuntimeSource::Manual`). Nhãn bọc `__()` (M1).
@@ -47,7 +46,7 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
   - `database/factories/`: đủ factory cho mọi model, có state `admin()`, `withGoogleChatWebhook()`, `resolved()`, `stale()`, `eol()`, `security()`, `preNotice()`, `sent()`, `failed()`, `forAdmin()`.
   - `database/seeders/DemoSeeder.php`: 3 team, 5 project, 8 service (theo phụ lục A), mỗi service 1 deployment `production` và 1 runtime (`unknown` cho tới khi chạy `php artisan psm:sync-runtimes` lần đầu).
 - Kiểm tra: `phpstan.neon` (Larastan level 6, `parseModelCastsMethod: true` để Larastan đọc `casts()`); Pint sạch; 19 test Pest xanh (`tests/Feature/Models`, `tests/Feature/Seeders`). Test dùng `LazilyRefreshDatabase`.
-- **M1 (Filament):**
+- **M1 (làm bằng Filament; giao diện đã làm lại bằng React ở mục "UI React" bên dưới, phần nghiệp vụ giữ nguyên):**
   - Resource `Teams` (Cài đặt), `Projects`, `Services` (Danh mục) trong `app/Filament/Resources/`. Không có Dashboard (D9): `/admin` chuyển tới resource đầu tiên.
   - Team: thông tin chung + Google Chat (URL chỉ hiện một phần, nút "Gửi thử", modal "Thay / Thêm webhook" gửi thử trước rồi mới lưu, dòng trạng thái lấy từ `chat_notifications`). Nút xóa team bị khóa khi còn project. Tab Projects.
   - Project: trang xem (infolist + tab Services có cột Runtime / Packages, `unknown` = chấm viền đứt), nút "Thêm service" điền sẵn project.
@@ -73,9 +72,16 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
   - Đường gửi: `QueueChatNotification` (dedupe_key unique, `createOrFirst`) → job `SendChatNotification` (retry có backoff 60/300/900/3600 giây, 4xx trừ 408/429 là lỗi vĩnh viễn, hết lượt → `failed_at` + cảnh báo admin). Team chưa có webhook → ghi lỗi + cảnh báo admin. Webhook admin phải có tiền tố Google Chat. Card do `App\Services\GoogleChatCards` dựng (cardsV2), viết bằng `psm.alerts.locale` (mặc định `vi`) dù admin đang dùng tiếng Nhật.
   - Bản tổng hợp `psm:send-digest` (giờ / ngày / múi giờ trong `psm.digest`, mặc định 08:00 `Asia/Ho_Chi_Minh` mọi ngày): finding mới từ bản trước, vẫn đang mở, đã tự đóng, số runtime thiếu dữ liệu / có bản mới hơn, runtime sắp hết hỗ trợ trong 30 ngày. Không có gì thì không gửi; mỗi team 1 bản/ngày.
   - `psm:check-sources` (15 phút): mỗi đợt nguồn lỗi quá ngưỡng → 1 tin vào space admin.
-  - Filament: cột "Finding mở" ở danh sách Team, Service và tab Services của Project. Dòng trạng thái Google Chat bỏ qua tin đang chờ retry.
+  - Cột "Finding mở" ở danh sách Team, Service và tab Services của Project. Dòng trạng thái Google Chat bỏ qua tin đang chờ retry.
 - **M4 (thông báo sớm):** `psm:watch-notices` (15 phút) đọc feed php.net (Atom), nodejs.org vulnerability (RSS), ruby-lang.org news (RSS) qua `ReleaseSource::noticeFeed()`; parser `app/Services/Notices/` (không dùng mạng khi parse XML, từ chối DOCTYPE). Lọc từ khóa `psm.notices.keywords`; **bỏ qua bài "x.y.z Released"** (catalog đã báo đúng version cần nâng). Lưu `advisories` (`kind = pre_notice`, mức Critical / High theo chữ trong tin, CVSS, CVE). Mỗi team đang chạy công nghệ đó nhận 1 card "Cảnh báo chuẩn bị" mỗi tin (chỉ tin < 72 giờ). Tin Critical trong 14 ngày → finding `outdated_security` của công nghệ đó lên Critical và gửi lại. Không tạo finding cho tin báo trước (`FindingRule::PreNotice` chưa dùng). Heartbeat `notice:{nguồn}` (ngưỡng 120 phút). Fixture thật trong `tests/Fixtures/notices/` (có tin php.net "Upcoming Critical PHP Security Release" 20/10/2026 20:32 UTC).
 - **M5 (lỗ hổng package):** tự parse lockfile (`app/Services/Lockfiles/`: composer.lock, Gemfile.lock, package-lock.json v1/v2/v3) → `components` (PURL qua `App\Support\PackageUrl`, `is_dev`), parse lại khi `content_hash` đổi; lockfile không đọc được thì giữ component cũ, lưu `parse_error`. `VulnerabilityMatcher` → `OsvVulnerabilityMatcher` (`querybatch` ≤ 1000, phân trang, chỉ lấy chi tiết advisory mới / đã sửa, bỏ advisory withdrawn). Mức: GitHub severity → CVSS v3.1 tự tính (`App\Support\Cvss3`) → `unknown`. Finding `dependency_vulnerable` theo (deployment, package, advisory), gom card theo advisory; dev dependency chỉ vào bản tổng hợp (`PSM_IMMEDIATE_DEV_DEPENDENCIES`). Quét khi lockfile đổi và `psm:scan-packages` mỗi 6 giờ; OSV lỗi → giữ finding đang mở, heartbeat `osv` (ngưỡng 720 phút). Migration nháp: `lockfiles` thêm `parsed_hash`, `parse_error`, `package_count`; unique của `components` thêm `version`; `advisories` thêm `source_modified_at`, `withdrawn_at`, `fixed_versions`. Cột Packages hiện số package và số package có lỗ hổng. Fixture OSV thật trong `tests/Fixtures/osv/`.
+- **UI React (24/10/2026, thay Filament — D2):**
+  - Server: route trong `routes/web.php` (tiền tố `/admin`, tên `admin.*`), controller `app/Http/Controllers/Admin/`, form request `app/Http/Requests/Admin/`, resource `app/Http/Resources/Admin/` (dòng bảng). Bảng tìm / sắp xếp / phân trang qua query string (`App\Support\TableQuery`). Đăng nhập riêng (`SessionController`, giới hạn 6 lần / phút), chỉ admin (`EnsureUserIsAdmin`). Toast qua `Inertia::flash('toast', …)`.
+  - `HandleInertiaRequests` chia sẻ người dùng, theme / ngôn ngữ, danh sách theme và bản dịch `lang/{locale}.json` (gửi một lần, chỉ khi không phải tiếng Việt). `ApplyUserPreferences` đặt locale trước khi chia sẻ.
+  - Client: `resources/js/` (`pages/`, `layouts/admin-layout.tsx`, `components/admin/`, `components/ui/` là shadcn/ui đã chỉnh). Token màu và cỡ chữ trong `resources/css/app.css` (theo `styles.css` của prototype v2). Đổi theme tức thì (CSS theo `data-theme`), đổi ngôn ngữ thì tải lại trang. Font Inter và Noto Sans JP tự host (`@fontsource-variable/*`); Noto Sans JP chỉ nạp khi dùng tiếng Nhật (`resources/css/japanese.css`). Chuỗi viết tiếng Việt, dịch bằng `t('…')` từ cùng `lang/ja.json`; test `FrontendTranslationsTest` báo chuỗi thiếu bản dịch.
+  - Route TypeScript sinh bằng Wayfinder (`resources/js/actions/`, không commit; plugin Vite tự sinh lại).
+  - Ô version của service: lọc ngay trong trình duyệt theo tiền tố, nhận version không có trong danh mục ("Dùng “…”"); kết quả đánh giá lấy từ `GET /admin/runtime-evaluation`. Tìm kiếm ⌘K: `GET /admin/search`.
+  - Kiểm tra: 320 test Pest (`tests/Feature/Admin/` thay cho test Filament), Larastan level 6 sạch, Pint sạch, `tsc` sạch; đã xem bằng Brave headless: 4 theme, VI / JA, màn 390px.
 - Lịch (`routes/console.php`): `psm:sync-runtimes` mỗi giờ, `psm:watch-notices` và `psm:check-sources` 15 phút, `psm:scan-packages` 6 giờ, `psm:evaluate-runtimes` 00:05, `psm:send-digest` theo `psm.digest`.
 - Kiểm tra (M5): 297 test Pest xanh (gồm 6 kịch bản đầu cuối trong `tests/Feature/Scenarios/DetectionPipelineTest.php`), Larastan level 6 sạch, Pint sạch. Đã chạy thử với nguồn thật trên DB dev ngày 23/10/2026 (8 finding từ dữ liệu demo, 7 tin báo trước).
 - Prototype UI (HTML/CSS/JS tĩnh, không gọi backend):
@@ -84,12 +90,10 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 
 ### 3.2 Chưa làm / còn thiếu
 
-- [ ] Chưa commit lần nào (chờ chủ dự án yêu cầu). Xem lại `.claude/settings.local.json` có nên vào `.gitignore` trước khi commit.
 - [ ] Chưa thử gửi thật lên Google Chat (card cardsV2) — cần một space thử và `PSM_ADMIN_CHAT_WEBHOOK` trước pilot.
 - [ ] Lần poll đầu ở production sẽ lưu toàn bộ lịch sử feed nhưng chỉ gửi tin < 72 giờ; lần đồng bộ catalog đầu tiên sẽ gửi mọi finding hiện có — báo trước cho các team.
 - [ ] Danh sách từ khóa thông báo sớm và quy tắc "critical/high" theo chữ là heuristic — xem lại khi pilot.
 - [ ] `DemoSeeder` chưa có lockfile (thêm vào thì seed sẽ gọi OSV).
-- [ ] Noto Sans JP **chưa tự host**: CSS dùng Noto Sans JP nếu máy có, nếu không thì Hiragino / Yu Gothic / Meiryo. Muốn tự host cần thêm package font (vd. `@fontsource-variable/noto-sans-jp`) — chờ chủ dự án đồng ý (thêm dependency).
 - [ ] Bản dịch `lang/ja.json` do AI viết — cần người dùng tiếng Nhật duyệt (câu hỏi mở 4).
 - [ ] Chưa thử "Gửi thử" với một webhook Google Chat thật (test dùng `Http::fake()`).
 
@@ -124,12 +128,12 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 2. Giờ gửi bản tổng hợp: mặc định 08:00 `Asia/Ho_Chi_Minh`, gửi mọi ngày trong tuần. Cấu hình được cả giờ và ngày.
 3. Mức nào gửi ngay, mức nào chỉ vào bản tổng hợp: mặc định theo bảng ở mục 5.4. Chính sách nằm trong config, đổi được mà không sửa code.
 
-**Không chặn MVP:** Git hosting, cách deploy server truyền thống, Filament hay React cho UI đầy đủ, ngưỡng SLA, yêu cầu SBOM / VEX.
+**Không chặn MVP:** Git hosting, cách deploy server truyền thống, ngưỡng SLA, yêu cầu SBOM / VEX. (Filament hay React: đã chọn React — D2.)
 
 **Về giao diện (mục 10), cần chủ dự án xác nhận:**
 
 4. Bản dịch tiếng Nhật trong `public/prototypes/admin-v2/i18n.js` do AI viết, cần người dùng tiếng Nhật duyệt. Thuật ngữ cần chốt: Finding → 検出結果, Đã nhận → 確認済み, Email leo thang → エスカレーション先メール.
-5. ~~Custom theme của Filament cần Tailwind + Vite~~ — chủ dự án đồng ý, đã làm ở M1 (23/10/2026).
+5. ~~Custom theme của Filament cần Tailwind + Vite~~ — đã làm ở M1; từ 24/10/2026 dùng Tailwind + Vite cho UI React.
 
 ## 5. Logic phát hiện kịp thời (lõi của MVP)
 
@@ -143,7 +147,7 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 
 | Tín hiệu | Nguồn | Tần suất | Độ trễ tối đa | Kết quả |
 |---|---|---|---|---|
-| Admin sửa version / lockfile | Filament | Ngay khi lưu (queued job) | Vài giây | Đánh giá lại service đó |
+| Admin sửa version / lockfile | Màn hình admin | Ngay khi lưu (queued job) | Vài giây | Đánh giá lại service đó |
 | Thông báo sớm của hãng | Feed php.net, nodejs.org, ruby-lang.org | 15 phút | ~15 phút | "Cảnh báo chuẩn bị" cho team đang chạy ngôn ngữ đó |
 | Bản vá bảo mật mới | Release JSON / YAML của 3 ngôn ngữ | 1 giờ | ~1 giờ | `outdated_security` |
 | Có bản mới (không phải bảo mật) | Như trên | 1 giờ | — | `outdated`, chỉ vào bản tổng hợp |
@@ -183,7 +187,7 @@ Xét theo thứ tự, dừng ở quy tắc đầu tiên khớp:
 - **Gửi lại** chỉ khi mức tăng, hoặc có thêm service bị cùng vấn đề. Không nhắc lặp tin gửi ngay; bản tổng hợp hằng ngày là lời nhắc.
 - **Gửi tin chắc chắn**: queued job, retry có backoff; `chat_notifications.dedupe_key` unique để không gửi hai lần; thất bại sau khi hết lượt thử → báo space admin.
 - Team chưa có webhook → không mất tin: ghi `chat_notifications` với lỗi, đưa vào cảnh báo admin.
-- Nút trên card: mở trang service trong Filament, mở link nguồn tin gốc.
+- Nút trên card: mở trang sửa service (`/admin/services/{id}/edit`), mở link nguồn tin gốc.
 
 ### 5.6 Cách kiểm chứng
 
@@ -213,7 +217,7 @@ M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đ
 
 | Tính năng | Ghi chú |
 |---|---|
-| Màn hình Findings (inbox, gom nhóm, phím tắt), trang chi tiết, tìm kiếm, ⌘K, dashboard, ma trận runtime, dòng thời gian nhánh | Làm sau khi chọn Filament hay React. Theo spec mục 10; màn Tổng quan trong prototype v2 là mẫu. |
+| Màn hình Findings (inbox, gom nhóm, phím tắt), trang chi tiết, dashboard, ma trận runtime, dòng thời gian nhánh | Làm bằng React (D2). Theo spec mục 10; màn Tổng quan trong prototype v2 là mẫu. ⌘K tìm project / service / team / công nghệ đã có. |
 | Cài đặt gửi tin theo từng team, email leo thang, tab thành viên của team | Có trong prototype v2 (mục 10.6) nhưng ngoài MVP: MVP dùng chính sách chung trong `config/psm.php` và chỉ admin đăng nhập. |
 | Vòng đời thủ công: Đã nhận, Đã vá, Đã xác minh theo instance, Không ảnh hưởng, Chấp nhận rủi ro; SLA | MVP chỉ `open` / `resolved` tự động. |
 | Google SSO, policy theo team, dev đăng nhập xem team mình | MVP chỉ admin đăng nhập. |
@@ -292,19 +296,18 @@ Tham số URL: `?theme=graphite|ocean|forest|night`, `?lang=vi|ja`, `?state=` (t
 
 Người dùng chọn trong menu **Giao diện** trên topbar. Lựa chọn lưu theo người dùng (`users.theme`; prototype lưu `localStorage['psm-theme']`). Mặc định là Graphite.
 
-| Theme | Nền / bề mặt | Viền | Chữ | Primary | Filament |
-|---|---|---|---|---|---|
-| Graphite | `#fafafa` / `#ffffff` | `#e4e4e7` | `#18181b` | `#18181b` (nút đen) | primary Zinc, gray Zinc |
-| Ocean | `#f8fafc` / `#ffffff` | `#e2e8f0` | `#0f172a` | `#2563eb` | primary Blue, gray Slate |
-| Forest | `#fafaf9` / `#ffffff` | `#e7e5e4` | `#1c1917` | `#0f766e` (teal-700, đạt AA với chữ trắng) | primary Teal, gray Stone |
-| Night | `#09090b` / `#111113` | `#26262b` | `#f4f4f5` | `#4f46e5` (indigo-600); link `#a5b4fc` | dark mode + primary Indigo, gray Zinc |
+| Theme | Nền / bề mặt | Viền | Chữ | Primary |
+|---|---|---|---|---|
+| Graphite | `#fafafa` / `#ffffff` | `#e4e4e7` | `#18181b` | `#18181b` (nút đen) |
+| Ocean | `#f8fafc` / `#ffffff` | `#e2e8f0` | `#0f172a` | `#2563eb` |
+| Forest | `#fafaf9` / `#ffffff` | `#e7e5e4` | `#1c1917` | `#0f766e` (teal-700, đạt AA với chữ trắng) |
+| Night | `#09090b` / `#111113` | `#26262b` | `#f4f4f5` | `#4f46e5` (indigo-600); link `#a5b4fc` |
 
-Cách làm trên Filament (kiểm chứng ở M1):
+Cách làm (UI React):
 
-- `FilamentColor::register(fn () => …)` nhận closure, nên có thể đọc `auth()->user()->theme` lúc render → trả bảng màu primary / gray tương ứng.
-- Night = dark mode. Ẩn nút light / dark mặc định (`->themeSwitcher(false)`), vì menu Giao diện đã thay cho nó. Theme Night ép chế độ tối, 3 theme còn lại ép chế độ sáng.
-- Menu Giao diện: một mục trong user menu (`userMenuItems()`), hoặc render hook trên topbar giống prototype.
-- Graphite cần CSS bổ sung trong custom theme (nút primary màu đen, mục sidebar đang chọn màu trắng có viền).
+- Server đặt `<html data-theme="…">` theo `users.theme` (`resources/views/app.blade.php`); token màu của mỗi theme là biến CSS trong `resources/css/app.css`, Tailwind đọc qua `@theme inline`.
+- Night là theme tối duy nhất (`dark:` = `[data-theme='night']`). Không có nút light / dark riêng.
+- Menu Giao diện trên topbar đổi `data-theme` ngay rồi lưu `PUT /admin/preferences` ở nền.
 
 ### 10.4 Chữ và song ngữ Việt / Nhật
 
@@ -324,32 +327,29 @@ Chuyển ngôn ngữ bằng nút **VI / 日本語** trên topbar. Lựa chọn l
 
 - Lý do: kanji / kana trông to và đặc hơn chữ Latin cùng cỡ, nên chữ Nhật nhỏ hơn nửa bậc nhưng giãn dòng cao hơn.
 - Tiếng Nhật: tiêu đề dùng `font-feature-settings: 'palt'`; nội dung dùng `line-break: strict` và `word-break: auto-phrase`.
-- Font tự host trong sản phẩm. Filament đã có Inter; Noto Sans JP thêm vào custom theme. Prototype tải Noto Sans JP từ Google Fonts chỉ để xem thử.
-- Bản dịch nằm trong `lang/vi.json` và `lang/ja.json` (lấy từ `i18n.js`). Nhãn enum hiện viết cứng tiếng Việt trong `HasLabel` → đổi sang `__()`. Filament đã có sẵn bản dịch `vi` và `ja` cho component chuẩn.
-- Middleware đặt `App::setLocale(auth()->user()->locale)`. Cần kiểm tra Filament đặt `<html lang>` theo locale của app.
+- Font tự host trong sản phẩm (`@fontsource-variable/inter`, `@fontsource-variable/noto-sans-jp`; Noto Sans JP chỉ nạp khi dùng tiếng Nhật). Prototype tải font từ Google Fonts chỉ để xem thử.
+- Bản dịch nằm trong `lang/ja.json` (lấy từ `i18n.js`), dùng chung cho server (`__()`) và React (`t()`); key là câu tiếng Việt. Nhãn enum bọc `__()`.
+- Middleware `ApplyUserPreferences` đặt `App::setLocale(auth()->user()->locale)`; `<html lang>` theo locale của app.
 - Định dạng theo ngôn ngữ: ngày `23/10/2026` ↔ `2026/10/23`; thời gian tương đối `12 phút trước` ↔ `12 分前`; `Còn 14 giờ` ↔ `残り 14 時間`; `Quá 2 ngày` ↔ `2 日超過`.
 - Giữ nguyên, không dịch: mức độ (Critical, High, Medium, Low), SLA, CVE, tên môi trường (production, staging), Webhook URL, Google Chat, tên service, version.
 
-### 10.5 Component → Filament
+### 10.5 Component → React
 
-| Prototype | Filament 5 | Ghi chú |
+| Prototype | UI React | Ghi chú |
 |---|---|---|
-| Sidebar có nhóm (không tên / Danh mục / Cài đặt) | Navigation groups, `navigationBadge()` cho Findings | Chuẩn |
-| Topbar: tìm kiếm ⌘K | Global search, `globalSearchKeyBindings(['command+k', 'ctrl+k'])` | Chuẩn |
-| Topbar: menu Giao diện, VI / 日本語 | User menu item hoặc render hook | Tự làm nhẹ |
-| Breadcrumb + tiêu đề + mô tả + nút hành động | Page heading / subheading / header actions | Chuẩn |
-| Bảng, dòng phụ dưới tên | Table, `TextColumn::description()` | Chuẩn |
-| Badge mức độ có icon | `TextColumn::badge()->icon()->color()` dùng enum `Severity` | Chuẩn |
-| Chấm trạng thái + chữ, chấm viền đứt cho `unknown` | `TextColumn` + CSS hook trong custom theme | Tự làm nhẹ |
-| Section mô tả bên trái, field bên phải | `Section::make()->aside()` | Chuẩn |
-| Tabs dạng pill | Relation managers / `Tabs` | Chuẩn, cần chỉnh CSS |
-| Khối thông tin nhãn – giá trị 3 cột | Infolist `TextEntry` trong `Grid` 3 cột | Chuẩn |
-| Khối 4 số liệu chia bằng đường kẻ | `StatsOverviewWidget` | Chuẩn, cần CSS cho kiểu flat (sau MVP) |
-| Dòng thông báo (callout), banner đỏ khi nguồn lỗi | Widget / render hook với Blade view | Tự làm nhẹ (sau MVP) |
-| Modal có form, xác nhận xóa | Action modal, `requiresConfirmation()` | Chuẩn |
-| Toast | Notification | Chuẩn |
-| Toggle | `Toggle` | Chuẩn |
-| j / k trong bảng | Alpine trong custom view | Sau MVP |
+| Sidebar có nhóm (không tên / Danh mục / Cài đặt), người dùng ở chân | `layouts/admin-layout.tsx` | Số đếm Findings khi có màn Findings |
+| Topbar: tìm kiếm ⌘K | `components/admin/command-palette.tsx` (cmdk) + `GET /admin/search` | Có |
+| Topbar: menu Giao diện, VI / 日本語 | `components/admin/appearance-menu.tsx` | Có |
+| Breadcrumb + tiêu đề + mô tả + nút hành động | `components/admin/page-header.tsx` | Có |
+| Bảng, dòng phụ dưới tên, tìm / sắp xếp / phân trang | `components/admin/data-table.tsx` + `hooks/use-table-query.ts` | Có |
+| Chấm trạng thái + chữ, chấm viền đứt cho `unknown` | `components/admin/status-dot.tsx` (`.status-dot` trong `app.css`) | Có |
+| Section mô tả bên trái, field bên phải | `components/admin/form-section.tsx` | Có |
+| Ô chọn có tìm kiếm, nhận giá trị mới | `components/admin/combobox.tsx` | Lọc trong trình duyệt |
+| Tabs dạng pill | `components/admin/tabs.tsx` | Có |
+| Khối thông tin nhãn – giá trị 3 cột | `<dl>` trong `pages/projects/show.tsx` | Có |
+| Modal có form, xác nhận xóa | `components/ui/dialog.tsx`, `components/admin/confirm-button.tsx` | Có |
+| Toast | sonner (`components/ui/sonner.tsx`) + `Inertia::flash('toast')` | Có |
+| Badge mức độ có icon, khối 4 số liệu, callout nguồn lỗi, toggle, j / k trong bảng | Chưa làm | Sau MVP |
 
 ### 10.6 Màn hình và phạm vi MVP
 

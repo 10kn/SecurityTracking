@@ -27,3 +27,11 @@ it('defaults new users to the graphite theme and the vietnamese locale', functio
     expect($user->theme)->toBe(Theme::Graphite)
         ->and($user->locale)->toBe(Locale::Vietnamese);
 });
+
+it('takes the avatar initials from the first two words of the name', function (string $name, string $initials) {
+    expect(User::factory()->make(['name' => $name])->initials())->toBe($initials);
+})->with([
+    'vietnamese' => ['Giang Nguyễn', 'GN'],
+    'one word' => ['admin', 'A'],
+    'markup' => ['<script>alert(1)</script> Admin', 'SA'],
+]);

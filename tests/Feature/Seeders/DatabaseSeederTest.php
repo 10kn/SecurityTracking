@@ -5,10 +5,9 @@ use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
-use Filament\Auth\Pages\Login;
-use Livewire\Livewire;
 
 use function Pest\Laravel\assertAuthenticatedAs;
+use function Pest\Laravel\post;
 use function Pest\Laravel\seed;
 
 it('seeds an admin account and the demo teams and services', function () {
@@ -24,13 +23,11 @@ it('seeds an admin account and the demo teams and services', function () {
             && $service->deployments->sole()->runtimes->count() === 1))->toBeTrue();
 });
 
-it('lets the seeded admin sign in to the admin panel', function () {
+it('lets the seeded admin sign in to the admin screens', function () {
     seed(DatabaseSeeder::class);
 
-    Livewire::test(Login::class)
-        ->fillForm(['email' => 'admin@example.com', 'password' => 'password'])
-        ->call('authenticate')
-        ->assertHasNoFormErrors()
+    post('/admin/login', ['email' => 'admin@example.com', 'password' => 'password'])
+        ->assertSessionHasNoErrors()
         ->assertRedirect('/admin');
 
     assertAuthenticatedAs(User::where('email', 'admin@example.com')->sole());

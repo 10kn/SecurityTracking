@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ChatNotification;
 use App\Models\Project;
 use App\Models\Team;
 use Illuminate\Database\QueryException;
@@ -24,4 +25,12 @@ it('refuses to delete a team that still owns projects', function () {
     $team = Team::factory()->has(Project::factory())->create();
 
     expect(fn () => $team->delete())->toThrow(QueryException::class);
+});
+
+it('ignores a message still being retried in the google chat status', function () {
+    $team = Team::factory()->withGoogleChatWebhook()->create();
+    ChatNotification::factory()->for($team)->failed()->create();
+    ChatNotification::factory()->for($team)->create(['last_error' => 'Google Chat trả lỗi HTTP 503.']);
+
+    expect($team->googleChatStatus()->getLabel())->toBe('Lỗi gửi');
 });

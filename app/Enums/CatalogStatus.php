@@ -2,13 +2,15 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
+use App\Enums\Concerns\HasStatusDot;
 
 /**
  * Health of a technology's version catalog, from its source heartbeat.
  */
-enum CatalogStatus: string implements HasLabel
+enum CatalogStatus: string
 {
+    use HasStatusDot;
+
     case Synced = 'synced';
     case LastSyncFailed = 'last_sync_failed';
     case Stale = 'stale';

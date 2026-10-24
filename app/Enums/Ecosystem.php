@@ -6,9 +6,8 @@ use App\Services\Lockfiles\ComposerLockParser;
 use App\Services\Lockfiles\GemfileLockParser;
 use App\Services\Lockfiles\LockfileParser;
 use App\Services\Lockfiles\NpmLockParser;
-use Filament\Support\Contracts\HasLabel;
 
-enum Ecosystem: string implements HasLabel
+enum Ecosystem: string
 {
     case Packagist = 'packagist';
     case Rubygems = 'rubygems';

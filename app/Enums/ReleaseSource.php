@@ -11,13 +11,11 @@ use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeFeed;
 use App\Services\Notices\PhpNetNoticeFeed;
 use App\Services\Notices\RubyLangNoticeFeed;
-use Filament\Support\Contracts\HasDescription;
-use Filament\Support\Contracts\HasLabel;
 
 /**
  * Where the per-release list of a technology comes from. Branches and end-of-life dates always come from endoflife.date.
  */
-enum ReleaseSource: string implements HasDescription, HasLabel
+enum ReleaseSource: string
 {
     case Endoflife = 'endoflife';
     case PhpNet = 'php_net';

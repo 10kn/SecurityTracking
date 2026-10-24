@@ -16,6 +16,11 @@ class Lockfile extends Model
     use HasFactory;
 
     /**
+     * Upload limit per lockfile, in kilobytes. Large npm projects have package-lock.json files of several MB.
+     */
+    public const int MAX_UPLOAD_KILOBYTES = 20480;
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

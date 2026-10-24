@@ -1,9 +1,343 @@
-@import 'tailwindcss';
+/*
+ * Admin UI (Inertia + React), following prototype v2 (public/prototypes/admin-v2/styles.css): flat and minimal, one
+ * accent color, 1px borders, no shadows except on menus, toasts and dialogs. The theme is the data-theme attribute on
+ * <html>; the language sets <html lang>, which switches the type scale.
+ */
+@import 'tailwindcss' source(none);
+@import 'tw-animate-css';
+@import '@fontsource-variable/inter';
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
+@source '../js';
+@source '../views';
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+/* Night is the only dark theme. */
+@custom-variant dark (&:where([data-theme='night'], [data-theme='night'] *));
+
+:root,
+[data-theme='graphite'] {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --surface-2: #f4f4f5;
+    --border: #e4e4e7;
+    --border-strong: #d4d4d8;
+    --text: #18181b;
+    --text-2: #52525b;
+    --text-3: #a1a1aa;
+    --primary: #18181b;
+    --primary-hover: #3f3f46;
+    --primary-fg: #ffffff;
+    --primary-soft: #f4f4f5;
+    --link: #18181b;
+    --nav-active: #ffffff;
+    --nav-active-border: #e4e4e7;
+    --nav-active-text: var(--text);
+    --focus: rgba(24, 24, 27, 0.18);
+
+    --danger: #dc2626;
+    --danger-text: #b91c1c;
+    --danger-soft: #fef2f2;
+    --orange: #ea580c;
+    --orange-text: #c2410c;
+    --orange-soft: #fff7ed;
+    --warning: #d97706;
+    --warning-text: #b45309;
+    --warning-soft: #fffbeb;
+    --success: #16a34a;
+    --success-text: #15803d;
+    --success-soft: #f0fdf4;
+    --neutral-soft: #f4f4f5;
+    --overlay: rgba(9, 9, 11, 0.45);
+
+    color-scheme: light;
+}
+
+[data-theme='ocean'] {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-2: #f1f5f9;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text: #0f172a;
+    --text-2: #475569;
+    --text-3: #94a3b8;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-fg: #ffffff;
+    --primary-soft: #eff6ff;
+    --link: #2563eb;
+    --nav-active: #eff6ff;
+    --nav-active-border: transparent;
+    --nav-active-text: #1d4ed8;
+    --focus: rgba(37, 99, 235, 0.25);
+    --neutral-soft: #f1f5f9;
+}
+
+[data-theme='forest'] {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --surface-2: #f5f5f4;
+    --border: #e7e5e4;
+    --border-strong: #d6d3d1;
+    --text: #1c1917;
+    --text-2: #57534e;
+    --text-3: #a8a29e;
+    --primary: #0f766e;
+    --primary-hover: #115e59;
+    --primary-fg: #ffffff;
+    --primary-soft: #f0fdfa;
+    --link: #0f766e;
+    --nav-active: #f0fdfa;
+    --nav-active-border: transparent;
+    --nav-active-text: #115e59;
+    --focus: rgba(15, 118, 110, 0.25);
+    --neutral-soft: #f5f5f4;
+}
+
+[data-theme='night'] {
+    --bg: #09090b;
+    --surface: #111113;
+    --surface-2: #1b1b1f;
+    --border: #26262b;
+    --border-strong: #3a3a41;
+    --text: #f4f4f5;
+    --text-2: #a1a1aa;
+    --text-3: #71717a;
+    --primary: #4f46e5;
+    --primary-hover: #6366f1;
+    --primary-fg: #ffffff;
+    --primary-soft: rgba(99, 102, 241, 0.14);
+    --link: #a5b4fc;
+    --nav-active: #1b1b1f;
+    --nav-active-border: #26262b;
+    --nav-active-text: var(--text);
+    --focus: rgba(129, 140, 248, 0.35);
+
+    --danger: #f87171;
+    --danger-text: #fca5a5;
+    --danger-soft: rgba(248, 113, 113, 0.12);
+    --orange: #fb923c;
+    --orange-text: #fdba74;
+    --orange-soft: rgba(251, 146, 60, 0.12);
+    --warning: #fbbf24;
+    --warning-text: #fcd34d;
+    --warning-soft: rgba(251, 191, 36, 0.1);
+    --success: #4ade80;
+    --success-text: #86efac;
+    --success-soft: rgba(74, 222, 128, 0.1);
+    --neutral-soft: #1b1b1f;
+    --overlay: rgba(0, 0, 0, 0.6);
+
+    color-scheme: dark;
+}
+
+/*
+ * Type scale per language. Japanese is half a step smaller because kanji and kana look larger and denser than Latin
+ * text of the same size, with a taller line-height to stay readable.
+ */
+:root {
+    --font-ui: 'Inter Variable', Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-code: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --fs-2xs: 10.5px;
+    --fs-xs: 12.5px;
+    --fs-sm: 14px;
+    --fs-base: 15px;
+    --fs-nav: 14.5px;
+    --fs-md: 17px;
+    --fs-h1: 26px;
+    --fs-stat: 30px;
+    --leading: 1.55;
+    --tracking: 0;
+}
+
+:root:lang(ja) {
+    --font-ui: 'Inter Variable', Inter, 'Noto Sans JP Variable', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Yu Gothic', Meiryo, sans-serif;
+    --fs-2xs: 10px;
+    --fs-xs: 12px;
+    --fs-sm: 13.5px;
+    --fs-base: 14.5px;
+    --fs-nav: 14px;
+    --fs-md: 16px;
+    --fs-h1: 24px;
+    --fs-stat: 30px;
+    --leading: 1.7;
+    --tracking: 0.02em;
+}
+
+@theme inline {
+    --font-sans: var(--font-ui);
+    --font-mono: var(--font-code);
+
+    --text-2xs: var(--fs-2xs);
+    --text-2xs--line-height: var(--leading);
+    --text-xs: var(--fs-xs);
+    --text-xs--line-height: var(--leading);
+    --text-sm: var(--fs-sm);
+    --text-sm--line-height: var(--leading);
+    --text-base: var(--fs-base);
+    --text-base--line-height: var(--leading);
+    --text-nav: var(--fs-nav);
+    --text-nav--line-height: var(--leading);
+    --text-md: var(--fs-md);
+    --text-md--line-height: 1.4;
+    --text-h1: var(--fs-h1);
+    --text-h1--line-height: 1.25;
+    --text-stat: var(--fs-stat);
+    --text-stat--line-height: 1.1;
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+
+    --color-background: var(--bg);
+    --color-surface: var(--surface);
+    --color-surface-2: var(--surface-2);
+    --color-border: var(--border);
+    --color-border-strong: var(--border-strong);
+    --color-foreground: var(--text);
+    --color-muted-foreground: var(--text-2);
+    --color-faint: var(--text-3);
+    --color-primary: var(--primary);
+    --color-primary-hover: var(--primary-hover);
+    --color-primary-foreground: var(--primary-fg);
+    --color-primary-soft: var(--primary-soft);
+    --color-link: var(--link);
+    --color-nav-active: var(--nav-active);
+    --color-nav-active-border: var(--nav-active-border);
+    --color-nav-active-text: var(--nav-active-text);
+    --color-ring: var(--focus);
+    --color-overlay: var(--overlay);
+
+    --color-danger: var(--danger);
+    --color-danger-text: var(--danger-text);
+    --color-danger-soft: var(--danger-soft);
+    --color-orange: var(--orange);
+    --color-orange-text: var(--orange-text);
+    --color-orange-soft: var(--orange-soft);
+    --color-warning: var(--warning);
+    --color-warning-text: var(--warning-text);
+    --color-warning-soft: var(--warning-soft);
+    --color-success: var(--success);
+    --color-success-text: var(--success-text);
+    --color-success-soft: var(--success-soft);
+    --color-neutral-soft: var(--neutral-soft);
+
+    /* Names the shadcn/ui components use. */
+    --color-card: var(--surface);
+    --color-card-foreground: var(--text);
+    --color-popover: var(--surface);
+    --color-popover-foreground: var(--text);
+    --color-muted: var(--surface-2);
+    --color-accent: var(--surface-2);
+    --color-accent-foreground: var(--text);
+    --color-secondary: var(--surface-2);
+    --color-secondary-foreground: var(--text);
+    --color-destructive: var(--danger);
+    --color-input: var(--border-strong);
+
+    --shadow-menu: 0 10px 30px rgba(0, 0, 0, 0.1);
+    --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.08);
+
+    --spacing-sidebar: 240px;
+    --spacing-topbar: 56px;
+}
+
+@layer base {
+    *,
+    ::before,
+    ::after {
+        border-color: var(--border);
+    }
+
+    html {
+        min-width: 320px;
+        font-family: var(--font-ui);
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-size: var(--fs-base);
+        line-height: var(--leading);
+        letter-spacing: var(--tracking);
+    }
+
+    /* Japanese: break lines by phrase; headings use proportional kana spacing (palt). */
+    :lang(ja) body {
+        line-break: strict;
+        word-break: auto-phrase;
+    }
+
+    :lang(ja) h1,
+    :lang(ja) h2 {
+        font-feature-settings: 'palt';
+        letter-spacing: 0.01em;
+    }
+
+    code,
+    kbd {
+        font-family: var(--font-code);
+        font-size: 0.9em;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+    }
+
+    button:not(:disabled),
+    [role='button']:not(:disabled) {
+        cursor: pointer;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        ::before,
+        ::after {
+            animation: none !important;
+            transition: none !important;
+        }
+    }
+}
+
+@layer components {
+    /* Status: a small dot plus text, no background. */
+    .status-dot {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--text);
+        font-size: var(--fs-sm);
+        white-space: nowrap;
+    }
+
+    .status-dot::before {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--text-3);
+        content: '';
+    }
+
+    .status-dot[data-tone='danger']::before {
+        background: var(--danger);
+    }
+
+    .status-dot[data-tone='warning']::before {
+        background: var(--warning);
+    }
+
+    .status-dot[data-tone='success']::before {
+        background: var(--success);
+    }
+
+    /* Missing data: a dashed ring, so it never looks like a passing state. */
+    .status-dot[data-tone='unknown']::before {
+        border: 1.5px dashed var(--warning);
+        background: transparent;
+    }
 }

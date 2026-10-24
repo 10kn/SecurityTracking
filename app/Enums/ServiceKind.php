@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum ServiceKind: string implements HasLabel
+enum ServiceKind: string
 {
     case Server = 'server';
     case Ecs = 'ecs';

@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum Locale: string implements HasLabel
+enum Locale: string
 {
     case Vietnamese = 'vi';
     case Japanese = 'ja';

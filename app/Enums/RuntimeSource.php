@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum RuntimeSource: string implements HasLabel
+enum RuntimeSource: string
 {
     case Manual = 'manual';
     case RuntimeBinary = 'runtime_binary';

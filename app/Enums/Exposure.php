@@ -2,9 +2,7 @@
 
 namespace App\Enums;
 
-use Filament\Support\Contracts\HasLabel;
-
-enum Exposure: string implements HasLabel
+enum Exposure: string
 {
     case Public = 'public';
     case Internal = 'internal';
