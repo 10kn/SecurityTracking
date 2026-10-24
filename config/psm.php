@@ -78,8 +78,9 @@ return [
     |
     | psm:scan-packages matches the packages of every uploaded lockfile against the OSV API at `osv_url` every 6
     | hours, and a deployment is scanned again as soon as its lockfiles change. Package versions are sent in batches
-    | of `batch_size` (OSV accepts up to 1000 per request). When OSV has not answered successfully within
-    | `stale_after_minutes` the admin is alerted; while it fails, open package findings stay open.
+    | of `batch_size` (OSV accepts up to 1000 per request); vulnerabilities not stored yet are fetched `concurrency`
+    | at a time. When OSV has not answered successfully within `stale_after_minutes` the admin is alerted; while it
+    | fails, open package findings stay open.
     |
     */
 
@@ -88,6 +89,7 @@ return [
         'batch_size' => (int) env('PSM_OSV_BATCH_SIZE', 1000),
         'stale_after_minutes' => (int) env('PSM_OSV_STALE_AFTER_MINUTES', 720),
         'http_timeout_seconds' => (int) env('PSM_OSV_HTTP_TIMEOUT', 30),
+        'concurrency' => (int) env('PSM_OSV_CONCURRENCY', 10),
         'summary_length' => 500,
     ],
 

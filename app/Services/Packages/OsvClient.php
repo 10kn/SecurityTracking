@@ -5,7 +5,11 @@ namespace App\Services\Packages;
 use App\Services\Catalog\CatalogHttp;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use Throwable;
 use UnexpectedValueException;
 
 /**
@@ -78,21 +82,41 @@ class OsvClient
     }
 
     /**
-     * @return array<string, mixed>
+     * Several vulnerabilities in full, `psm.packages.concurrency` requests at a time: a first scan of a large lockfile
+     * fetches hundreds of them, too slow one by one for a queued job.
      *
-     * @throws ConnectionException
-     * @throws RequestException
-     * @throws UnexpectedValueException When the response is not a vulnerability.
+     * @param  list<string>  $ids
+     * @return array<string, array<string, mixed>> By id.
+     *
+     * @throws Throwable The error of the first request that failed after its retries.
+     * @throws UnexpectedValueException When a response is not the vulnerability asked for.
      */
-    public function vulnerability(string $id): array
+    public function vulnerabilities(array $ids): array
     {
-        $vulnerability = $this->http()->get($this->url('vulns/'.rawurlencode($id)))->json();
+        $responses = Http::pool(fn (Pool $pool): array => array_map(
+            fn (string $id) => CatalogHttp::configure($pool->as($id), config('psm.packages.http_timeout_seconds'))->get($this->url('vulns/'.rawurlencode($id))),
+            $ids,
+        ), concurrency: max(1, (int) config('psm.packages.concurrency')));
 
-        if (! is_array($vulnerability) || ($vulnerability['id'] ?? null) !== $id) {
-            throw new UnexpectedValueException("OSV did not return vulnerability {$id}.");
+        $vulnerabilities = [];
+
+        foreach ($ids as $id) {
+            $response = $responses[$id] ?? null;
+
+            if ($response instanceof Throwable) {
+                throw $response;
+            }
+
+            $vulnerability = $response instanceof Response ? $response->json() : null;
+
+            if (! is_array($vulnerability) || ($vulnerability['id'] ?? null) !== $id) {
+                throw new UnexpectedValueException("OSV did not return vulnerability {$id}.");
+            }
+
+            $vulnerabilities[$id] = $vulnerability;
         }
 
-        return $vulnerability;
+        return $vulnerabilities;
     }
 
     private function http(): PendingRequest

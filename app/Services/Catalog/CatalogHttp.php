@@ -13,7 +13,15 @@ final class CatalogHttp
      */
     public static function client(?int $timeoutSeconds = null): PendingRequest
     {
-        return Http::timeout($timeoutSeconds ?? config('psm.catalog.http_timeout_seconds'))
+        return self::configure(Http::createPendingRequest(), $timeoutSeconds);
+    }
+
+    /**
+     * Applies the client settings to a request of an Http::pool(), which cannot be chained with them.
+     */
+    public static function configure(PendingRequest $request, ?int $timeoutSeconds = null): PendingRequest
+    {
+        return $request->timeout($timeoutSeconds ?? config('psm.catalog.http_timeout_seconds'))
             ->connectTimeout(10)
             ->withUserAgent(config('psm.catalog.user_agent'))
             ->retry(2, 500)
