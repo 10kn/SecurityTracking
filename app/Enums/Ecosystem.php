@@ -2,6 +2,10 @@
 
 namespace App\Enums;
 
+use App\Services\Lockfiles\ComposerLockParser;
+use App\Services\Lockfiles\GemfileLockParser;
+use App\Services\Lockfiles\LockfileParser;
+use App\Services\Lockfiles\NpmLockParser;
 use Filament\Support\Contracts\HasLabel;
 
 enum Ecosystem: string implements HasLabel
@@ -47,6 +51,38 @@ enum Ecosystem: string implements HasLabel
             self::Packagist => 'Packagist',
             self::Rubygems => 'RubyGems',
             self::Npm => 'npm',
+        };
+    }
+
+    public static function fromOsvName(string $name): ?self
+    {
+        foreach (self::cases() as $ecosystem) {
+            if ($ecosystem->osvName() === $name) {
+                return $ecosystem;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The package-url type (https://github.com/package-url/purl-spec).
+     */
+    public function purlType(): string
+    {
+        return match ($this) {
+            self::Packagist => 'composer',
+            self::Rubygems => 'gem',
+            self::Npm => 'npm',
+        };
+    }
+
+    public function lockfileParser(): LockfileParser
+    {
+        return match ($this) {
+            self::Packagist => app(ComposerLockParser::class),
+            self::Rubygems => app(GemfileLockParser::class),
+            self::Npm => app(NpmLockParser::class),
         };
     }
 }

@@ -3,34 +3,38 @@
 use App\Actions\UpdateProductionInventory;
 use App\Enums\Ecosystem;
 use App\Enums\Environment;
-use App\Enums\Language;
 use App\Enums\RuntimeStatus;
 use App\Events\DeploymentInventoryChanged;
 use App\Models\Deployment;
 use App\Models\Lockfile;
 use App\Models\Runtime;
 use App\Models\Service;
+use App\Models\Technology;
 use Illuminate\Support\Facades\Event;
 
-it('creates the production deployment with one unknown runtime per entered language', function () {
+it('creates the production deployment with one unknown runtime per entered technology', function () {
     $service = Service::factory()->create();
+    $php = Technology::factory()->php()->create();
+    $ruby = Technology::factory()->ruby()->create();
+    $nodejs = Technology::factory()->nodejs()->create();
     Event::fake([DeploymentInventoryChanged::class]);
 
-    $deployment = app(UpdateProductionInventory::class)->handle($service, ['php' => ' 8.3.12 ', 'ruby' => '', 'nodejs' => 'v22.11.0']);
+    $deployment = app(UpdateProductionInventory::class)->handle($service, [$php->id => ' 8.3.12 ', $ruby->id => '', $nodejs->id => 'v22.11.0']);
 
     expect($deployment->environment)->toBe(Environment::Production)
-        ->and($deployment->runtimes()->orderBy('language')->get()->map(fn (Runtime $runtime): array => [$runtime->language, $runtime->raw_version, $runtime->status])->all())
-        ->toBe([[Language::Nodejs, 'v22.11.0', RuntimeStatus::Unknown], [Language::Php, '8.3.12', RuntimeStatus::Unknown]]);
+        ->and($deployment->runtimes()->orderBy('raw_version')->get()->map(fn (Runtime $runtime): array => [$runtime->technology_id, $runtime->raw_version, $runtime->status])->all())
+        ->toBe([[$php->id, '8.3.12', RuntimeStatus::Unknown], [$nodejs->id, 'v22.11.0', RuntimeStatus::Unknown]]);
     Event::assertDispatched(DeploymentInventoryChanged::class, fn (DeploymentInventoryChanged $event): bool => $event->deployment->is($deployment));
 });
 
 it('does not dispatch a re-evaluation when the same inventory is saved again', function () {
     $service = Service::factory()->create();
+    $php = Technology::factory()->php()->create();
     $lockfile = ['name' => 'composer.lock', 'content' => '{"packages": []}'];
-    app(UpdateProductionInventory::class)->handle($service, ['php' => '8.3.12'], [$lockfile]);
+    app(UpdateProductionInventory::class)->handle($service, [$php->id => '8.3.12'], [$lockfile]);
     Event::fake([DeploymentInventoryChanged::class]);
 
-    app(UpdateProductionInventory::class)->handle($service, ['php' => '8.3.12'], [$lockfile]);
+    app(UpdateProductionInventory::class)->handle($service, [$php->id => '8.3.12'], [$lockfile]);
 
     Event::assertNotDispatched(DeploymentInventoryChanged::class);
 });
@@ -40,7 +44,7 @@ it('resets an evaluated runtime to unknown when its version changes', function (
     $runtime = Runtime::factory()->for($deployment)->create(['raw_version' => '8.3.11', 'version' => '8.3.11', 'status' => RuntimeStatus::Ok, 'evaluated_at' => now()]);
     Event::fake([DeploymentInventoryChanged::class]);
 
-    app(UpdateProductionInventory::class)->handle($deployment->service, ['php' => '8.3.12']);
+    app(UpdateProductionInventory::class)->handle($deployment->service, [$runtime->technology_id => '8.3.12']);
 
     expect($runtime->refresh())
         ->raw_version->toBe('8.3.12')
@@ -52,11 +56,21 @@ it('resets an evaluated runtime to unknown when its version changes', function (
 
 it('removes a runtime whose version is cleared', function () {
     $deployment = Deployment::factory()->create();
-    Runtime::factory()->for($deployment)->create(['language' => Language::Ruby]);
+    $runtime = Runtime::factory()->for($deployment)->create();
 
-    app(UpdateProductionInventory::class)->handle($deployment->service, ['ruby' => '']);
+    app(UpdateProductionInventory::class)->handle($deployment->service, [$runtime->technology_id => '']);
 
     expect($deployment->runtimes()->count())->toBe(0);
+});
+
+it('removes a runtime whose technology the admin took out of the list', function () {
+    $deployment = Deployment::factory()->create();
+    $kept = Runtime::factory()->for($deployment)->create();
+    Runtime::factory()->for($deployment)->create();
+
+    app(UpdateProductionInventory::class)->handle($deployment->service, [$kept->technology_id => $kept->raw_version]);
+
+    expect($deployment->runtimes()->pluck('id')->all())->toBe([$kept->id]);
 });
 
 it('replaces a lockfile with the same name when its content changes', function () {

@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.2.1",
+  "generated_at": "2026-10-23T00:09:42+00:00",
+  "result": {
+    "name": "ruby",
+    "label": "Ruby",
+    "releases": [
+      {
+        "name": "3.4",
+        "codename": null,
+        "label": "3.4",
+        "releaseDate": "2024-12-24",
+        "isLts": false,
+        "ltsFrom": null,
+        "isEol": false,
+        "eolFrom": "2028-03-31",
+        "isMaintained": true,
+        "latest": {
+          "name": "3.4.11",
+          "date": "2026-09-23",
+          "link": "https://github.com/ruby/ruby/releases/tag/v3_4_11"
+        },
+        "custom": null
+      },
+      {
+        "name": "3.3",
+        "codename": null,
+        "label": "3.3",
+        "releaseDate": "2023-12-25",
+        "isLts": false,
+        "ltsFrom": null,
+        "isEol": false,
+        "eolFrom": "2027-03-31",
+        "isMaintained": true,
+        "latest": {
+          "name": "3.3.12",
+          "date": "2026-07-16",
+          "link": "https://github.com/ruby/ruby/releases/tag/v3_3_12"
+        },
+        "custom": null
+      },
+      {
+        "name": "3.2",
+        "codename": null,
+        "label": "3.2",
+        "releaseDate": "2022-12-25",
+        "isLts": false,
+        "ltsFrom": null,
+        "isEol": true,
+        "eolFrom": "2026-03-31",
+        "isMaintained": false,
+        "latest": {
+          "name": "3.2.11",
+          "date": "2026-03-27",
+          "link": "https://github.com/ruby/ruby/releases/tag/v3_2_11"
+        },
+        "custom": null
+      }
+    ]
+  }
+}

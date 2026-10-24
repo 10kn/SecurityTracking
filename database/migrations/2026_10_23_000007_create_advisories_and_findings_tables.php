@@ -21,9 +21,12 @@ return new class extends Migration
             $table->text('summary')->nullable();
             $table->string('severity')->default('unknown');
             $table->decimal('cvss_score', 3, 1)->nullable();
-            $table->string('language')->nullable();
+            $table->foreignId('technology_id')->nullable()->constrained()->nullOnDelete();
             $table->string('url')->nullable();
             $table->timestamp('published_at')->nullable();
+            $table->timestamp('source_modified_at')->nullable();
+            $table->timestamp('withdrawn_at')->nullable();
+            $table->jsonb('fixed_versions')->nullable();
             $table->timestamps();
 
             $table->unique(['source', 'external_id']);
@@ -41,11 +44,15 @@ return new class extends Migration
             $table->string('severity');
             $table->string('state')->default('open');
             $table->string('title');
+            $table->string('group_key');
+            $table->jsonb('context')->nullable();
             $table->timestamp('first_seen_at');
             $table->timestamp('last_seen_at');
             $table->timestamp('sla_due_at')->nullable();
             $table->timestamp('resolved_at')->nullable();
             $table->timestamp('accepted_until')->nullable();
+            $table->string('notified_severity')->nullable();
+            $table->timestamp('notified_at')->nullable();
             $table->timestamps();
 
             $table->index(['team_id', 'state']);

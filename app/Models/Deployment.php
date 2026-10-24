@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\Environment;
+use App\Enums\FindingRule;
+use App\Enums\FindingState;
 use Database\Factories\DeploymentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -68,5 +70,17 @@ class Deployment extends Model
     public function findings(): HasMany
     {
         return $this->hasMany(Finding::class);
+    }
+
+    /**
+     * Open findings about vulnerable packages, for the Packages column.
+     *
+     * @return HasMany<Finding, $this>
+     */
+    public function openPackageFindings(): HasMany
+    {
+        return $this->hasMany(Finding::class)
+            ->where('state', FindingState::Open)
+            ->where('rule', FindingRule::DependencyVulnerable);
     }
 }

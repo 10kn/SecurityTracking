@@ -3,9 +3,9 @@
 namespace Database\Factories;
 
 use App\Enums\AdvisoryKind;
-use App\Enums\Language;
 use App\Enums\Severity;
 use App\Models\Advisory;
+use App\Models\Technology;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -39,15 +39,15 @@ class AdvisoryFactory extends Factory
     /**
      * A vendor pre-notice that announces an upcoming security release.
      */
-    public function preNotice(Language $language = Language::Php): static
+    public function preNotice(Technology $technology): static
     {
         return $this->state(fn (array $attributes) => [
-            'source' => $language->value.'_feed',
+            'source' => $technology->release_source->noticeSourceKey(),
             'kind' => AdvisoryKind::PreNotice,
             'aliases' => [],
             'severity' => Severity::Critical,
             'cvss_score' => null,
-            'language' => $language,
+            'technology_id' => $technology->id,
         ]);
     }
 }

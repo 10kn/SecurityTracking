@@ -1,6 +1,6 @@
 # Project Security Manager — Handover & kế hoạch tiếp theo
 
-> Cập nhật: 23/10/2026 (bản rút gọn phạm vi MVP; đã chốt prototype UI v2 — mục 10; **M0, M1 xong** — mục 3). Tài liệu bàn giao giữa các phiên làm việc (người hoặc AI).
+> Cập nhật: 23/10/2026 (bản rút gọn phạm vi MVP; đã chốt prototype UI v2 — mục 10; **M0 → M5 xong**, còn Pilot — mục 3). Tài liệu bàn giao giữa các phiên làm việc (người hoặc AI).
 > Đọc mục 1–3 trước khi viết code. Mục 5 là logic phát hiện, phần lõi của MVP. Mục 9 là cách làm việc đã thống nhất với chủ dự án. Mục 10 là spec giao diện đã chốt — đọc trước khi làm bất kỳ màn hình Filament nào.
 
 ## 1. Bối cảnh
@@ -25,9 +25,10 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 | D7 | Kênh cảnh báo: **Google Chat** (webhook theo team) | Gộp tin: 1 vấn đề × N service = 1 tin. Lỗi hệ thống gửi về một space riêng của admin (thay cho email dự phòng). |
 | D8 | Nguồn thông tin version ở MVP: **admin nhập tay** trong Filament | Version runtime theo service, upload lockfile. Collector, ingest API, đọc Git repo để sau. |
 | D9 | MVP **không có** màn hình finding, tìm kiếm, dashboard | Card Google Chat link về trang service trong Filament và link nguồn tin gốc. |
+| D11 | **Công nghệ là dữ liệu**, admin tự thêm trên màn Công nghệ (23/10/2026) | Thay cho 3 ngôn ngữ cố định. Mỗi công nghệ gắn một mã sản phẩm endoflife.date (nhánh, ngày hết hỗ trợ, bản mới nhất). PHP / Node.js / Ruby có thêm nguồn chính thức liệt kê mọi bản (php.net, nodejs.org, ruby-lang.org). Form service: danh sách động "công nghệ + version"; version là ô tự nhập có gợi ý từ danh mục, không bắt buộc chọn trong danh sách. Không thêm ô framework: lỗ hổng framework lấy từ lockfile (M5); muốn theo dõi framework hết hỗ trợ thì thêm như một công nghệ (vd. `laravel`). Bỏ ý "nhắc dữ liệu nhập tay đã cũ". |
 | D10 | Giao diện admin theo **prototype v2** (`public/prototypes/admin-v2/`): flat, tối giản; **4 theme** người dùng tự chọn (Graphite, Ocean, Forest, Night); **song ngữ Việt / Nhật** với font và cỡ chữ riêng cho tiếng Nhật | Spec ở mục 10. Áp dụng cho các resource của MVP (Team, Project, Service). Màn Tổng quan và Findings trong prototype là mẫu cho giai đoạn sau MVP; D9 giữ nguyên. Prototype v1 (`public/prototypes/admin/`) bị loại vì rối mắt, chỉ giữ để đối chiếu. |
 
-## 3. Hiện trạng code (M0 + M1 xong — 23/10/2026)
+## 3. Hiện trạng code (M0 → M5 xong — 23/10/2026)
 
 ### 3.1 Đã có
 
@@ -44,18 +45,39 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
   - `database/migrations/2026_10_23_00000{1..9}_*`.
   - `app/Models/`: 16 model (thêm `Lockfile`, `ChatNotification`).
   - `database/factories/`: đủ factory cho mọi model, có state `admin()`, `withGoogleChatWebhook()`, `resolved()`, `stale()`, `eol()`, `security()`, `preNotice()`, `sent()`, `failed()`, `forAdmin()`.
-  - `database/seeders/DemoSeeder.php`: 3 team, 5 project, 8 service (theo phụ lục A), mỗi service 1 deployment `production` và 1 runtime (trạng thái `unknown` cho tới M2).
+  - `database/seeders/DemoSeeder.php`: 3 team, 5 project, 8 service (theo phụ lục A), mỗi service 1 deployment `production` và 1 runtime (`unknown` cho tới khi chạy `php artisan psm:sync-runtimes` lần đầu).
 - Kiểm tra: `phpstan.neon` (Larastan level 6, `parseModelCastsMethod: true` để Larastan đọc `casts()`); Pint sạch; 19 test Pest xanh (`tests/Feature/Models`, `tests/Feature/Seeders`). Test dùng `LazilyRefreshDatabase`.
 - **M1 (Filament):**
   - Resource `Teams` (Cài đặt), `Projects`, `Services` (Danh mục) trong `app/Filament/Resources/`. Không có Dashboard (D9): `/admin` chuyển tới resource đầu tiên.
   - Team: thông tin chung + Google Chat (URL chỉ hiện một phần, nút "Gửi thử", modal "Thay / Thêm webhook" gửi thử trước rồi mới lưu, dòng trạng thái lấy từ `chat_notifications`). Nút xóa team bị khóa khi còn project. Tab Projects.
   - Project: trang xem (infolist + tab Services có cột Runtime / Packages, `unknown` = chấm viền đứt), nút "Thêm service" điền sẵn project.
-  - Service: form gồm thông tin service + "Môi trường production" (version PHP / Ruby / Node.js, upload `composer.lock` / `Gemfile.lock` / `package-lock.json`, xóa lockfile). Lưu qua `App\Actions\UpdateProductionInventory`: version đổi → runtime về `unknown`; có thay đổi thì phát event `App\Events\DeploymentInventoryChanged` (after commit). Lưu lại y nguyên thì không phát event. **M2 thêm listener queued chạy evaluator** (thay cho "dispatch job" trong kế hoạch cũ).
+  - Service: form gồm thông tin service + "Môi trường production" (từ M2: danh sách động công nghệ + version, có gợi ý version và xem trước kết quả đánh giá ngay khi gõ; upload `composer.lock` / `Gemfile.lock` / `package-lock.json`, xóa lockfile). Lưu qua `App\Actions\UpdateProductionInventory`: version đổi → runtime về `unknown`; có thay đổi thì phát event `App\Events\DeploymentInventoryChanged` (after commit). Lưu lại y nguyên thì không phát event. M2 đã thêm listener queued chạy evaluator (thay cho "dispatch job" trong kế hoạch cũ).
   - Gửi tin: `App\Services\GoogleChatClient` (timeout, không theo redirect, redirect tính là lỗi) và `App\Actions\SendTestChatMessage` (ghi log vào `chat_notifications`; lỗi không chứa URL/token; webhook ứng viên gửi lỗi thì không ghi log để không làm webhook cũ thành "Lỗi gửi").
   - Giao diện: custom theme `resources/css/filament/admin/theme.css` (Tailwind 4 + Vite, đã `make:filament-theme`); palette theo `App\Enums\Theme::colors()` (Graphite / Forest đổi shade 500–600 để nút primary là zinc-900 / teal-700); Night ép dark mode, 3 theme kia ép light, ẩn nút light/dark của Filament. Menu "Giao diện" + nút VI / 日本語 trên topbar là Livewire `App\Livewire\AppearanceMenu` (render hook `USER_MENU_BEFORE`), lưu vào `users.theme` / `users.locale` rồi tải lại trang. Middleware `ApplyUserPreferences` (persistent) đặt locale và palette.
   - Song ngữ: chuỗi trong code viết tiếng Việt và bọc `__()`; `lang/ja.json` là bản dịch (đủ mọi key); `lang/vi|ja/validation.php` cho các rule đang dùng. `APP_LOCALE=vi`.
   - Avatar: `App\Filament\AvatarProviders\InitialsAvatarProvider` vẽ chữ tắt tại chỗ, thay cho mặc định của Filament (gọi ui-avatars.com, lộ tên admin ra bên thứ ba).
   - Kiểm tra: 80 test Pest xanh, Larastan level 6 sạch, Pint sạch. Đã xem bằng Brave headless: 4 theme, VI / JA, màn 390px.
+- **M2 (danh mục version + đánh giá):**
+  - Bảng `technologies` (`name`, `slug`, `endoflife_product`, `release_source`); màn **Công nghệ** (nhóm Cài đặt): thêm bằng mã endoflife.date (kiểm tra mã có tồn tại, tự điền tên), trạng thái danh mục (Đã đồng bộ / Lần gần nhất lỗi / Lỗi quá ngưỡng / Chưa đồng bộ), nút "Đồng bộ ngay"; thêm hoặc đổi nguồn thì tự đồng bộ ngay (job). `TechnologySeeder` tạo PHP / Node.js / Ruby (chạy được ở production).
+  - Nguồn: `App\Services\Catalog\EndoflifeDateClient` (API v1) + `ReleaseFeed`: `PhpNetReleaseFeed` (nhãn `security`), `NodejsReleaseFeed` (cờ `security`), `RubyLangReleaseFeed` (`cache.ruby-lang.org/pub/ruby/index.txt`, không có cờ), `EndoflifeReleaseFeed` (chỉ bản mới nhất mỗi nhánh). Bản mới nhất của nhánh = bản lớn nhất giữa endoflife.date và nguồn chính thức.
+  - `App\Actions\SyncTechnologyCatalog` ghi heartbeat `catalog:{id}` vào `source_heartbeats`; ngưỡng `PSM_CATALOG_STALE_AFTER_MINUTES` (mặc định 180) trong `config/psm.php`.
+  - `App\Support\Version` (chuẩn hóa: `v20.11.0` → `20.11.0`, `8.3.12-1+deb.sury.org+1` → `8.3.12`; tìm nhánh dài nhất khớp). `App\Services\RuntimeEvaluator` theo mục 5.3; lý do lưu ở `runtimes.status_reason` (khóa dịch) + `status_context`.
+  - Đánh giá chạy: ngay khi admin lưu (listener queued `EvaluateChangedDeployment`), sau mỗi lần đồng bộ, và `psm:evaluate-runtimes` lúc 00:05. Lịch trong `routes/console.php`: `psm:sync-runtimes` mỗi giờ.
+  - **Chạy thật cần:** queue worker và scheduler. Dev: `composer run dev` (đã thêm `schedule:work` vào danh sách tiến trình). Production: cron `* * * * * php artisan schedule:run` + `php artisan queue:work`.
+  - Đã chạy thật với nguồn thật ngày 23/10/2026: 8 service demo ra đúng `eol` / `outdated_security`. Test dùng fixture cắt từ dữ liệu thật trong `tests/Fixtures/catalog/` (Node.js 24 cắt ở 24.22.0 để có ca `outdated`).
+  - Kiểm tra: 144 test Pest xanh, Larastan level 6 sạch, Pint sạch; xem bằng Brave headless.
+- **M3 (finding + Google Chat):**
+  - `findings` thêm `group_key`, `context` (jsonb), `notified_severity`, `notified_at` (sửa migration nháp tại chỗ). `App\Actions\SyncFindings` đồng bộ theo fingerprint (`App\Services\FindingData::fingerprint`, không chứa version): mở / tự đóng / mở lại / tăng mức, ghi `finding_events`. Runtime `unknown` **giữ nguyên** finding đang mở (thiếu dữ liệu không phải là đã sửa); runtime bị xóa → finding đóng.
+  - `App\Services\RuntimeFindings`: `eol` và `outdated_security` mở finding; `outdated`, `unknown`, sắp EOL chỉ vào bản tổng hợp. `EvaluateRuntimes` đánh giá xong thì đồng bộ finding của các deployment liên quan; **người gọi** chạy `SendFindingAlerts` một lần ở cuối để gộp tin.
+  - Gửi ngay: `App\Actions\SendFindingAlerts` gom theo team + `group_key` (cùng advisory, hoặc cùng quy tắc + công nghệ + version đích / nhánh EOL) → 1 card liệt kê mọi service, service mới thêm được đánh dấu "mới". Gửi lại chỉ khi mức tăng hoặc thêm service. Chính sách trong `App\Services\AlertPolicy` đọc `psm.alerts`.
+  - Đường gửi: `QueueChatNotification` (dedupe_key unique, `createOrFirst`) → job `SendChatNotification` (retry có backoff 60/300/900/3600 giây, 4xx trừ 408/429 là lỗi vĩnh viễn, hết lượt → `failed_at` + cảnh báo admin). Team chưa có webhook → ghi lỗi + cảnh báo admin. Webhook admin phải có tiền tố Google Chat. Card do `App\Services\GoogleChatCards` dựng (cardsV2), viết bằng `psm.alerts.locale` (mặc định `vi`) dù admin đang dùng tiếng Nhật.
+  - Bản tổng hợp `psm:send-digest` (giờ / ngày / múi giờ trong `psm.digest`, mặc định 08:00 `Asia/Ho_Chi_Minh` mọi ngày): finding mới từ bản trước, vẫn đang mở, đã tự đóng, số runtime thiếu dữ liệu / có bản mới hơn, runtime sắp hết hỗ trợ trong 30 ngày. Không có gì thì không gửi; mỗi team 1 bản/ngày.
+  - `psm:check-sources` (15 phút): mỗi đợt nguồn lỗi quá ngưỡng → 1 tin vào space admin.
+  - Filament: cột "Finding mở" ở danh sách Team, Service và tab Services của Project. Dòng trạng thái Google Chat bỏ qua tin đang chờ retry.
+- **M4 (thông báo sớm):** `psm:watch-notices` (15 phút) đọc feed php.net (Atom), nodejs.org vulnerability (RSS), ruby-lang.org news (RSS) qua `ReleaseSource::noticeFeed()`; parser `app/Services/Notices/` (không dùng mạng khi parse XML, từ chối DOCTYPE). Lọc từ khóa `psm.notices.keywords`; **bỏ qua bài "x.y.z Released"** (catalog đã báo đúng version cần nâng). Lưu `advisories` (`kind = pre_notice`, mức Critical / High theo chữ trong tin, CVSS, CVE). Mỗi team đang chạy công nghệ đó nhận 1 card "Cảnh báo chuẩn bị" mỗi tin (chỉ tin < 72 giờ). Tin Critical trong 14 ngày → finding `outdated_security` của công nghệ đó lên Critical và gửi lại. Không tạo finding cho tin báo trước (`FindingRule::PreNotice` chưa dùng). Heartbeat `notice:{nguồn}` (ngưỡng 120 phút). Fixture thật trong `tests/Fixtures/notices/` (có tin php.net "Upcoming Critical PHP Security Release" 20/10/2026 20:32 UTC).
+- **M5 (lỗ hổng package):** tự parse lockfile (`app/Services/Lockfiles/`: composer.lock, Gemfile.lock, package-lock.json v1/v2/v3) → `components` (PURL qua `App\Support\PackageUrl`, `is_dev`), parse lại khi `content_hash` đổi; lockfile không đọc được thì giữ component cũ, lưu `parse_error`. `VulnerabilityMatcher` → `OsvVulnerabilityMatcher` (`querybatch` ≤ 1000, phân trang, chỉ lấy chi tiết advisory mới / đã sửa, bỏ advisory withdrawn). Mức: GitHub severity → CVSS v3.1 tự tính (`App\Support\Cvss3`) → `unknown`. Finding `dependency_vulnerable` theo (deployment, package, advisory), gom card theo advisory; dev dependency chỉ vào bản tổng hợp (`PSM_IMMEDIATE_DEV_DEPENDENCIES`). Quét khi lockfile đổi và `psm:scan-packages` mỗi 6 giờ; OSV lỗi → giữ finding đang mở, heartbeat `osv` (ngưỡng 720 phút). Migration nháp: `lockfiles` thêm `parsed_hash`, `parse_error`, `package_count`; unique của `components` thêm `version`; `advisories` thêm `source_modified_at`, `withdrawn_at`, `fixed_versions`. Cột Packages hiện số package và số package có lỗ hổng. Fixture OSV thật trong `tests/Fixtures/osv/`.
+- Lịch (`routes/console.php`): `psm:sync-runtimes` mỗi giờ, `psm:watch-notices` và `psm:check-sources` 15 phút, `psm:scan-packages` 6 giờ, `psm:evaluate-runtimes` 00:05, `psm:send-digest` theo `psm.digest`.
+- Kiểm tra (M5): 297 test Pest xanh (gồm 6 kịch bản đầu cuối trong `tests/Feature/Scenarios/DetectionPipelineTest.php`), Larastan level 6 sạch, Pint sạch. Đã chạy thử với nguồn thật trên DB dev ngày 23/10/2026 (8 finding từ dữ liệu demo, 7 tin báo trước).
 - Prototype UI (HTML/CSS/JS tĩnh, không gọi backend):
   - `public/prototypes/admin-v2/` — **bản đã chốt** (mục 10). Mở `index.html` để so sánh 4 theme.
   - `public/prototypes/admin/` — bản v1, đã loại.
@@ -63,14 +85,16 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 ### 3.2 Chưa làm / còn thiếu
 
 - [ ] Chưa commit lần nào (chờ chủ dự án yêu cầu). Xem lại `.claude/settings.local.json` có nên vào `.gitignore` trước khi commit.
-- [ ] `config/psm.php` chưa có — tạo ở M3 (chính sách gửi, lịch, `PSM_ADMIN_CHAT_WEBHOOK`).
+- [ ] Chưa thử gửi thật lên Google Chat (card cardsV2) — cần một space thử và `PSM_ADMIN_CHAT_WEBHOOK` trước pilot.
+- [ ] Lần poll đầu ở production sẽ lưu toàn bộ lịch sử feed nhưng chỉ gửi tin < 72 giờ; lần đồng bộ catalog đầu tiên sẽ gửi mọi finding hiện có — báo trước cho các team.
+- [ ] Danh sách từ khóa thông báo sớm và quy tắc "critical/high" theo chữ là heuristic — xem lại khi pilot.
+- [ ] `DemoSeeder` chưa có lockfile (thêm vào thì seed sẽ gọi OSV).
 - [ ] Noto Sans JP **chưa tự host**: CSS dùng Noto Sans JP nếu máy có, nếu không thì Hiragino / Yu Gothic / Meiryo. Muốn tự host cần thêm package font (vd. `@fontsource-variable/noto-sans-jp`) — chờ chủ dự án đồng ý (thêm dependency).
 - [ ] Bản dịch `lang/ja.json` do AI viết — cần người dùng tiếng Nhật duyệt (câu hỏi mở 4).
 - [ ] Chưa thử "Gửi thử" với một webhook Google Chat thật (test dùng `Http::fake()`).
 
 ### 3.3 Điểm cần xem lại
 
-- `Language::branchOf()` tách version rất đơn giản; chưa xử lý hậu tố như `8.3.12-1+deb.sury.org+1` hay `v20.11.0`. Phần chuẩn hóa version thuộc M2.
 - `DeploymentFactory` vẫn sinh `commit_sha` ngẫu nhiên; MVP nhập tay nên cột này để trống trong form M1.
 
 ### 3.4 Điều chỉnh data model cho MVP (đã làm ở M0)
@@ -80,11 +104,13 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 | users | Dùng | Thêm `theme` (enum `Theme`, mặc định `graphite`) và `locale` (enum `Locale`: `vi` / `ja`, mặc định `vi`). Model mirror mặc định trong `$attributes`. |
 | teams, team_user, projects, services | Dùng | `google_chat_webhook_url` cast `encrypted` và ẩn khi serialize. `escalation_email` chưa dùng. Team còn project thì không xóa được. |
 | deployments | Dùng | Hiểu là "môi trường của service". MVP chỉ tạo `production`. Có quan hệ `runtimes`, `lockfiles`, `components`. |
-| runtimes | Dùng | `deployment_id` bắt buộc (cascade); `asset_id` nullable; **bỏ `app_path`**; unique `(deployment_id, language)`; `source = manual`. |
+| technologies (mới, M2) | Dùng | Xem D11. Xóa bị chặn khi còn runtime dùng. |
+| runtimes | Dùng | `deployment_id` bắt buộc (cascade); `asset_id` nullable; **bỏ `app_path`**; `technology_id` thay cho `language`; unique `(deployment_id, technology_id)`; thêm `branch`, `status_context`; `source = manual`. |
 | lockfiles (mới) | Dùng (M1 upload, M5 quét) | `deployment_id`, `ecosystem`, `path`, `content`, `content_hash` (sha256), `uploaded_at`; unique `(deployment_id, path)`. |
 | components | Dùng (M5) | Giữ nguyên. |
-| runtime_branches, runtime_releases, source_heartbeats | Dùng | Giữ nguyên. |
-| advisories | Dùng | Chứa thông báo sớm (M4) và advisory OSV (M5). |
+| runtime_branches, runtime_releases | Dùng | `technology_id` thay cho `language`. `runtime_branches` thêm `released_at`, `is_eol` (endoflife.date báo hết hỗ trợ dù không có ngày). |
+| source_heartbeats | Dùng | Danh mục version: khóa `catalog:{technology_id}`. |
+| advisories | Dùng | Chứa thông báo sớm (M4) và advisory OSV (M5). `technology_id` thay cho `language`. |
 | findings | Dùng, rút gọn | `state` chỉ `open` / `resolved` (mặc định `open`). `sla_due_at`, `accepted_until` giữ cột nhưng chưa dùng. |
 | **chat_notifications** (mới) | Dùng | Nhật ký gửi tin Google Chat: `team_id` (null = space admin), `dedupe_key` (unique), `kind`, `payload`, `attempts`, `sent_at`, `failed_at`, `last_error`. **Đặt tên `chat_notifications` thay cho `notifications`** để không trùng bảng database notification của Laravel / Filament. |
 | finding_events | Dùng | Chỉ sự kiện hệ thống: `type` (`opened` / `resolved` / `escalated`) + `data` (jsonb). Bỏ `user_id`, `from_state`, `to_state`, `note` (thêm lại khi có vòng đời thủ công). |
@@ -129,13 +155,12 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 
 Xét theo thứ tự, dừng ở quy tắc đầu tiên khớp:
 
-1. `unknown`: thiếu version, không chuẩn hóa được, nhánh không có trong danh mục, hoặc nguồn danh mục đang quá ngưỡng heartbeat.
-2. `eol`: hôm nay > `security_support_until` của nhánh.
-3. `outdated_security`: trong cùng nhánh có bản phát hành mới hơn được đánh dấu bảo mật.
-4. `outdated`: `latest_version` của nhánh mới hơn version đang dùng.
-5. `ok`.
-
-Ghi chú: Node.js có cờ `security` trong `index.json`. PHP và Ruby cần kiểm tra cờ bảo mật khi làm M2; nếu nguồn không có, coi mọi bản patch mới hơn trong nhánh chỉ còn security support là bản bảo mật.
+1. `unknown`: thiếu version, không chuẩn hóa được, danh mục chưa đồng bộ hoặc quá ngưỡng heartbeat, không có nhánh khớp, hoặc version chỉ ghi nhánh (`8.3`).
+2. `eol`: nhánh có `is_eol`, hoặc hôm nay > `security_support_until`.
+3. `unknown`: version mới hơn bản mới nhất đã biết, hoặc (nguồn chính thức) version không có trong danh sách của hãng.
+4. `outdated_security`: trong nhánh có bản mới hơn **là bản vá bảo mật**. Cờ bảo mật: php.net và nodejs.org có. Khi nguồn không có cờ (Ruby, công nghệ chỉ dùng endoflife.date): coi là bản vá bảo mật nếu nhánh chỉ còn vá bảo mật **hoặc không biết nhánh đang ở giai đoạn nào** (Ruby không có ngày hết hỗ trợ tích cực) — **chọn báo thừa hơn bỏ sót, xem lại khi pilot**.
+5. `outdated`: `latest_version` của nhánh mới hơn version đang dùng.
+6. `ok`.
 
 ### 5.4 Finding và chống trùng
 
@@ -176,10 +201,10 @@ Ghi chú: Node.js có cờ `security` trong `index.json`. PHP và Ruby cần ki�
 |---|---|---|
 | **M0** Nền tảng (1–2 ngày) — **xong 23/10/2026** | `git init` (hỏi trước khi commit); Pint; `phpstan.neon` + Larastan; chỉnh data model theo mục 3.4; factory còn thiếu; seeder tài khoản admin và dữ liệu demo (3 team, 8 service); test migration và quan hệ model | `migrate:fresh --seed` chạy được; đăng nhập `/admin` bằng tài khoản seed; test xanh |
 | **M1** Quản lý thông tin project + giao diện (3 ngày) — **xong 23/10/2026** | Filament resource: Team (webhook, nút "Gửi thử"), Project, Service kèm môi trường production (version runtime từng ngôn ngữ, upload lockfile). Lưu → dispatch job đánh giá. Giao diện theo mục 10: custom theme (hỏi trước khi cài, mục 4.5), 4 theme theo `users.theme`, VI / JA theo `users.locale`, `lang/vi.json` + `lang/ja.json`, nhãn enum qua `__()` | Tạo được team / project / service; "Gửi thử" thành công (test dùng `Http::fake()`, thử tay bằng một webhook bất kỳ); đổi được 4 theme và VI / JA trong `/admin`, lựa chọn giữ lại sau khi đăng nhập lại |
-| **M2** Danh mục runtime + đánh giá (3 ngày) | `psm:sync-runtimes` (1 giờ/lần, EOL 1 lần/ngày); chuẩn hóa version; `RuntimeEvaluator` (mục 5.3); heartbeat theo nguồn | Fixture 3 ngôn ngữ ra đủ 4 trạng thái + `unknown` |
-| **M3** Finding + Google Chat (3 ngày) | Đồng bộ finding theo fingerprint (mục 5.4); gửi ngay + gộp tin; bản tổng hợp; chính sách gửi và lịch gửi đọc từ `config/psm.php`; retry, chống trùng; cảnh báo admin khi nguồn lỗi | 4 kịch bản ở mục 5.6 pass |
-| **M4** Watcher thông báo sớm (2 ngày) | Feed 3 ngôn ngữ (15 phút/lần); lọc từ khóa; đối chiếu ngôn ngữ đang dùng; "Cảnh báo chuẩn bị" | Fixture tin php.net 20/10/2026 → đúng các team chạy PHP, mỗi team 1 tin, chạy lại không gửi lại |
-| **M5** Lỗ hổng package (3 ngày) | Parse lockfile upload → component (PURL); `VulnerabilityMatcher` qua OSV; quét lại 6 giờ/lần và khi lockfile đổi; đánh dấu dev dependency. Đầu M5 chọn: tự parse + OSV API `querybatch`, hay cài `osv-scanner` (cần chủ dự án đồng ý vì thêm dependency) | Lockfile fixture có package lỗ hổng → finding đúng team, gộp đúng; advisory mới xuất hiện → có tin ở lần quét sau |
+| **M2** Danh mục runtime + đánh giá (3 ngày) — **xong 23/10/2026**, mở rộng theo D11 | `psm:sync-runtimes` (1 giờ/lần, EOL 1 lần/ngày); chuẩn hóa version; `RuntimeEvaluator` (mục 5.3); heartbeat theo nguồn | Fixture 3 ngôn ngữ ra đủ 4 trạng thái + `unknown` |
+| **M3** Finding + Google Chat (3 ngày) — **xong 23/10/2026** | Đồng bộ finding theo fingerprint (mục 5.4); gửi ngay + gộp tin; bản tổng hợp; chính sách gửi và lịch gửi đọc từ `config/psm.php`; retry, chống trùng; cảnh báo admin khi nguồn lỗi | 4 kịch bản ở mục 5.6 pass |
+| **M4** Watcher thông báo sớm (2 ngày) — **xong 23/10/2026** | Feed 3 ngôn ngữ (15 phút/lần); lọc từ khóa; đối chiếu ngôn ngữ đang dùng; "Cảnh báo chuẩn bị" | Fixture tin php.net 20/10/2026 → đúng các team chạy PHP, mỗi team 1 tin, chạy lại không gửi lại |
+| **M5** Lỗ hổng package (3 ngày) — **xong 23/10/2026**, chọn tự parse + OSV API (không thêm dependency) | Parse lockfile upload → component (PURL); `VulnerabilityMatcher` qua OSV; quét lại 6 giờ/lần và khi lockfile đổi; đánh dấu dev dependency. Đầu M5 chọn: tự parse + OSV API `querybatch`, hay cài `osv-scanner` (cần chủ dự án đồng ý vì thêm dependency) | Lockfile fixture có package lỗ hổng → finding đúng team, gộp đúng; advisory mới xuất hiện → có tin ở lần quét sau |
 | **Pilot** (3–5 ngày) | Nhập tay 5–10 service thật, đủ 3 ngôn ngữ | Đo các chỉ số ở mục 5.6; chỉnh ngưỡng và mức gửi |
 
 M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đường ống phát hiện → Google Chat.
@@ -205,8 +230,13 @@ M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đ
 
 | | PHP | Node.js | Ruby |
 |---|---|---|---|
-| Release, bản mới nhất mỗi nhánh | `https://www.php.net/releases/?json&version=8.x` | `https://nodejs.org/dist/index.json` (có cờ `security`) | `_data/releases.yml` trong repo `ruby/www.ruby-lang.org` |
-| EOL | endoflife.date `php` | `nodejs/Release` `schedule.json`, endoflife.date `nodejs` | endoflife.date `ruby` |
+| Release (M2 dùng) | `https://www.php.net/releases/?json&version={major}&max=1000` (nhãn `security`) | `https://nodejs.org/dist/index.json` (cờ `security`) | `https://cache.ruby-lang.org/pub/ruby/index.txt` (không có cờ bảo mật) |
+| Nhánh, EOL (M2 dùng) | `https://endoflife.date/api/v1/products/php/` | `.../products/nodejs/` | `.../products/ruby/` (không có `eoasFrom`) |
+
+Công nghệ khác: chỉ `https://endoflife.date/api/v1/products/{product}/` (khoảng 485 sản phẩm, danh sách ở `.../products/`).
+
+| | PHP | Node.js | Ruby |
+|---|---|---|---|
 | CVE theo dải version (sau MVP) | Chưa có nguồn có cấu trúc tốt | `nodejs/security-wg` `vuln/core/index.json` | `rubysec/ruby-advisory-db` thư mục `rubies/ruby` |
 | Thông báo sớm | `https://www.php.net/feed.atom` | `https://nodejs.org/en/feed/vulnerability.xml` | `https://www.ruby-lang.org/en/feeds/news.rss` |
 | Framework EOL (sau MVP) | endoflife.date `laravel` | — | endoflife.date `rails` |

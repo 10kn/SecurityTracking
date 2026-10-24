@@ -24,6 +24,8 @@ class ServiceResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
+    protected static bool $hasTitleCaseModelLabel = false;
+
     public static function getModelLabel(): string
     {
         return __('service');

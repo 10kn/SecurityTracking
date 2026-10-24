@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['fingerprint', 'team_id', 'deployment_id', 'advisory_id', 'runtime_id', 'component_id', 'rule', 'severity', 'state', 'title', 'first_seen_at', 'last_seen_at', 'sla_due_at', 'resolved_at', 'accepted_until'])]
+#[Fillable(['fingerprint', 'team_id', 'deployment_id', 'advisory_id', 'runtime_id', 'component_id', 'rule', 'severity', 'state', 'title', 'group_key', 'context', 'first_seen_at', 'last_seen_at', 'sla_due_at', 'resolved_at', 'accepted_until', 'notified_severity', 'notified_at'])]
 class Finding extends Model
 {
     /** @use HasFactory<FindingFactory> */
@@ -31,11 +31,14 @@ class Finding extends Model
             'rule' => FindingRule::class,
             'severity' => Severity::class,
             'state' => FindingState::class,
+            'context' => 'array',
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'sla_due_at' => 'datetime',
             'resolved_at' => 'datetime',
             'accepted_until' => 'datetime',
+            'notified_severity' => Severity::class,
+            'notified_at' => 'datetime',
         ];
     }
 

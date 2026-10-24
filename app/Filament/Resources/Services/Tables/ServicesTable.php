@@ -24,6 +24,7 @@ class ServicesTable
                     ->sortable(),
                 ServiceColumns::runtimes(),
                 ServiceColumns::lockfiles(),
+                ServiceColumns::openFindings(),
                 ServiceColumns::updatedAt(),
             ])
             ->filters([

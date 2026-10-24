@@ -1,0 +1,81 @@
+{
+  "queries": [
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "@babel/helper-string-parser"
+      },
+      "version": "7.24.8"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "@babel/traverse"
+      },
+      "version": "7.23.0"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "lodash"
+      },
+      "version": "4.17.21"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "minimist"
+      },
+      "version": "1.2.0"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "ms"
+      },
+      "version": "2.1.3"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "normalize-package-data"
+      },
+      "version": "2.5.0"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "semver"
+      },
+      "version": "5.7.1"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "optimist"
+      },
+      "version": "0.6.1"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "minimist"
+      },
+      "version": "0.0.10"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "semver"
+      },
+      "version": "7.6.0"
+    },
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "wordwrap"
+      },
+      "version": "0.0.3"
+    }
+  ]
+}

@@ -30,4 +30,17 @@ class LockfileFactory extends Factory
             'uploaded_at' => now(),
         ];
     }
+
+    /**
+     * A lockfile with the given name and content, e.g. a fixture from tests/Fixtures/lockfiles.
+     */
+    public function withContent(string $path, string $content): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'ecosystem' => Ecosystem::forLockfile($path) ?? Ecosystem::Packagist,
+            'path' => $path,
+            'content' => $content,
+            'content_hash' => hash('sha256', $content),
+        ]);
+    }
 }

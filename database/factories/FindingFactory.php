@@ -31,9 +31,21 @@ class FindingFactory extends Factory
             'severity' => Severity::High,
             'state' => FindingState::Open,
             'title' => 'PHP 8.1 hết hỗ trợ',
+            'group_key' => 'runtime_eol:demo:'.fake()->unique()->numerify('####'),
             'first_seen_at' => now(),
             'last_seen_at' => now(),
         ];
+    }
+
+    /**
+     * The team was already told about the finding at its current severity.
+     */
+    public function notified(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'notified_severity' => $attributes['severity'],
+            'notified_at' => now(),
+        ]);
     }
 
     public function resolved(): static

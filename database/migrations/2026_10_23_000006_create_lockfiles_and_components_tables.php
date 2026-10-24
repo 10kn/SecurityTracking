@@ -18,6 +18,9 @@ return new class extends Migration
             $table->string('path');
             $table->longText('content');
             $table->char('content_hash', 64);
+            $table->char('parsed_hash', 64)->nullable();
+            $table->string('parse_error', 500)->nullable();
+            $table->unsignedInteger('package_count')->nullable();
             $table->timestamp('uploaded_at');
             $table->timestamps();
 
@@ -35,7 +38,7 @@ return new class extends Migration
             $table->boolean('is_dev')->default(false);
             $table->timestamps();
 
-            $table->unique(['deployment_id', 'lockfile_path', 'ecosystem', 'name']);
+            $table->unique(['deployment_id', 'lockfile_path', 'ecosystem', 'name', 'version']);
             $table->index(['ecosystem', 'name', 'version']);
         });
     }

@@ -4,7 +4,6 @@ namespace App\Actions;
 
 use App\Enums\Ecosystem;
 use App\Enums\Environment;
-use App\Enums\Language;
 use App\Enums\RuntimeSource;
 use App\Enums\RuntimeStatus;
 use App\Events\DeploymentInventoryChanged;
@@ -21,7 +20,7 @@ class UpdateProductionInventory
     /**
      * Dispatches DeploymentInventoryChanged only when something changed, so re-saving the same form does not trigger a new evaluation.
      *
-     * @param  array<string, string|null>  $runtimeVersions  Raw versions keyed by Language value; blank removes the runtime.
+     * @param  array<int, string|null>  $runtimeVersions  Raw versions keyed by technology id; a missing or blank version removes the runtime.
      * @param  list<array{name: string, content: string}>  $uploadedLockfiles
      * @param  list<string>  $removedLockfilePaths
      */
@@ -47,34 +46,32 @@ class UpdateProductionInventory
     }
 
     /**
-     * A changed version resets the runtime to unknown until the evaluator runs again.
+     * Technologies left out of $runtimeVersions, or given a blank version, are removed. A changed version resets the
+     * runtime to unknown until the evaluator runs again.
      *
-     * @param  array<string, string|null>  $runtimeVersions
+     * @param  array<int, string|null>  $runtimeVersions
      */
     private function syncRuntimes(Deployment $deployment, array $runtimeVersions): bool
     {
-        $hasChanges = false;
+        $versions = collect($runtimeVersions)
+            ->map(fn (?string $rawVersion): string => trim((string) $rawVersion))
+            ->filter(fn (string $rawVersion): bool => $rawVersion !== '');
 
-        foreach (Language::cases() as $language) {
-            $rawVersion = trim((string) ($runtimeVersions[$language->value] ?? ''));
-            $runtime = $deployment->runtimes()->where('language', $language)->first();
+        $hasChanges = $deployment->runtimes()->whereNotIn('technology_id', $versions->keys())->delete() > 0;
 
-            if ($rawVersion === '') {
-                $hasChanges = ($runtime?->delete() ?? false) || $hasChanges;
-
+        foreach ($versions as $technologyId => $rawVersion) {
+            if ($deployment->runtimes()->where('technology_id', $technologyId)->value('raw_version') === $rawVersion) {
                 continue;
             }
 
-            if ($runtime?->raw_version === $rawVersion) {
-                continue;
-            }
-
-            $deployment->runtimes()->updateOrCreate(['language' => $language], [
+            $deployment->runtimes()->updateOrCreate(['technology_id' => $technologyId], [
                 'raw_version' => $rawVersion,
                 'version' => null,
+                'branch' => null,
                 'source' => RuntimeSource::Manual,
                 'status' => RuntimeStatus::Unknown,
-                'status_reason' => null,
+                'status_reason' => 'Đang chờ đánh giá',
+                'status_context' => null,
                 'observed_at' => now(),
                 'evaluated_at' => null,
             ]);

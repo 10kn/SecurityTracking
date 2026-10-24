@@ -1,0 +1,46 @@
+{
+  "queries": [
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "bigdecimal"
+      },
+      "version": "3.1.8"
+    },
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "google-protobuf"
+      },
+      "version": "3.25.3"
+    },
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "nio4r"
+      },
+      "version": "2.7.3"
+    },
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "puma"
+      },
+      "version": "6.4.3"
+    },
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "racc"
+      },
+      "version": "1.8.1"
+    },
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "rake"
+      },
+      "version": "13.2.1"
+    }
+  ]
+}

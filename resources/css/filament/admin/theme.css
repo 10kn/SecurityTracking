@@ -117,6 +117,13 @@ html[data-theme='night'] {
     border-bottom: 1px solid var(--psm-border);
 }
 
+/* Below lg the sidebar is a drawer and keeps Filament's own ring and shadow. */
+@media (min-width: 64rem) {
+    .fi-sidebar {
+        border-inline-end: 1px solid var(--psm-border);
+    }
+}
+
 .fi-sidebar-item-label,
 .fi-sidebar-group-label {
     font-size: var(--psm-fs-nav);

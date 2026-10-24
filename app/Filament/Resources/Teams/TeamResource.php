@@ -25,6 +25,8 @@ class TeamResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
+    protected static bool $hasTitleCaseModelLabel = false;
+
     public static function getModelLabel(): string
     {
         return __('team');

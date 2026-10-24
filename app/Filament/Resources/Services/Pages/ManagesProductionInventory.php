@@ -19,7 +19,7 @@ trait ManagesProductionInventory
      */
     protected function serviceAttributes(array $data): array
     {
-        return Arr::except($data, ['runtime_versions', 'lockfile_uploads', 'removed_lockfiles']);
+        return Arr::except($data, ['runtimes', 'lockfile_uploads', 'removed_lockfiles']);
     }
 
     /**
@@ -34,7 +34,7 @@ trait ManagesProductionInventory
 
         app(UpdateProductionInventory::class)->handle(
             $service,
-            $data['runtime_versions'] ?? [],
+            Arr::pluck(Arr::wrap($data['runtimes'] ?? []), 'raw_version', 'technology_id'),
             $uploadedLockfiles,
             array_values($data['removed_lockfiles'] ?? []),
         );

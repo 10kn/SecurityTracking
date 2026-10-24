@@ -37,6 +37,17 @@ class ChatNotification extends Model
     }
 
     /**
+     * The team's webhook, or the admin space's for a message without a team. Null when none is configured; an admin
+     * webhook without the Google Chat prefix counts as none.
+     */
+    public function webhookUrl(): ?string
+    {
+        $url = $this->team_id === null ? config('psm.alerts.admin_webhook') : $this->team?->google_chat_webhook_url;
+
+        return is_string($url) && str_starts_with($url, Team::GOOGLE_CHAT_WEBHOOK_PREFIX) ? $url : null;
+    }
+
+    /**
      * @return BelongsTo<Team, $this>
      */
     public function team(): BelongsTo

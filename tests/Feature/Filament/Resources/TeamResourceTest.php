@@ -4,7 +4,10 @@ use App\Filament\Resources\Teams\Pages\CreateTeam;
 use App\Filament\Resources\Teams\Pages\EditTeam;
 use App\Filament\Resources\Teams\Pages\ListTeams;
 use App\Models\ChatNotification;
+use App\Models\Deployment;
+use App\Models\Finding;
 use App\Models\Project;
+use App\Models\Service;
 use App\Models\Team;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\Testing\TestAction;
@@ -24,6 +27,24 @@ it('lists teams with their google chat status', function () {
         ->assertCanSeeTableRecords([$failing, $unconfigured])
         ->assertSeeText('Lỗi gửi')
         ->assertSeeText('Chưa cấu hình');
+});
+
+it('lists the open findings of each team', function () {
+    actingAsAdmin();
+    $team = Team::factory()->create();
+    Finding::factory()->count(2)->for(Deployment::factory()->for(Service::factory()->for(Project::factory()->for($team))))->create(['team_id' => $team->id]);
+    Finding::factory()->resolved()->for(Deployment::factory()->for(Service::factory()->for(Project::factory()->for($team))))->create(['team_id' => $team->id]);
+
+    Livewire::test(ListTeams::class)
+        ->assertTableColumnStateSet('findings_count', 2, $team);
+});
+
+it('ignores a message still being retried in the google chat status', function () {
+    $team = Team::factory()->withGoogleChatWebhook()->create();
+    ChatNotification::factory()->for($team)->failed()->create();
+    ChatNotification::factory()->for($team)->create(['last_error' => 'Google Chat trả lỗi HTTP 503.']);
+
+    expect($team->googleChatStatus()->getLabel())->toBe('Lỗi gửi');
 });
 
 it('creates a team and suggests the slug from the name', function () {

@@ -44,8 +44,8 @@ class EditService extends EditRecord
      */
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        $data['runtime_versions'] = $this->record->productionDeployment?->runtimes
-            ->mapWithKeys(fn (Runtime $runtime): array => [$runtime->language->value => $runtime->raw_version])
+        $data['runtimes'] = $this->record->productionDeployment?->runtimes
+            ->map(fn (Runtime $runtime): array => ['technology_id' => $runtime->technology_id, 'raw_version' => $runtime->raw_version])
             ->all() ?? [];
 
         return $data;

@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Ruby News</title>
+    <link>https://www.ruby-lang.org/en/feeds/news.rss</link>
+    <language>en-US</language>
+    <ttl>40</ttl>
+    <description>The latest news from ruby-lang.org.</description>
+    
+    <item>
+      <title>Ruby 3.3.13 Released</title>
+      <description>&lt;p&gt;Ruby 3.3.13 has been released.&lt;/p&gt;
+
+&lt;p&gt;This release includes security fixes.
+Please check the topics below for details.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;/en/news/2026/08/27/multiple-vulnerabilities-in-resolv/&quot;&gt;Security advisories: CVE-2026-80212 and CVE-2026-80213&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;/en/news/2026/10/23/regexp-fixes-for-gitlab-cves/&quot;&gt;Regexp compilation fixes related to GitLab’s CVE-2026-89078, CVE-2026-93577, CVE-2026-97229 and CVE-2026-110264&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This release updates the default gem resolv to 0.3.2, which fixes CVE-2026-80212 and CVE-2026-80213.&lt;/p&gt;
+
+&lt;p&gt;Ruby 3.3 is in the security maintenance phase. As an exception, this release also includes fixes for bugs in Regexp compilation that GitLab’s CVE-2026-89078, CVE-2026-93577, CVE-2026-97229 and CVE-2026-110264 rely on.&lt;/p&gt;
+
+&lt;p&gt;Please see the &lt;a href=&quot;https://github.com/ruby/ruby/releases/tag/v3_3_13&quot;&gt;GitHub releases&lt;/a&gt; for further details.&lt;/p&gt;
+
+&lt;h2 id=&quot;download&quot;&gt;Download&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.13.tar.gz&quot;&gt;https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.13.tar.gz&lt;/a&gt;&lt;/p&gt;
+
+    &lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;SIZE: 21497008
+SHA1: e89379c35cd61b23c7fef6cff9c5bbece4e2c391
+SHA256: 4cae72e971bd1cdb20ca87d299111182417c5276c162de8ead0ab0531426cd61
+SHA512: 0536341f6f612a1eb0128f7d18eed081b09264c695e6a159a5456ba3050464849791ae26e33a7ea384406fa9e19b98bf194c89638dfe2940d3dbeed5b3126c92
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.13.tar.xz&quot;&gt;https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.13.tar.xz&lt;/a&gt;&lt;/p&gt;
+
+    &lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;SIZE: 15878972
+SHA1: 61e8a88d601ca7a4e9f9c30428fa46be0fdf690d
+SHA256: 6bd764359992373a96556b45fb7dfe6b6170da34a0a2fd0b7e1be7932fea982b
+SHA512: 906e270e2629b44e469265e08d693f996b467a3fc165fbdb9b8f6f7b37effe4fdae9d4968e72a809d1381e35279cb10b6630d40fac31a634981deb4c30ff325c
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.13.zip&quot;&gt;https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.13.zip&lt;/a&gt;&lt;/p&gt;
+
+    &lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;SIZE: 26961541
+SHA1: 4536403d0c1feaa6290fc7d94e65db4bc2b7f0ed
+SHA256: 8cf1c468af6dbcaa2c48270cc4c951325dabe5fd84b609641d4bd7b89c9d5766
+SHA512: 622c8b60b2202aea1aa4caed00cee5984109926793ee57c86a9cc39b1628855f51a26d07258aa85aacc679c6186efc4ebf20b5a51f199de7cdd6fcc98a212d10
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;release-comment&quot;&gt;Release Comment&lt;/h2&gt;
+
+&lt;p&gt;Many committers, developers, and users who provided bug reports helped us make this release.
+Thanks for their contributions.&lt;/p&gt;
+
+&lt;p&gt;Posted by &lt;strong&gt;hsbt&lt;/strong&gt; on 23 Oct 2026&lt;/p&gt;</description>
+      <pubDate>Fri, 23 Oct 2026 04:24:46 +0000</pubDate>
+      <guid>https://www.ruby-lang.org/en/news/2026/10/23/ruby-3-3-13-released/</guid>
+      <link>https://www.ruby-lang.org/en/news/2026/10/23/ruby-3-3-13-released/</link>
+    </item>
+    <item>
+      <title>Regexp compilation fixes related to GitLab's CVE-2026-89078, CVE-2026-93577, CVE-2026-97229 and CVE-2026-110264</title>
+      <description>&lt;p&gt;We have released Ruby 4.0.9, 3.4.12 and 3.3.13. They fix several bugs in Ruby’s regular expression engine (Onigmo) that GitLab found could be used for remote code execution on GitLab servers. GitLab published four CVEs for these issues, and the Ruby releases contain the fixes for the underlying bugs in Ruby.&lt;/p&gt;
+
+&lt;h2 id=&quot;background&quot;&gt;Background&lt;/h2&gt;
+
+&lt;p&gt;GitLab compiles regular expressions supplied by its users, such as patterns in CI configuration, with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Regexp.new&lt;/code&gt;. GitLab found that specially crafted patterns could corrupt memory while Ruby compiles them, and that this could be turned into remote code execution on GitLab servers. GitLab addressed these issues in its own releases by patching the Ruby it ships, and assigned the following CVE identifiers:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cve.org/CVERecord?id=CVE-2026-89078&quot;&gt;CVE-2026-89078&lt;/a&gt;: Double Free issue in Regular Expression Parser (&lt;a href=&quot;https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-4-1-released/&quot;&gt;GitLab 19.4.1&lt;/a&gt;)&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cve.org/CVERecord?id=CVE-2026-93577&quot;&gt;CVE-2026-93577&lt;/a&gt;: Integer Overflow issue in Regular Expression Compiler (&lt;a href=&quot;https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-4-1-released/&quot;&gt;GitLab 19.4.1&lt;/a&gt;)&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cve.org/CVERecord?id=CVE-2026-97229&quot;&gt;CVE-2026-97229&lt;/a&gt;: Integer Overflow issue in CI/CD Regular Expression Compiler (&lt;a href=&quot;https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-4-2-released/&quot;&gt;GitLab 19.4.2&lt;/a&gt;)&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cve.org/CVERecord?id=CVE-2026-110264&quot;&gt;CVE-2026-110264&lt;/a&gt;: Integer Overflow issue in Regular Expression Compiler (&lt;a href=&quot;https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-5-1-released/&quot;&gt;GitLab 19.5.1&lt;/a&gt;)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;fixes-in-ruby&quot;&gt;Fixes in Ruby&lt;/h2&gt;
+
+&lt;p&gt;The following table shows the change in Ruby that fixes the bug behind each CVE, and the first release of each series that contains it.&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;GitLab CVE&lt;/th&gt;
+      &lt;th&gt;Bug in Ruby&lt;/th&gt;
+      &lt;th&gt;Change&lt;/th&gt;
+      &lt;th&gt;Ruby 4.0&lt;/th&gt;
+      &lt;th&gt;Ruby 3.4&lt;/th&gt;
+      &lt;th&gt;Ruby 3.3&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;CVE-2026-89078&lt;/td&gt;
+      &lt;td&gt;Double free when parsing a pattern fails after an alternation&lt;/td&gt;
+      &lt;td&gt;&lt;a href=&quot;https://github.com/ruby/ruby/pull/13332&quot;&gt;#13332&lt;/a&gt;&lt;/td&gt;
+      &lt;td&gt;4.0.0&lt;/td&gt;
+      &lt;td&gt;3.4.12&lt;/td&gt;
+      &lt;td&gt;3.3.13&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;CVE-2026-93577, CVE-2026-97229&lt;/td&gt;
+      &lt;td&gt;Integer overflow in the size of a compiled pattern&lt;/td&gt;
+      &lt;td&gt;&lt;a href=&quot;https://github.com/ruby/ruby/pull/19020&quot;&gt;#19020&lt;/a&gt;&lt;/td&gt;
+      &lt;td&gt;4.0.8&lt;/td&gt;
+      &lt;td&gt;3.4.12&lt;/td&gt;
+      &lt;td&gt;3.3.13&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;CVE-2026-110264&lt;/td&gt;
+      &lt;td&gt;Overflow of internal IDs in a pattern with many repeats&lt;/td&gt;
+      &lt;td&gt;&lt;a href=&quot;https://github.com/ruby/ruby/pull/16801&quot;&gt;#16801&lt;/a&gt;&lt;/td&gt;
+      &lt;td&gt;4.0.9&lt;/td&gt;
+      &lt;td&gt;3.4.12&lt;/td&gt;
+      &lt;td&gt;3.3.13&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Ruby 4.0.9, 3.4.12 and 3.3.13 contain all of these fixes.&lt;/p&gt;
+
+&lt;h2 id=&quot;who-is-affected&quot;&gt;Who is affected&lt;/h2&gt;
+
+&lt;p&gt;These bugs are reached only when an application compiles a regular expression from a string that an attacker controls, for example by passing it to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Regexp.new&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Regexp.union&lt;/code&gt; or &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Regexp.compile&lt;/code&gt;, or by interpolating it into a regexp literal such as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/#{input}/&lt;/code&gt;. Applications that only use regular expressions written by their own developers are not affected.&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Regexp.timeout&lt;/code&gt; does not protect against these bugs. Limiting the length of patterns does not reliably protect against them either, because some of them can be triggered by short patterns.&lt;/p&gt;
+
+&lt;h2 id=&quot;recommended-action&quot;&gt;Recommended action&lt;/h2&gt;
+
+&lt;p&gt;We recommend upgrading to Ruby 4.0.9, 3.4.12 or 3.3.13 or later.&lt;/p&gt;
+
+&lt;p&gt;If you cannot upgrade, please avoid compiling regular expressions from untrusted input.&lt;/p&gt;
+
+&lt;p&gt;Ruby 3.3 is in the security maintenance phase, in which we normally release only fixes for vulnerabilities. Ruby 3.3.13 includes these fixes as an exception, because GitLab assigned CVEs to issues that rely on them.&lt;/p&gt;
+
+&lt;h2 id=&quot;about-cve-identifiers&quot;&gt;About CVE identifiers&lt;/h2&gt;
+
+&lt;p&gt;We have not requested CVE identifiers in Ruby for these fixes, at least for now.&lt;/p&gt;
+
+&lt;p&gt;Ruby has generally considered it unsafe to compile and use a regular expression created from untrusted input. We stated this in the advisory for &lt;a href=&quot;/en/news/2022/04/12/double-free-in-regexp-compilation-cve-2022-28738/&quot;&gt;CVE-2022-28738&lt;/a&gt;, where we nevertheless treated a double free in Regexp compilation as a vulnerability after a comprehensive assessment. We did the same for &lt;a href=&quot;/en/news/2024/04/23/arbitrary-memory-address-read-regexp-cve-2024-27282/&quot;&gt;CVE-2024-27282&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;However, the &lt;a href=&quot;https://docs.ruby-lang.org/en/master/Regexp.html#class-Regexp-label-Timeouts&quot;&gt;Regexp documentation&lt;/a&gt; currently discusses untrusted patterns only in terms of denial of service, and recommends a timeout for them. It does not clearly say whether compiling an untrusted pattern is a use case that Ruby supports. We plan to discuss how to document this, and whether we treat this kind of issue as a vulnerability in Ruby, including whether to request CVE identifiers for these fixes. If we request any, we will update this page.&lt;/p&gt;
+
+&lt;p&gt;In the meantime, please refer to GitLab’s CVE identifiers listed above when you track these issues, for example in a security scanner.&lt;/p&gt;
+
+&lt;h2 id=&quot;credits&quot;&gt;Credits&lt;/h2&gt;
+
+&lt;p&gt;Thanks to Johan Carlsson (&lt;a href=&quot;https://github.com/joaxcar&quot;&gt;joaxcar&lt;/a&gt;) for discovering the integer overflow fixed by &lt;a href=&quot;https://github.com/ruby/ruby/pull/19020&quot;&gt;#19020&lt;/a&gt; through GitLab’s bug bounty program, and to GitLab for reporting these issues to us and coordinating the fixes.&lt;/p&gt;
+
+&lt;h2 id=&quot;history&quot;&gt;History&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Originally published at 2026-10-23 03:11:22 (UTC)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Posted by &lt;strong&gt;k0kubun&lt;/strong&gt; on 23 Oct 2026&lt;/p&gt;</description>
+      <pubDate>Fri, 23 Oct 2026 03:11:22 +0000</pubDate>
+      <guid>https://www.ruby-lang.org/en/news/2026/10/23/regexp-fixes-for-gitlab-cves/</guid>
+      <link>https://www.ruby-lang.org/en/news/2026/10/23/regexp-fixes-for-gitlab-cves/</link>
+    </item>
+    <item>
+      <title>Ruby 4.0.8 Released</title>
+      <description>&lt;p&gt;Ruby 4.0.8 has been released.&lt;/p&gt;
+
+&lt;p&gt;This is a routine update that includes bugfixes.
+Please see the &lt;a href=&quot;https://github.com/ruby/ruby/releases/tag/v4.0.8&quot;&gt;GitHub releases&lt;/a&gt; for further details.&lt;/p&gt;
+
+&lt;h2 id=&quot;download&quot;&gt;Download&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.8.tar.gz&quot;&gt;https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.8.tar.gz&lt;/a&gt;&lt;/p&gt;
+
+    &lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;SIZE: 23947459
+SHA1: f79bc8217dd0edd7ecc0c1c0cb57e64a906258a5
+SHA256: 0968e2ac4cbd6f1fd85d3092aed66cd3c2d8ba4a5e2493d6e6c6cb0c431897d2
+SHA512: 011b741c8fe3160643739f8fd88f3a69b198260dabcd3cb791c1ffacdfae7b48f6b2ca365ea97198d5dcb13fc839533ec1e83bab76f38c25203a7a3b6e665e8b
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.8.tar.xz&quot;&gt;https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.8.tar.xz&lt;/a&gt;&lt;/p&gt;
+
+    &lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;SIZE: 18019152
+SHA1: 24404aa1371a1f5a28bfcc8ac4331bd744810954
+SHA256: 3bd35abc39dce9c682d62cf333fbd8b8f34816dd651f8228b3b59353157b84a4
+SHA512: 79eb57f30a853d6e856ce2df35b8ff20c393d5cacad43420c5caba9ebba53445d1b7b40f0a65a1cd4eee6bfc86abc3eb722e1fa5bef10b41bf56779b566e894a
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;a href=&quot;https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.8.zip&quot;&gt;https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.8.zip&lt;/a&gt;&lt;/p&gt;
+
+    &lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;SIZE: 29263079
+SHA1: 40c0e4f791563bc8a24d683547cb3fe08c01da4b
+SHA256: 68e12bb40c9175c2a97f371ff6a76dd93649bb09dc76d757394b7086c881ade4
+SHA512: bee8b619c287530d10779d6527d5e7397b75b74d0abe57d9a12b8d8d0b303064ea6da3fe9a47d1fb9835abfe11701e64a767841658e209cb866ca44aa951ef33
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;release-comment&quot;&gt;Release Comment&lt;/h2&gt;
+
+&lt;p&gt;Many committers, developers, and users who provided bug reports helped us make this release.
+Thanks for their contributions.&lt;/p&gt;
+
+&lt;p&gt;Posted by &lt;strong&gt;k0kubun&lt;/strong&gt; on 22 Oct 2026&lt;/p&gt;</description>
+      <pubDate>Thu, 22 Oct 2026 06:54:51 +0000</pubDate>
+      <guid>https://www.ruby-lang.org/en/news/2026/10/22/ruby-4-0-8-released/</guid>
+      <link>https://www.ruby-lang.org/en/news/2026/10/22/ruby-4-0-8-released/</link>
+    </item>
+    <item>
+      <title>Security advisories: CVE-2026-80212 and CVE-2026-80213</title>
+      <description>&lt;p&gt;Two vulnerabilities have been discovered in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;resolv&lt;/code&gt; gem bundled with Ruby. They have been assigned the CVE identifiers &lt;a href=&quot;https://www.cve.org/CVERecord?id=CVE-2026-80212&quot;&gt;CVE-2026-80212&lt;/a&gt; and &lt;a href=&quot;https://www.cve.org/CVERecord?id=CVE-2026-80213&quot;&gt;CVE-2026-80213&lt;/a&gt;. We recommend upgrading the resolv gem.&lt;/p&gt;
+
+&lt;h2 id=&quot;cve-2026-80212-memory-exhaustion-through-malicious-dns-responses&quot;&gt;CVE-2026-80212: Memory exhaustion through malicious DNS responses&lt;/h2&gt;
+
+&lt;p&gt;An application that resolves a hostname an attacker can influence, such as a webhook target or a user-supplied URL, can be made to consume memory without bound. The attacker points a domain at a name server they control and returns responses that the library retains permanently. Repeated lookups grow the process until it runs out of memory and the service stops.&lt;/p&gt;
+
+&lt;h2 id=&quot;cve-2026-80213-hostname-validation-bypass&quot;&gt;CVE-2026-80213: Hostname validation bypass&lt;/h2&gt;
+
+&lt;p&gt;An application that checks a hostname against an allow list or an SSRF filter and then resolves it can be made to look up a domain other than the one it checked. The string that passes validation and the name that reaches the network are not the same, so the connection can end up at a host the application never approved. This requires a hostname that exceeds the DNS length limits, so validation that rejects names longer than 255 octets, or labels longer than 63 octets, is not affected.&lt;/p&gt;
+
+&lt;h2 id=&quot;affected-versions&quot;&gt;Affected versions&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;resolv gem 0.4.0 through 0.7.1&lt;/li&gt;
+  &lt;li&gt;resolv gem 0.3.1 and earlier&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The version bundled with Ruby differs per series: Ruby 4.0 ships resolv 0.7.0, Ruby 3.4 ships 0.7.1, and Ruby 3.3 ships 0.3.1.&lt;/p&gt;
+
+&lt;h2 id=&quot;what-to-check&quot;&gt;What to check&lt;/h2&gt;
+
+&lt;p&gt;Only code that resolves names through this gem is affected. Ordinary socket connections, including &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Net::HTTP&lt;/code&gt; and anything built on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TCPSocket&lt;/code&gt;, use the operating system resolver and are not. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Net::HTTP&lt;/code&gt; does load the gem, but only for its IP address regular expressions, so a loaded gem is not by itself a sign of exposure.&lt;/p&gt;
+
+&lt;p&gt;An application reaches the affected code by calling &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Resolv&lt;/code&gt; itself, by loading &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;resolv-replace&lt;/code&gt;, which routes all socket name resolution through the gem, or through a dependency that resolves names this way. Check your dependencies as well as your own code.&lt;/p&gt;
+
+&lt;h2 id=&quot;recommended-action&quot;&gt;Recommended action&lt;/h2&gt;
+
+&lt;p&gt;Update the resolv gem to 0.7.2. For the Ruby 3.3 series, update to 0.3.2.&lt;/p&gt;
+
+&lt;p&gt;No release is planned for the 0.2.x line that the Ruby 3.2 series ships, because that series has reached its end of life. Install resolv 0.7.2 there instead.&lt;/p&gt;
+
+&lt;h2 id=&quot;credits&quot;&gt;Credits&lt;/h2&gt;
+
+&lt;p&gt;Thanks to &lt;a href=&quot;https://hackerone.com/dalifit&quot;&gt;dalifit&lt;/a&gt; for discovering these issues.&lt;/p&gt;
+
+&lt;h2 id=&quot;history&quot;&gt;History&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Originally published at 2026-08-27 00:00:00 (UTC)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Posted by &lt;strong&gt;hsbt&lt;/strong&gt; on 27 Aug 2026&lt;/p&gt;</description>
+      <pubDate>Thu, 27 Aug 2026 00:00:00 +0000</pubDate>
+      <guid>https://www.ruby-lang.org/en/news/2026/08/27/multiple-vulnerabilities-in-resolv/</guid>
+      <link>https://www.ruby-lang.org/en/news/2026/08/27/multiple-vulnerabilities-in-resolv/</link>
+    </item>
+    
+  </channel>
+</rss>

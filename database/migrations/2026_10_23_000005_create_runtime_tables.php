@@ -11,47 +11,61 @@ return new class extends Migration
      */
     public function up(): void
     {
+        Schema::create('technologies', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('slug')->unique();
+            $table->string('endoflife_product')->unique();
+            $table->string('release_source')->default('endoflife');
+            $table->timestamps();
+        });
+
         Schema::create('runtime_branches', function (Blueprint $table) {
             $table->id();
-            $table->string('language');
+            $table->foreignId('technology_id')->constrained()->cascadeOnDelete();
             $table->string('branch');
-            $table->string('latest_version');
+            $table->string('latest_version')->nullable();
+            $table->date('released_at')->nullable();
             $table->date('active_support_until')->nullable();
             $table->date('security_support_until')->nullable();
+            $table->boolean('is_eol')->default(false);
             $table->timestamp('synced_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['language', 'branch']);
+            $table->unique(['technology_id', 'branch']);
         });
 
         Schema::create('runtime_releases', function (Blueprint $table) {
             $table->id();
-            $table->string('language');
+            $table->foreignId('technology_id')->constrained()->cascadeOnDelete();
             $table->string('branch');
             $table->string('version');
             $table->boolean('is_security_release')->nullable();
             $table->date('released_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['language', 'version']);
+            $table->unique(['technology_id', 'version']);
+            $table->index(['technology_id', 'branch']);
         });
 
         Schema::create('runtimes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('deployment_id')->constrained()->cascadeOnDelete();
             $table->foreignId('asset_id')->nullable()->constrained()->nullOnDelete();
-            $table->string('language');
+            $table->foreignId('technology_id')->constrained()->restrictOnDelete();
             $table->string('raw_version');
             $table->string('version')->nullable();
+            $table->string('branch')->nullable();
             $table->string('source');
             $table->string('status')->default('unknown');
-            $table->text('status_reason')->nullable();
+            $table->string('status_reason')->nullable();
+            $table->jsonb('status_context')->nullable();
             $table->timestamp('observed_at');
             $table->timestamp('evaluated_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['deployment_id', 'language']);
-            $table->index(['language', 'status']);
+            $table->unique(['deployment_id', 'technology_id']);
+            $table->index(['technology_id', 'status']);
         });
     }
 
@@ -63,5 +77,6 @@ return new class extends Migration
         Schema::dropIfExists('runtimes');
         Schema::dropIfExists('runtime_releases');
         Schema::dropIfExists('runtime_branches');
+        Schema::dropIfExists('technologies');
     }
 };

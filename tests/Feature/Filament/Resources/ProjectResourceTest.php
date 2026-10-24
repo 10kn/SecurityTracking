@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
+use App\Models\Technology;
 use Livewire\Livewire;
 
 use function Pest\Laravel\assertDatabaseHas;
@@ -44,7 +45,7 @@ it('lists the services of a project with their runtime versions', function () {
     actingAsAdmin();
     $project = Project::factory()->create();
     $service = Service::factory()->for($project)->create();
-    Runtime::factory()->for(Deployment::factory()->for($service))->create(['raw_version' => '8.3.12']);
+    Runtime::factory()->for(Deployment::factory()->for($service))->for(Technology::factory()->php())->create(['raw_version' => '8.3.12']);
 
     Livewire::test(ServicesRelationManager::class, ['ownerRecord' => $project, 'pageClass' => ViewProject::class])
         ->assertCanSeeTableRecords([$service])

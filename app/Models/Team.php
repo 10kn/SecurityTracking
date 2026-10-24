@@ -6,6 +6,7 @@ use App\Enums\GoogleChatStatus;
 use Database\Factories\TeamFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -70,11 +71,15 @@ class Team extends Model
     }
 
     /**
+     * The latest message that was delivered or gave up; one still being retried does not count yet.
+     *
      * @return HasOne<ChatNotification, $this>
      */
     public function latestChatNotification(): HasOne
     {
-        return $this->hasOne(ChatNotification::class)->latestOfMany();
+        return $this->hasOne(ChatNotification::class)->ofMany(['id' => 'max'], fn (Builder $query) => $query->where(
+            fn (Builder $query) => $query->whereNotNull('sent_at')->orWhereNotNull('failed_at'),
+        ));
     }
 
     public function googleChatStatus(): GoogleChatStatus

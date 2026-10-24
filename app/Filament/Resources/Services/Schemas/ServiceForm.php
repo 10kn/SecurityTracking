@@ -4,20 +4,25 @@ namespace App\Filament\Resources\Services\Schemas;
 
 use App\Enums\Ecosystem;
 use App\Enums\Exposure;
-use App\Enums\Language;
 use App\Enums\ServiceKind;
 use App\Filament\Resources\Teams\Schemas\TeamForm;
+use App\Filament\Support\StatusDot;
 use App\Models\Lockfile;
 use App\Models\Service;
+use App\Models\Technology;
+use App\Services\RuntimeEvaluator;
 use Closure;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Unique;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -92,11 +97,29 @@ class ServiceForm
                             ->columnSpanFull(),
                     ]),
                 Section::make(__('Môi trường production'))
-                    ->description(__('Nhập version runtime đang chạy và lockfile. Lưu xong, hệ thống đánh giá lại service này.'))
+                    ->description(__('Chọn công nghệ, nhập version đang chạy và tải lockfile. Lưu xong, hệ thống đánh giá lại service này.'))
                     ->aside()
-                    ->columns(3)
                     ->schema([
-                        ...array_map(self::runtimeVersionInput(...), Language::cases()),
+                        Repeater::make('runtimes')
+                            ->label(__('Runtime / công nghệ'))
+                            ->schema([
+                                Select::make('technology_id')
+                                    ->label(__('Công nghệ'))
+                                    ->options(fn (): array => Technology::orderBy('name')->pluck('name', 'id')->all())
+                                    ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                                    ->distinct()
+                                    ->required()
+                                    ->live(),
+                                self::versionInput(),
+                            ])
+                            ->table([
+                                TableColumn::make(__('Công nghệ'))->markAsRequired()->width('40%'),
+                                TableColumn::make(__('Version'))->markAsRequired(),
+                            ])
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel(__('Thêm công nghệ'))
+                            ->columnSpanFull(),
                         CheckboxList::make('removed_lockfiles')
                             ->label(__('Lockfile hiện có'))
                             ->helperText(__('Đánh dấu để xóa lockfile khi lưu.'))
@@ -119,19 +142,84 @@ class ServiceForm
             ]);
     }
 
-    private static function runtimeVersionInput(Language $language): TextInput
+    /**
+     * Searchable list of catalog versions that also accepts the typed text: servers report versions such as
+     * "8.3.12-1+deb.sury.org+1" that no catalog lists. Search runs on the server to offer the typed text, so the
+     * debounce is short: the default waits a full second after each keystroke. The helper text shows how the
+     * version will be evaluated before the form is saved.
+     */
+    private static function versionInput(): Select
     {
-        return TextInput::make("runtime_versions.{$language->value}")
-            ->label($language->getLabel())
-            ->placeholder(match ($language) {
-                Language::Php => '8.3.12',
-                Language::Ruby => '3.3.6',
-                Language::Nodejs => '22.11.0',
-            })
-            ->maxLength(64)
+        return Select::make('raw_version')
+            ->label(__('Version'))
+            ->placeholder(__('Chọn version'))
+            ->searchPrompt(__('Gõ để lọc hoặc nhập version khác'))
+            ->options(fn (Get $get): array => self::versionOptions(self::technology($get)?->versionSuggestions() ?? []))
+            ->searchable()
+            ->searchDebounce(150)
+            ->getSearchResultsUsing(fn (Get $get, string $search): array => self::versionSearchResults(self::technology($get), $search))
+            ->getOptionLabelUsing(fn (?string $value): ?string => $value)
+            ->required()
+            ->rules(['max:64'])
             ->regex(self::VERSION_PATTERN)
             ->validationMessages(['regex' => __('Version chỉ gồm chữ, số và . + ~ _ -')])
+            ->live()
+            ->helperText(fn (Get $get, ?string $state): ?HtmlString => self::evaluationPreview(self::technology($get), $state))
             ->extraInputAttributes(['class' => 'font-mono']);
+    }
+
+    /**
+     * @param  list<string>  $versions
+     * @return array<string, string>
+     */
+    private static function versionOptions(array $versions): array
+    {
+        return array_combine($versions, $versions);
+    }
+
+    /**
+     * Catalog versions starting with the typed text, led by the typed text itself when it is not one of them, e.g.
+     * "8.3.12-1+deb.sury.org+1", so a version no catalog lists can still be chosen. The label is the plain version
+     * because the select keeps showing it once chosen.
+     *
+     * @return array<string, string>
+     */
+    private static function versionSearchResults(?Technology $technology, string $search): array
+    {
+        $search = trim($search);
+        $results = self::versionOptions($technology?->versionSuggestions(startingWith: $search) ?? []);
+
+        if (! isset($results[$search]) && mb_strlen($search) <= 64 && preg_match(self::VERSION_PATTERN, $search)) {
+            $results = [$search => $search] + $results;
+        }
+
+        return $results;
+    }
+
+    private static function technology(Get $get): ?Technology
+    {
+        return filled($get('technology_id')) ? Technology::find($get('technology_id')) : null;
+    }
+
+    /**
+     * E.g. "● Thiếu bản vá bảo mật · Đã có bản vá bảo mật, bản mới nhất của nhánh là 8.3.14". When the typed text is not a plain
+     * version, e.g. "8.3.12-1+deb.sury.org+1", it also says how it was read: "hiểu là 8.3.12, nhánh 8.3".
+     */
+    private static function evaluationPreview(?Technology $technology, ?string $rawVersion): ?HtmlString
+    {
+        if ($technology === null || blank($rawVersion)) {
+            return null;
+        }
+
+        $evaluation = (new RuntimeEvaluator)->evaluate($technology, $rawVersion);
+        $details = [$evaluation->reasonText()];
+
+        if ($evaluation->version !== null && $evaluation->branch !== null && $evaluation->version !== trim($rawVersion)) {
+            $details[] = __('hiểu là :version, nhánh :branch', ['version' => $evaluation->version, 'branch' => $evaluation->branch]);
+        }
+
+        return new HtmlString(StatusDot::make($evaluation->status->getLabel(), $evaluation->status->dotTone())->toHtml()
+            .' <span class="psm-muted">· '.e(implode(' · ', $details)).'</span>');
     }
 
     private static function lockfileNameRule(): Closure

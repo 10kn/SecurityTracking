@@ -30,6 +30,7 @@ class ServicesRelationManager extends RelationManager
                 ServiceColumns::name(),
                 ServiceColumns::runtimes(),
                 ServiceColumns::lockfiles(),
+                ServiceColumns::openFindings(),
                 ServiceColumns::updatedAt(),
             ])
             ->headerActions([

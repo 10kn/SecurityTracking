@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Teams\Tables;
 
+use App\Enums\FindingState;
 use App\Filament\Support\StatusDot;
 use App\Models\Team;
 use Filament\Actions\EditAction;
@@ -27,6 +28,12 @@ class TeamsTable
                 TextColumn::make('projects_count')
                     ->label(__('Projects'))
                     ->numeric()
+                    ->alignEnd(),
+                TextColumn::make('findings_count')
+                    ->label(__('Finding mở'))
+                    ->counts(['findings' => fn (Builder $query): Builder => $query->where('state', FindingState::Open)])
+                    ->numeric()
+                    ->color(fn (int $state): string => $state > 0 ? 'danger' : 'gray')
                     ->alignEnd(),
                 TextColumn::make('google_chat')
                     ->label(__('Google Chat'))
