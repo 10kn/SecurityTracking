@@ -63,11 +63,17 @@ final class PackagistAdvisory
      */
     public static function aliases(array $advisory): array
     {
-        $githubIds = collect((array) ($advisory['sources'] ?? []))
-            ->filter(fn (mixed $source): bool => is_array($source) && ($source['name'] ?? null) === 'GitHub' && is_string($source['remoteId'] ?? null))
-            ->map(fn (array $source): string => $source['remoteId']);
+        $ids = [];
 
-        return $githubIds->push($advisory['cve'] ?? null)->filter(fn (mixed $id): bool => is_string($id) && $id !== '')->unique()->values()->all();
+        foreach ((array) ($advisory['sources'] ?? []) as $source) {
+            if (is_array($source) && ($source['name'] ?? null) === 'GitHub') {
+                $ids[] = $source['remoteId'] ?? null;
+            }
+        }
+
+        $ids[] = $advisory['cve'] ?? null;
+
+        return array_values(array_unique(array_filter($ids, fn (mixed $id): bool => is_string($id) && $id !== '')));
     }
 
     /**

@@ -6,9 +6,11 @@ use App\Models\Finding;
 use App\Models\Lockfile;
 use App\Models\Runtime;
 use App\Models\Service;
+use App\Services\RuntimeEvaluator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
+use WeakMap;
 
 /**
  * A row of a services table: what runs in production and how it was evaluated.
@@ -22,7 +24,12 @@ use Illuminate\Support\Collection;
  */
 class ServiceResource extends JsonResource
 {
-    public const array EAGER_LOADS = ['productionDeployment.runtimes.technology', 'productionDeployment.lockfiles', 'productionDeployment.openPackageFindings'];
+    public const array EAGER_LOADS = ['productionDeployment.runtimes', 'productionDeployment.lockfiles', 'productionDeployment.openPackageFindings'];
+
+    /**
+     * @var WeakMap<Request, RuntimeEvaluator>|null
+     */
+    private static ?WeakMap $evaluators = null;
 
     /**
      * @return array<string, mixed>
@@ -43,7 +50,7 @@ class ServiceResource extends JsonResource
                 'name' => $this->project->name,
                 'team' => $this->project->relationLoaded('team') ? $this->project->team->name : null,
             ]),
-            'runtimes' => $this->runtimes($deployment->runtimes ?? collect()),
+            'runtimes' => $this->runtimes($deployment->runtimes ?? collect(), self::evaluatorFor($request)),
             'lockfiles' => $this->lockfiles($deployment->lockfiles ?? collect(), $deployment->openPackageFindings ?? collect()),
             'open_findings_count' => $this->open_findings_count,
             'updated_at' => $deployment?->updated_at?->diffForHumans(),
@@ -51,22 +58,38 @@ class ServiceResource extends JsonResource
     }
 
     /**
-     * E.g. "PHP 8.3.12" and its status, sorted by technology.
+     * E.g. "PHP 8.3.12" and its status, sorted by technology. The status is evaluated again here, by the rules the
+     * service form previews with: the stored one is only as fresh as the last evaluation, and a catalog that went stale
+     * since must show its runtimes as missing data, never as their old status.
      *
      * @param  Collection<int, Runtime>  $runtimes
-     * @return list<array{name: string, status: array{label: string, tone: string}, reason: string|null}>
+     * @return list<array{name: string, status: array{label: string, tone: string}, reason: string}>
      */
-    private function runtimes(Collection $runtimes): array
+    private function runtimes(Collection $runtimes, RuntimeEvaluator $evaluator): array
     {
         return $runtimes
-            ->sortBy(fn (Runtime $runtime): string => $runtime->technology->name)
-            ->map(fn (Runtime $runtime): array => [
-                'name' => $runtime->displayName(),
-                'status' => $runtime->status->dot(),
-                'reason' => $runtime->statusReasonText(),
-            ])
+            ->sortBy(fn (Runtime $runtime): string => $runtime->technology->getLabel())
+            ->map(function (Runtime $runtime) use ($evaluator): array {
+                $evaluation = $evaluator->evaluate($runtime->technology, $runtime->raw_version);
+
+                return [
+                    'name' => $runtime->displayName(),
+                    'status' => $evaluation->status->dot(),
+                    'reason' => $evaluation->reasonText(),
+                ];
+            })
             ->values()
             ->all();
+    }
+
+    /**
+     * One evaluator per request, so a table reads each technology's catalog once and the next request reads it again.
+     */
+    private static function evaluatorFor(Request $request): RuntimeEvaluator
+    {
+        self::$evaluators ??= new WeakMap;
+
+        return self::$evaluators[$request] ??= new RuntimeEvaluator;
     }
 
     /**

@@ -7,30 +7,11 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 
 /**
- * Reads https://endoflife.date (API v1): release branches, their support dates and latest version, for about 400 products.
+ * Reads https://endoflife.date (API v1): release branches, their support dates and latest version.
  */
 class EndoflifeDateClient
 {
     public const string BASE_URL = 'https://endoflife.date/api/v1/products/';
-
-    /**
-     * The product's display name, e.g. "Node.js" for "nodejs", or null when endoflife.date does not know the product.
-     *
-     * @throws ConnectionException
-     * @throws RequestException
-     */
-    public function productLabel(string $product): ?string
-    {
-        try {
-            return CatalogHttp::client()->get(self::BASE_URL.rawurlencode($product).'/')->json('result.label');
-        } catch (RequestException $exception) {
-            if ($exception->response->notFound()) {
-                return null;
-            }
-
-            throw $exception;
-        }
-    }
 
     /**
      * @return list<BranchData>

@@ -4,8 +4,8 @@ namespace Database\Factories;
 
 use App\Enums\AdvisoryKind;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Advisory;
-use App\Models\Technology;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -42,12 +42,12 @@ class AdvisoryFactory extends Factory
     public function preNotice(Technology $technology): static
     {
         return $this->state(fn (array $attributes) => [
-            'source' => $technology->release_source->noticeSourceKey(),
+            'source' => $technology->noticeSourceKey(),
             'kind' => AdvisoryKind::PreNotice,
             'aliases' => [],
             'severity' => Severity::Critical,
             'cvss_score' => null,
-            'technology_id' => $technology->id,
+            'technology' => $technology,
         ]);
     }
 }

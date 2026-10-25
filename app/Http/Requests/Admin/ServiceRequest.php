@@ -5,11 +5,11 @@ namespace App\Http\Requests\Admin;
 use App\Enums\Ecosystem;
 use App\Enums\Exposure;
 use App\Enums\ServiceKind;
+use App\Enums\Technology;
 use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
-use App\Models\Technology;
 use App\Support\Slug;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -19,7 +19,8 @@ use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 
 /**
- * The service and what it runs in production: one version per technology and the uploaded lockfiles.
+ * The service and what it runs in production: one version per technology and the uploaded lockfiles. A project that
+ * reads its lockfiles from GitHub takes no uploads.
  */
 class ServiceRequest extends FormRequest
 {
@@ -36,6 +37,7 @@ class ServiceRequest extends FormRequest
     public function rules(): array
     {
         $service = $this->route('service');
+        $projectSyncsLockfiles = Project::whereKey($this->integer('project_id'))->where('syncs_lockfiles', true)->exists();
 
         return [
             'project_id' => ['required', 'integer', Rule::exists(Project::class, 'id')],
@@ -48,11 +50,11 @@ class ServiceRequest extends FormRequest
             'exposure' => ['required', Rule::enum(Exposure::class)],
             'repository_path' => ['required', 'string', 'max:255'],
             'runtimes' => ['array'],
-            'runtimes.*.technology_id' => ['required', 'integer', 'distinct', Rule::exists(Technology::class, 'id')],
+            'runtimes.*.technology' => ['required', 'distinct', Rule::enum(Technology::class)],
             'runtimes.*.raw_version' => ['required', 'string', 'max:'.Runtime::RAW_VERSION_MAX_LENGTH, 'regex:'.Runtime::RAW_VERSION_PATTERN],
-            'lockfile_uploads' => ['array'],
+            'lockfile_uploads' => ['array', Rule::prohibitedIf($projectSyncsLockfiles)],
             'lockfile_uploads.*' => ['file', 'max:'.Lockfile::MAX_UPLOAD_KILOBYTES, $this->lockfileNameRule()],
-            'removed_lockfiles' => ['array'],
+            'removed_lockfiles' => ['array', Rule::prohibitedIf($projectSyncsLockfiles)],
             'removed_lockfiles.*' => ['string'],
         ];
     }
@@ -69,7 +71,7 @@ class ServiceRequest extends FormRequest
             'kind' => __('Loại'),
             'exposure' => __('Phạm vi truy cập'),
             'repository_path' => __('Thư mục trong repository'),
-            'runtimes.*.technology_id' => __('Công nghệ'),
+            'runtimes.*.technology' => __('Công nghệ'),
             'runtimes.*.raw_version' => __('Version'),
             'lockfile_uploads.*' => __('Lockfile'),
         ];
@@ -83,7 +85,9 @@ class ServiceRequest extends FormRequest
         return [
             'slug.regex' => __('Chỉ dùng chữ thường, số và dấu gạch ngang.'),
             'runtimes.*.raw_version.regex' => __('Version chỉ gồm chữ, số và . + ~ _ -'),
-            'runtimes.*.technology_id.distinct' => __('Mỗi công nghệ chỉ chọn một lần.'),
+            'runtimes.*.technology.distinct' => __('Mỗi công nghệ chỉ chọn một lần.'),
+            'lockfile_uploads.prohibited' => __('Project này lấy lockfile từ GitHub, không tải lên hay xóa tay được.'),
+            'removed_lockfiles.prohibited' => __('Project này lấy lockfile từ GitHub, không tải lên hay xóa tay được.'),
         ];
     }
 
@@ -98,13 +102,13 @@ class ServiceRequest extends FormRequest
     }
 
     /**
-     * Raw versions keyed by technology id.
+     * Raw versions keyed by technology, e.g. "php".
      *
-     * @return array<int, string>
+     * @return array<string, string>
      */
     public function runtimeVersions(): array
     {
-        return Arr::pluck(Arr::wrap($this->validated('runtimes', [])), 'raw_version', 'technology_id');
+        return Arr::pluck(Arr::wrap($this->validated('runtimes', [])), 'raw_version', 'technology');
     }
 
     /**

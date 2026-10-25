@@ -56,7 +56,7 @@ class EvaluateRuntimes
     {
         $this->runtimeFindings->forgetPreNotices();
 
-        Deployment::with(['service.project', 'runtimes.technology'])
+        Deployment::with(['service.project', 'runtimes'])
             ->whereKey($deploymentIds)
             ->each(function (Deployment $deployment): void {
                 $unknownRuntimeIds = $deployment->runtimes->where('status', RuntimeStatus::Unknown)->modelKeys();

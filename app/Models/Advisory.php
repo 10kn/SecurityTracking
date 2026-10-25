@@ -5,14 +5,15 @@ namespace App\Models;
 use App\Enums\AdvisoryKind;
 use App\Enums\Ecosystem;
 use App\Enums\Severity;
+use App\Enums\Technology;
+use App\Services\Packages\PackagistVulnerabilityMatcher;
 use Database\Factories\AdvisoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'aliases', 'title', 'summary', 'severity', 'cvss_score', 'technology_id', 'url', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions'])]
+#[Fillable(['source', 'external_id', 'kind', 'aliases', 'title', 'summary', 'severity', 'cvss_score', 'technology', 'url', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'is_dismissed', 'planned_release_at', 'affected_branches', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -30,19 +31,16 @@ class Advisory extends Model
             'aliases' => 'array',
             'severity' => Severity::class,
             'cvss_score' => 'decimal:1',
+            'technology' => Technology::class,
             'published_at' => 'datetime',
             'source_modified_at' => 'datetime',
             'withdrawn_at' => 'datetime',
             'fixed_versions' => 'array',
+            'classified_severity' => Severity::class,
+            'is_dismissed' => 'boolean',
+            'planned_release_at' => 'datetime',
+            'affected_branches' => 'array',
         ];
-    }
-
-    /**
-     * @return BelongsTo<Technology, $this>
-     */
-    public function technology(): BelongsTo
-    {
-        return $this->belongsTo(Technology::class);
     }
 
     /**
@@ -51,6 +49,23 @@ class Advisory extends Model
     public function findings(): HasMany
     {
         return $this->hasMany(Finding::class);
+    }
+
+    /**
+     * The id people know the advisory by, for titles and cards. Packagist's own PKSA id is only the stable key: its
+     * GitHub id, else its CVE, is shown instead.
+     */
+    public function reference(): string
+    {
+        if ($this->source !== PackagistVulnerabilityMatcher::SOURCE) {
+            return $this->external_id;
+        }
+
+        $aliases = collect($this->aliases ?? []);
+
+        return $aliases->first(fn (string $alias): bool => str_starts_with($alias, 'GHSA-'))
+            ?? $aliases->first(fn (string $alias): bool => str_starts_with($alias, 'CVE-'))
+            ?? $this->external_id;
     }
 
     /**

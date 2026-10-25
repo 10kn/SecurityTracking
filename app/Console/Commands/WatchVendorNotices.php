@@ -6,9 +6,9 @@ use App\Actions\EvaluateRuntimes;
 use App\Actions\SendFindingAlerts;
 use App\Actions\SendPreNoticeAlerts;
 use App\Actions\SyncNoticeFeed;
+use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Runtime;
-use App\Models\Technology;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -19,9 +19,9 @@ use Throwable;
 class WatchVendorNotices extends Command
 {
     /**
-     * Handover 5.2: polled every 15 minutes. Each feed is polled once, for the first technology that uses its release
-     * source. A failing feed does not stop the others. A new or edited pre-notice re-syncs the runtime findings of its
-     * technology, so a critical one escalates them right away instead of at the next catalog sync.
+     * Handover 5.2: the feed of every technology is polled every 15 minutes. A failing feed does not stop the others.
+     * A new or edited pre-notice re-syncs the runtime findings of its technology, so a critical one escalates them
+     * right away instead of at the next catalog sync.
      */
     public function handle(
         SyncNoticeFeed $syncNoticeFeed,
@@ -29,16 +29,11 @@ class WatchVendorNotices extends Command
         EvaluateRuntimes $evaluateRuntimes,
         SendFindingAlerts $sendFindingAlerts,
     ): int {
-        $technologies = Technology::orderBy('id')
-            ->get()
-            ->filter(fn (Technology $technology): bool => $technology->release_source->noticeFeed() !== null)
-            ->unique(fn (Technology $technology): string => $technology->release_source->value);
-
         $failures = 0;
-        $changedTechnologyIds = [];
+        $changedTechnologies = [];
 
-        foreach ($technologies as $technology) {
-            $feed = $technology->release_source->getLabel();
+        foreach (Technology::cases() as $technology) {
+            $feed = $technology->releaseSourceLabel();
 
             try {
                 $advisories = collect($syncNoticeFeed->handle($technology));
@@ -52,13 +47,13 @@ class WatchVendorNotices extends Command
             }
 
             if ($advisories->contains(fn (Advisory $advisory): bool => $advisory->wasRecentlyCreated || $advisory->wasChanged())) {
-                $changedTechnologyIds[] = $technology->id;
+                $changedTechnologies[] = $technology->value;
             }
         }
 
-        if ($changedTechnologyIds !== []) {
+        if ($changedTechnologies !== []) {
             $evaluateRuntimes->syncRuntimeFindings(
-                Runtime::whereIn('technology_id', $changedTechnologyIds)->distinct()->pluck('deployment_id')->map(fn (mixed $id): int => (int) $id)->all(),
+                Runtime::whereIn('technology', $changedTechnologies)->distinct()->pluck('deployment_id')->map(fn (mixed $id): int => (int) $id)->all(),
             );
         }
 

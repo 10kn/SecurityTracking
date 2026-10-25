@@ -33,7 +33,7 @@ export default function ServicesIndex({ services, table, projects }: { services:
                         <TableSearch value={table.search} placeholder={t('Tìm service')} onSearch={(search) => query({ search })} />
                         <TableFilter value={table.project} label={t('Project')} allLabel={t('Mọi project')} options={projects} onChange={(project) => query({ project })} />
                     </div>
-                    <span className="text-sm text-faint">{t(':count service', { count: services.meta.total })}</span>
+                    <span className="text-sm text-faint max-sm:hidden">{t(':count service', { count: services.meta.total })}</span>
                 </CardHeader>
                 {services.data.length === 0 ? (
                     isFiltered ? (

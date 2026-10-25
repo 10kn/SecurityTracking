@@ -69,7 +69,7 @@ class SendDailyDigest
             ->pluck('id')
             ->all();
 
-        $runtimes = Runtime::with(['technology', 'deployment.service.project'])
+        $runtimes = Runtime::with('deployment.service.project')
             ->whereHas('deployment', fn ($query) => $query->where('is_current', true)->whereHas('service.project', fn ($query) => $query->where('team_id', $team->id)))
             ->get();
 
@@ -103,17 +103,17 @@ class SendDailyDigest
             return collect();
         }
 
-        $branches = RuntimeBranch::whereIn('technology_id', $candidates->pluck('technology_id')->unique())
+        $branches = RuntimeBranch::whereIn('technology', $candidates->pluck('technology.value')->unique())
             ->whereDate('security_support_until', '>=', today())
             ->whereDate('security_support_until', '<=', today()->addDays(config('psm.digest.eol_warning_days')))
             ->get()
-            ->keyBy(fn (RuntimeBranch $branch): string => "{$branch->technology_id}:{$branch->branch}");
+            ->keyBy(fn (RuntimeBranch $branch): string => "{$branch->technology->value}:{$branch->branch}");
 
         return $candidates
-            ->filter(fn (Runtime $runtime): bool => $branches->has("{$runtime->technology_id}:{$runtime->branch}"))
+            ->filter(fn (Runtime $runtime): bool => $branches->has("{$runtime->technology->value}:{$runtime->branch}"))
             ->map(fn (Runtime $runtime): array => [
                 'runtime' => $runtime,
-                'date' => $branches->get("{$runtime->technology_id}:{$runtime->branch}")->security_support_until->translatedFormat(__('d/m/Y')),
+                'date' => $branches->get("{$runtime->technology->value}:{$runtime->branch}")->security_support_until->translatedFormat(__('d/m/Y')),
             ])
             ->values();
     }

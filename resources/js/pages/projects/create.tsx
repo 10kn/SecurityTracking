@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
 import type { Option } from '@/types';
 
-export default function ProjectsCreate({ teams, defaultTeamId }: { teams: Option<number>[]; defaultTeamId: number | null }) {
+export default function ProjectsCreate({ teams, defaultTeamId, gitHubConfigured }: { teams: Option<number>[]; defaultTeamId: number | null; gitHubConfigured: boolean }) {
     const t = useTranslation();
-    const form = useForm<ProjectFormData>({ team_id: defaultTeamId, name: '', slug: '', repository_url: '' });
+    const form = useForm<ProjectFormData>({ team_id: defaultTeamId, name: '', slug: '', repository_url: '', repository_branch: '', syncs_lockfiles: false });
 
     return (
         <>
@@ -25,7 +25,7 @@ export default function ProjectsCreate({ teams, defaultTeamId }: { teams: Option
                 noValidate
             >
                 <CardBody>
-                    <ProjectFields form={form} teams={teams} isCreating />
+                    <ProjectFields form={form} teams={teams} isCreating gitHubConfigured={gitHubConfigured} />
                     <FormActions>
                         <Button type="submit" loading={form.processing}>
                             {t('Tạo project')}

@@ -20,6 +20,16 @@ it('finds projects, services and teams by name or slug for the command palette',
         ]]);
 });
 
+it('finds the supported technologies by name', function () {
+    actingAsAdmin();
+
+    getJson('/admin/search?query=node')
+        ->assertOk()
+        ->assertExactJson(['results' => [
+            ['label' => 'Node.js', 'hint' => 'Công nghệ', 'url' => '/admin/technologies/nodejs'],
+        ]]);
+});
+
 it('returns nothing for an empty query', function () {
     actingAsAdmin();
     Team::factory()->create();

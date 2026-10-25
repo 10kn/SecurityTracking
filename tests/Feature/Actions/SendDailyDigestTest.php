@@ -5,14 +5,15 @@ use App\Enums\ChatNotificationKind;
 use App\Enums\FindingEventType;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Deployment;
 use App\Models\Finding;
 use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
+use App\Models\RuntimeBranch;
 use App\Models\Service;
 use App\Models\Team;
-use App\Models\Technology;
 
 beforeEach(function () {
     fakeGoogleChat();
@@ -43,10 +44,10 @@ it('sends each team one card with new, still open and closed findings', function
 });
 
 it('counts runtimes with missing data or a newer release, and lists those reaching end of life soon', function () {
-    $php = syncedTechnology('php');
-    Runtime::factory()->for($this->deployment)->for(Technology::factory())->create(['status' => RuntimeStatus::Unknown]);
-    Runtime::factory()->for($this->deployment)->for($php)->create(['raw_version' => '8.4.26', 'branch' => '8.4', 'status' => RuntimeStatus::Outdated]);
-    $php->branches()->where('branch', '8.4')->update(['security_support_until' => '2026-11-15']);
+    $php = syncedTechnology(Technology::Php);
+    Runtime::factory()->for($this->deployment)->create(['technology' => Technology::Ruby, 'status' => RuntimeStatus::Unknown]);
+    Runtime::factory()->for($this->deployment)->create(['technology' => $php, 'raw_version' => '8.4.26', 'branch' => '8.4', 'status' => RuntimeStatus::Outdated]);
+    RuntimeBranch::where('technology', $php)->where('branch', '8.4')->update(['security_support_until' => '2026-11-15']);
 
     app(SendDailyDigest::class)->handle();
 

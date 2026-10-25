@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Enums\Technology;
 use App\Models\RuntimeRelease;
-use App\Models\Technology;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,7 +19,7 @@ class RuntimeReleaseFactory extends Factory
     public function definition(): array
     {
         return [
-            'technology_id' => Technology::factory(),
+            'technology' => Technology::Php,
             'branch' => '8.3',
             'version' => fn (array $attributes) => $attributes['branch'].'.'.fake()->unique()->numberBetween(0, 99),
             'is_security_release' => false,

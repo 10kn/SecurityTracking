@@ -3,6 +3,7 @@
 namespace App\Enums;
 
 use App\Enums\Concerns\HasStatusDot;
+use App\Models\SourceHeartbeat;
 
 /**
  * Health of a technology's version catalog, from its source heartbeat.
@@ -15,6 +16,16 @@ enum CatalogStatus: string
     case LastSyncFailed = 'last_sync_failed';
     case Stale = 'stale';
     case NeverSynced = 'never_synced';
+
+    public static function fromHeartbeat(?SourceHeartbeat $heartbeat): self
+    {
+        return match (true) {
+            $heartbeat?->last_success_at === null => self::NeverSynced,
+            $heartbeat->isStale() => self::Stale,
+            $heartbeat->last_failure_at?->isAfter($heartbeat->last_success_at) === true => self::LastSyncFailed,
+            default => self::Synced,
+        };
+    }
 
     public function getLabel(): string
     {

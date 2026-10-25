@@ -1,11 +1,11 @@
 <?php
 
 use App\Actions\SyncTechnologyCatalog;
+use App\Enums\Technology;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
-use App\Models\Technology;
 use App\Models\User;
 use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\PhpNetNoticeFeed;
@@ -85,7 +85,6 @@ function fakeCatalogSources(): void
         'https://endoflife.date/api/v1/products/php/' => Http::response($fixture('endoflife-php.json')),
         'https://endoflife.date/api/v1/products/nodejs/' => Http::response($fixture('endoflife-nodejs.json')),
         'https://endoflife.date/api/v1/products/ruby/' => Http::response($fixture('endoflife-ruby.json')),
-        'https://endoflife.date/api/v1/products/python/' => Http::response($fixture('endoflife-python.json')),
         'https://www.php.net/releases/*' => Http::response($fixture('php-releases-8.json')),
         'https://nodejs.org/dist/index.json' => Http::response($fixture('nodejs-index.json')),
         'https://cache.ruby-lang.org/pub/ruby/index.txt' => Http::response($fixture('ruby-index.txt')),
@@ -93,18 +92,11 @@ function fakeCatalogSources(): void
 }
 
 /**
- * A technology whose catalog was just synced from the fixtures: "php", "nodejs", "ruby", or "python" (endoflife.date only).
+ * A technology whose catalog was just synced from the fixtures.
  */
-function syncedTechnology(string $slug): Technology
+function syncedTechnology(Technology $technology): Technology
 {
     fakeCatalogSources();
-
-    $technology = match ($slug) {
-        'php' => Technology::factory()->php()->create(),
-        'nodejs' => Technology::factory()->nodejs()->create(),
-        'ruby' => Technology::factory()->ruby()->create(),
-        'python' => Technology::factory()->create(['name' => 'Python', 'slug' => 'python', 'endoflife_product' => 'python']),
-    };
 
     app(SyncTechnologyCatalog::class)->handle($technology);
 
@@ -207,7 +199,7 @@ function runtimeAt(Team $team, string $service, Technology $technology, string $
 
     $deployment = $service->productionDeployment ?? $service->deployments()->create(['environment' => 'production']);
 
-    return $deployment->runtimes()->create(['technology_id' => $technology->id, 'raw_version' => $version, 'source' => 'manual', 'observed_at' => now()]);
+    return $deployment->runtimes()->create(['technology' => $technology, 'raw_version' => $version, 'source' => 'manual', 'observed_at' => now()]);
 }
 
 /**
@@ -258,6 +250,50 @@ function fakeOsv(?Closure $isPublished = null): void
 }
 
 /**
+ * Fakes the Packagist security advisories API with tests/Fixtures/packagist: the real response of 2026-10-24 for the
+ * packages of tests/Fixtures/lockfiles/composer.lock. Other packages have no advisories. With $isPublished, an advisory
+ * it rejects any id of (PKSA, GitHub, CVE) is not listed yet.
+ *
+ * @param  (Closure(string): bool)|null  $isPublished
+ */
+function fakePackagist(?Closure $isPublished = null): void
+{
+    $known = json_decode((string) file_get_contents(base_path('tests/Fixtures/packagist/security-advisories.json')), true)['advisories'];
+
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://packagist.org/api/security-advisories/' => fn (Request $request) => Http::response(['advisories' => collect($request->data()['packages'] ?? [])
+            ->mapWithKeys(fn (string $name): array => [$name => array_values(array_filter(
+                $known[$name] ?? [],
+                fn (array $advisory): bool => $isPublished === null || collect([$advisory['advisoryId'], $advisory['cve'], ...array_column($advisory['sources'], 'remoteId')])->filter()->every(fn (string $id): bool => $isPublished($id)),
+            ))])
+            ->all()]),
+    ]);
+}
+
+/**
+ * Makes the Packagist API answer 503 while $failing is true. Register it before fakePackagist().
+ */
+function fakePackagistOutage(bool &$failing): void
+{
+    Http::fake(['https://packagist.org/*' => function () use (&$failing) {
+        return $failing ? Http::response('Service Unavailable', 503) : null;
+    }]);
+}
+
+/**
+ * Requests sent to the Packagist API, oldest first.
+ *
+ * @return Collection<int, Request>
+ */
+function packagistRequests(): Collection
+{
+    return Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://packagist.org/'))
+        ->map(fn (array $pair): Request => $pair[0])
+        ->values();
+}
+
+/**
  * Requests sent to the OSV API, oldest first.
  *
  * @return Collection<int, Request>
@@ -277,4 +313,85 @@ function fakeOsvOutage(bool &$failing): void
     Http::fake(['https://api.osv.dev/*' => function () use (&$failing) {
         return $failing ? Http::response('Service Unavailable', 503) : null;
     }]);
+}
+
+/**
+ * The commit every branch of every faked GitHub repository points at.
+ */
+const GITHUB_COMMIT = '3f786850e387550fdab836ed7e6dc881de23001b';
+
+/**
+ * Configures the GitHub App with a private key made for the test run and returns the PEM of its public key.
+ */
+function configureGitHubApp(): string
+{
+    static $keys = null;
+
+    if ($keys === null) {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        openssl_pkey_export($key, $privateKey);
+        $path = tempnam(sys_get_temp_dir(), 'psm-github-app-');
+        file_put_contents($path, $privateKey);
+        $keys = ['path' => $path, 'public' => openssl_pkey_get_details($key)['key']];
+    }
+
+    config([
+        'psm.github.app_id' => '12345',
+        'psm.github.installation_id' => '678',
+        'psm.github.private_key_path' => $keys['path'],
+    ]);
+
+    return $keys['public'];
+}
+
+/**
+ * Configures the GitHub App and fakes the GitHub API: an installation token, every branch at $commitSha, and the
+ * files of every repository at that commit, by path. Directories are read from the paths; anything else is 404, as on
+ * GitHub. Register outages and other fakes before it: the first fake that answers wins.
+ *
+ * @param  array<string, string>  $files
+ */
+function fakeGitHub(array $files = [], string $commitSha = GITHUB_COMMIT): void
+{
+    configureGitHubApp();
+
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/app/installations/*/access_tokens' => Http::response(['token' => 'ghs_test', 'expires_at' => now()->addHour()->toIso8601String()], 201),
+        'https://api.github.com/repos/*/commits*' => Http::response([['sha' => $commitSha]]),
+        'https://api.github.com/repos/*/contents*' => function (Request $request) use ($files) {
+            $path = trim(rawurldecode((string) preg_replace('#^/repos/[^/]+/[^/]+/contents#', '', (string) parse_url($request->url(), PHP_URL_PATH))), '/');
+
+            if (str_contains($request->header('Accept')[0] ?? '', 'raw')) {
+                return array_key_exists($path, $files) ? Http::response($files[$path]) : Http::response(['message' => 'Not Found'], 404);
+            }
+
+            $entries = collect($files)
+                ->keys()
+                ->filter(fn (string $file): bool => $path === '' || str_starts_with($file, "{$path}/"))
+                ->map(fn (string $file): string => explode('/', ltrim(substr($file, strlen($path)), '/'))[0])
+                ->unique()
+                ->map(fn (string $name): array => [
+                    'name' => $name,
+                    'path' => ltrim("{$path}/{$name}", '/'),
+                    'type' => array_key_exists(ltrim("{$path}/{$name}", '/'), $files) ? 'file' : 'dir',
+                    'size' => strlen($files[ltrim("{$path}/{$name}", '/')] ?? ''),
+                ])
+                ->values();
+
+            return $entries->isEmpty() && $path !== '' ? Http::response(['message' => 'Not Found'], 404) : Http::response($entries->all());
+        },
+    ]);
+}
+
+/**
+ * Requests sent to the GitHub API, oldest first.
+ *
+ * @return Collection<int, Request>
+ */
+function gitHubRequests(string $path = ''): Collection
+{
+    return Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.github.com/'.$path))
+        ->map(fn (array $pair): Request => $pair[0])
+        ->values();
 }

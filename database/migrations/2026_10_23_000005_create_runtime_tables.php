@@ -11,18 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('technologies', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('slug')->unique();
-            $table->string('endoflife_product')->unique();
-            $table->string('release_source')->default('endoflife');
-            $table->timestamps();
-        });
-
         Schema::create('runtime_branches', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('technology_id')->constrained()->cascadeOnDelete();
+            $table->string('technology');
             $table->string('branch');
             $table->string('latest_version')->nullable();
             $table->date('released_at')->nullable();
@@ -32,27 +23,27 @@ return new class extends Migration
             $table->timestamp('synced_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['technology_id', 'branch']);
+            $table->unique(['technology', 'branch']);
         });
 
         Schema::create('runtime_releases', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('technology_id')->constrained()->cascadeOnDelete();
+            $table->string('technology');
             $table->string('branch');
             $table->string('version');
             $table->boolean('is_security_release')->nullable();
             $table->date('released_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['technology_id', 'version']);
-            $table->index(['technology_id', 'branch']);
+            $table->unique(['technology', 'version']);
+            $table->index(['technology', 'branch']);
         });
 
         Schema::create('runtimes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('deployment_id')->constrained()->cascadeOnDelete();
             $table->foreignId('asset_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('technology_id')->constrained()->restrictOnDelete();
+            $table->string('technology');
             $table->string('raw_version');
             $table->string('version')->nullable();
             $table->string('branch')->nullable();
@@ -64,8 +55,8 @@ return new class extends Migration
             $table->timestamp('evaluated_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['deployment_id', 'technology_id']);
-            $table->index(['technology_id', 'status']);
+            $table->unique(['deployment_id', 'technology']);
+            $table->index(['technology', 'status']);
         });
     }
 
@@ -77,6 +68,5 @@ return new class extends Migration
         Schema::dropIfExists('runtimes');
         Schema::dropIfExists('runtime_releases');
         Schema::dropIfExists('runtime_branches');
-        Schema::dropIfExists('technologies');
     }
 };

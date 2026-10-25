@@ -2,10 +2,10 @@
 
 namespace App\Actions;
 
+use App\Enums\Technology;
 use App\Models\RuntimeBranch;
 use App\Models\RuntimeRelease;
 use App\Models\SourceHeartbeat;
-use App\Models\Technology;
 use App\Services\Catalog\BranchData;
 use App\Services\Catalog\EndoflifeDateClient;
 use App\Services\Catalog\ReleaseData;
@@ -28,13 +28,13 @@ class SyncTechnologyCatalog
     public function handle(Technology $technology): void
     {
         $heartbeat = SourceHeartbeat::updateOrCreate(['source' => $technology->catalogSourceKey()], [
-            'name' => __('Danh mục version :technology', ['technology' => $technology->name]),
+            'name' => __('Danh mục version :technology', ['technology' => $technology->getLabel()]),
             'threshold_minutes' => config('psm.catalog.stale_after_minutes'),
         ]);
 
         try {
-            $branches = $this->endoflife->branches($technology->endoflife_product);
-            $releases = app($technology->release_source->feed())->releases($technology, $branches);
+            $branches = $this->endoflife->branches($technology->endoflifeProduct());
+            $releases = app($technology->releaseFeed())->releases($technology, $branches);
         } catch (Throwable $exception) {
             $heartbeat->update([
                 'last_failure_at' => now(),
@@ -67,7 +67,7 @@ class SyncTechnologyCatalog
             }
 
             $rows[$release->version] = [
-                'technology_id' => $technology->id,
+                'technology' => $technology->value,
                 'branch' => $branch,
                 'version' => $release->version,
                 'is_security_release' => $release->isSecurityRelease,
@@ -78,7 +78,7 @@ class SyncTechnologyCatalog
         }
 
         foreach (array_chunk(array_values($rows), 500) as $chunk) {
-            RuntimeRelease::upsert($chunk, ['technology_id', 'version'], ['branch', 'is_security_release', 'released_at', 'updated_at']);
+            RuntimeRelease::upsert($chunk, ['technology', 'version'], ['branch', 'is_security_release', 'released_at', 'updated_at']);
         }
 
         foreach ($branches as $branch) {
@@ -93,7 +93,7 @@ class SyncTechnologyCatalog
                 ->sort(fn (string $a, string $b): int => version_compare($a, $b))
                 ->last();
 
-            RuntimeBranch::updateOrCreate(['technology_id' => $technology->id, 'branch' => $branch->branch], [
+            RuntimeBranch::updateOrCreate(['technology' => $technology, 'branch' => $branch->branch], [
                 'latest_version' => $latestVersion,
                 'released_at' => $branch->releasedAt,
                 'active_support_until' => $branch->activeSupportUntil,

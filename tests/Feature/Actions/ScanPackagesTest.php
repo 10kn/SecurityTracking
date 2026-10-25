@@ -45,7 +45,7 @@ function scanWithLockfiles(Deployment $deployment, string ...$names): void
 }
 
 it('opens one finding per package and advisory, grouped by advisory', function () {
-    fakeOsv();
+    fakePackagist();
 
     scanWithLockfiles($this->deployment, 'composer.lock');
 
@@ -58,10 +58,11 @@ it('opens one finding per package and advisory, grouped by advisory', function (
 
     $finding = Finding::where('title', 'GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')->sole();
     expect($finding)
-        ->fingerprint->toBe(FindingData::fingerprint(FindingRule::DependencyVulnerable, $this->deployment->id, 'package:packagist/firebase/php-jwt', 'GHSA-8xf4-w7qw-pjjw'))
-        ->group_key->toBe('dependency_vulnerable:GHSA-8xf4-w7qw-pjjw')
+        ->fingerprint->toBe(FindingData::fingerprint(FindingRule::DependencyVulnerable, $this->deployment->id, 'package:packagist/firebase/php-jwt', 'PKSA-2kqm-ps5x-s4f5'))
+        ->group_key->toBe('dependency_vulnerable:PKSA-2kqm-ps5x-s4f5')
         ->team_id->toBe($this->deployment->service->project->team_id)
-        ->advisory->external_id->toBe('GHSA-8xf4-w7qw-pjjw')
+        ->advisory->source->toBe('packagist')
+        ->advisory->external_id->toBe('PKSA-2kqm-ps5x-s4f5')
         ->component->name->toBe('firebase/php-jwt')
         ->and($finding->context)->toMatchArray([
             'ecosystem' => 'packagist',
@@ -71,7 +72,8 @@ it('opens one finding per package and advisory, grouped by advisory', function (
             'lockfile' => 'composer.lock',
             'is_dev' => false,
             'aliases' => ['CVE-2021-46743'],
-            'source_url' => 'https://osv.dev/vulnerability/GHSA-8xf4-w7qw-pjjw',
+            'advisory' => 'GHSA-8xf4-w7qw-pjjw',
+            'source_url' => 'https://github.com/advisories/GHSA-8xf4-w7qw-pjjw',
             'detail' => 'firebase/php-jwt v5.5.1 · nâng lên 6.0.0 · composer.lock',
         ]);
 });
@@ -130,7 +132,7 @@ it('never sends a finding of unknown severity right away', function () {
 });
 
 it('resolves a finding once the package is upgraded past the fix', function () {
-    fakeOsv();
+    fakePackagist();
     scanWithLockfiles($this->deployment, 'composer.lock');
 
     $upgraded = str_replace('"version": "v5.5.1"', '"version": "v7.0.0"', lockfileFixture('composer.lock'));
@@ -144,16 +146,22 @@ it('resolves a finding once the package is upgraded past the fix', function () {
     ]);
 });
 
-it('keeps package findings open and records the failure when OSV fails', function () {
+it('keeps the findings of a failing source open and still syncs the packages of the other', function () {
     Sleep::fake();
     $failing = false;
-    fakeOsvOutage($failing);
+    fakePackagistOutage($failing);
+    fakePackagist();
     fakeOsv();
     scanWithLockfiles($this->deployment, 'composer.lock', 'Gemfile.lock');
-    expect(SourceHeartbeat::where('source', 'osv')->sole())->name->toBe('OSV')->threshold_minutes->toBe(720)->last_success_at->not->toBeNull();
+    expect(SourceHeartbeat::orderBy('source')->get(['source', 'name', 'threshold_minutes'])->toArray())->toBe([
+        ['source' => 'osv', 'name' => 'OSV', 'threshold_minutes' => 720],
+        ['source' => 'packagist', 'name' => 'Packagist', 'threshold_minutes' => 720],
+    ]);
 
     $failing = true;
     $this->travel(1)->hours();
+    $upgraded = str_replace('"version": "v5.5.1"', '"version": "v7.0.0"', lockfileFixture('composer.lock'));
+    $this->deployment->lockfiles()->where('path', 'composer.lock')->update(['content' => $upgraded, 'content_hash' => hash('sha256', $upgraded)]);
     $this->deployment->lockfiles()->where('path', 'Gemfile.lock')->delete();
     app(SyncComponents::class)->handle($this->deployment);
 
@@ -161,9 +169,10 @@ it('keeps package findings open and records the failure when OSV fails', functio
 
     expect(Finding::where('title', 'like', '%firebase/php-jwt')->pluck('state')->unique()->all())->toBe([FindingState::Open])
         ->and(Finding::where('title', 'like', '%puma')->pluck('state')->unique()->all())->toBe([FindingState::Resolved])
-        ->and(SourceHeartbeat::where('source', 'osv')->sole())
+        ->and(SourceHeartbeat::where('source', 'packagist')->sole())
         ->last_failure_at->toEqual(now())
-        ->last_error->toContain('RequestException');
+        ->last_error->toContain('RequestException')
+        ->and(SourceHeartbeat::where('source', 'osv')->sole()->last_failure_at)->toBeNull();
 });
 
 it('alerts the admin once when OSV keeps failing past its threshold', function () {
@@ -171,7 +180,7 @@ it('alerts the admin once when OSV keeps failing past its threshold', function (
     $failing = false;
     fakeOsvOutage($failing);
     fakeOsv();
-    scanWithLockfiles($this->deployment, 'composer.lock');
+    scanWithLockfiles($this->deployment, 'Gemfile.lock');
 
     $failing = true;
     foreach ([1, 2] as $scan) {

@@ -4,13 +4,14 @@ namespace App\Models;
 
 use App\Enums\RuntimeSource;
 use App\Enums\RuntimeStatus;
+use App\Enums\Technology;
 use Database\Factories\RuntimeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['deployment_id', 'asset_id', 'technology_id', 'raw_version', 'version', 'branch', 'source', 'status', 'status_reason', 'status_context', 'observed_at', 'evaluated_at'])]
+#[Fillable(['deployment_id', 'asset_id', 'technology', 'raw_version', 'version', 'branch', 'source', 'status', 'status_reason', 'status_context', 'observed_at', 'evaluated_at'])]
 class Runtime extends Model
 {
     /** @use HasFactory<RuntimeFactory> */
@@ -31,6 +32,7 @@ class Runtime extends Model
     protected function casts(): array
     {
         return [
+            'technology' => Technology::class,
             'source' => RuntimeSource::class,
             'status' => RuntimeStatus::class,
             'status_context' => 'array',
@@ -44,23 +46,7 @@ class Runtime extends Model
      */
     public function displayName(): string
     {
-        return $this->technology->name.' '.$this->raw_version;
-    }
-
-    /**
-     * Why the runtime has its status, in the viewer's language, e.g. "Đã có bản vá bảo mật 8.3.14".
-     */
-    public function statusReasonText(): ?string
-    {
-        return $this->status_reason === null ? null : __($this->status_reason, $this->status_context ?? []);
-    }
-
-    /**
-     * @return BelongsTo<Technology, $this>
-     */
-    public function technology(): BelongsTo
-    {
-        return $this->belongsTo(Technology::class);
+        return $this->technology->getLabel().' '.$this->raw_version;
     }
 
     /**

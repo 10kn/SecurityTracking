@@ -1,4 +1,4 @@
-import { router, useForm } from '@inertiajs/react';
+import { Link, router, useForm } from '@inertiajs/react';
 
 import { show as showProject } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { destroy, index, update } from '@/actions/App/Http/Controllers/Admin/ServiceController';
@@ -6,7 +6,7 @@ import { Card, CardBody } from '@/components/admin/card';
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { FormActions, FormSection } from '@/components/admin/form-section';
 import { PageHeader } from '@/components/admin/page-header';
-import { newRuntimeRow, ServiceFields, serviceRequestData, type ServiceFormData, type ServiceFormOptions } from '@/components/admin/services/service-form';
+import { type ExistingLockfile, newRuntimeRow, ServiceFields, serviceRequestData, type ServiceFormData, type ServiceFormOptions } from '@/components/admin/services/service-form';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
 
@@ -20,8 +20,8 @@ interface Props extends ServiceFormOptions {
         exposure: string;
         repository_path: string;
         project: { id: number; name: string; team: string };
-        runtimes: { technology_id: number; raw_version: string }[];
-        lockfiles: { path: string; uploaded_at: string }[];
+        runtimes: { technology: string; raw_version: string }[];
+        lockfiles: ExistingLockfile[];
     };
 }
 
@@ -34,7 +34,7 @@ export default function ServicesEdit({ service, ...options }: Props) {
         kind: service.kind,
         exposure: service.exposure,
         repository_path: service.repository_path,
-        runtimes: service.runtimes.map((runtime) => newRuntimeRow(runtime.technology_id, runtime.raw_version)),
+        runtimes: service.runtimes.map((runtime) => newRuntimeRow(runtime.technology, runtime.raw_version)),
         lockfile_uploads: [],
         removed_lockfiles: [],
     });
@@ -69,8 +69,8 @@ export default function ServicesEdit({ service, ...options }: Props) {
                         <Button type="submit" loading={form.processing}>
                             {form.progress ? t('Đang tải lên :percent%', { percent: form.progress.percentage ?? 0 }) : t('Lưu thay đổi')}
                         </Button>
-                        <Button type="button" variant="secondary" disabled={!form.isDirty} onClick={() => form.resetAndClearErrors()}>
-                            {t('Hủy')}
+                        <Button variant="secondary" asChild>
+                            <Link href={index.url()}>{t('Hủy')}</Link>
                         </Button>
                     </FormActions>
                 </CardBody>

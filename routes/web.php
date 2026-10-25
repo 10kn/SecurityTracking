@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Controllers\Admin\EndoflifeProductController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
+use App\Http\Controllers\Admin\ProjectLockfileSyncController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
 use App\Http\Controllers\Admin\SearchController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -36,6 +36,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('search', SearchController::class)->name('search');
 
         Route::resource('projects', ProjectController::class);
+        Route::post('projects/{project}/lockfile-sync', [ProjectLockfileSyncController::class, 'store'])->name('projects.lockfile-sync.store');
         Route::resource('services', ServiceController::class)->except('show');
         Route::get('runtime-evaluation', RuntimeEvaluationController::class)->name('runtime-evaluation');
 
@@ -43,8 +44,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('teams/{team}/webhook', [TeamWebhookController::class, 'update'])->name('teams.webhook.update');
         Route::post('teams/{team}/test-message', [TeamTestMessageController::class, 'store'])->name('teams.test-message.store');
 
-        Route::resource('technologies', TechnologyController::class)->except('show');
+        Route::resource('technologies', TechnologyController::class)->only(['index', 'show']);
         Route::post('technologies/{technology}/sync', [TechnologyCatalogSyncController::class, 'store'])->name('technologies.sync.store');
-        Route::get('endoflife-products/{product}', [EndoflifeProductController::class, 'show'])->name('endoflife-products.show');
     });
 });

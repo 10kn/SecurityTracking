@@ -38,7 +38,7 @@ export default function TeamsIndex({ teams, table }: { teams: Paginated<TeamRow>
             <Card>
                 <CardHeader>
                     <TableSearch value={table.search} placeholder={t('Tìm team')} onSearch={(search) => query({ search })} />
-                    <span className="text-sm text-faint">{t(':count team', { count: teams.meta.total })}</span>
+                    <span className="text-sm text-faint max-sm:hidden">{t(':count team', { count: teams.meta.total })}</span>
                 </CardHeader>
                 {teams.data.length === 0 ? (
                     table.search !== '' ? (

@@ -11,7 +11,7 @@ export interface ServiceRow {
     exposure: string;
     repository_path: string;
     project?: { id: number; name: string; team: string | null };
-    runtimes: { name: string; status: StatusDotData; reason: string | null }[];
+    runtimes: { name: string; status: StatusDotData; reason: string }[];
     lockfiles: { path: string; state: StatusDotData | null; packages: string | null; vulnerable: StatusDotData | null; error: string | null }[];
     open_findings_count: number;
     updated_at: string | null;
@@ -37,7 +37,10 @@ function Missing({ reason }: { reason: string }) {
     );
 }
 
-/** One line per runtime: "PHP 8.3.12" and its status; the reason shows on hover. */
+/**
+ * One line per runtime: "PHP 8.3.12" and its status, with the reason below unless the runtime is fine, so the reason
+ * also reads on a phone.
+ */
 export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] }) {
     const t = useTranslation();
 
@@ -48,16 +51,19 @@ export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] })
     return (
         <div className="grid gap-1">
             {runtimes.map((runtime) => (
-                <div key={runtime.name} className="flex flex-wrap items-center gap-x-2" title={runtime.reason ?? undefined}>
-                    <span className="font-mono text-sm">{runtime.name}</span>
-                    <StatusDot status={runtime.status} />
+                <div key={runtime.name}>
+                    <div className="flex flex-wrap items-center gap-x-2">
+                        <span className="font-mono text-sm">{runtime.name}</span>
+                        <StatusDot status={runtime.status} />
+                    </div>
+                    {runtime.status.tone !== 'success' && <span className="block max-w-[320px] text-sm text-muted-foreground">{runtime.reason}</span>}
                 </div>
             ))}
         </div>
     );
 }
 
-/** One line per lockfile: its package count, and how many packages have an open vulnerability. */
+/** One line per lockfile: its package count, how many packages have an open vulnerability, and why it cannot be read. */
 export function LockfilesCell({ lockfiles }: { lockfiles: ServiceRow['lockfiles'] }) {
     const t = useTranslation();
 
@@ -68,11 +74,14 @@ export function LockfilesCell({ lockfiles }: { lockfiles: ServiceRow['lockfiles'
     return (
         <div className="grid gap-1">
             {lockfiles.map((lockfile) => (
-                <div key={lockfile.path} className="flex flex-wrap items-center gap-x-2" title={lockfile.error ?? undefined}>
-                    <span className="font-mono text-sm">{lockfile.path}</span>
-                    {lockfile.state && <StatusDot status={lockfile.state} />}
-                    {lockfile.packages && <span className="text-sm text-muted-foreground">{lockfile.packages}</span>}
-                    {lockfile.vulnerable && <StatusDot status={lockfile.vulnerable} />}
+                <div key={lockfile.path}>
+                    <div className="flex flex-wrap items-center gap-x-2">
+                        <span className="font-mono text-sm">{lockfile.path}</span>
+                        {lockfile.state && <StatusDot status={lockfile.state} />}
+                        {lockfile.packages && <span className="text-sm text-muted-foreground">{lockfile.packages}</span>}
+                        {lockfile.vulnerable && <StatusDot status={lockfile.vulnerable} />}
+                    </div>
+                    {lockfile.error && <span className="block max-w-[320px] text-sm text-muted-foreground">{lockfile.error}</span>}
                 </div>
             ))}
         </div>

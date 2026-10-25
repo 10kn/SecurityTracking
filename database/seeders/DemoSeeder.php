@@ -4,47 +4,46 @@ namespace Database\Seeders;
 
 use App\Enums\Exposure;
 use App\Enums\ServiceKind;
+use App\Enums\Technology;
 use App\Models\Deployment;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
-use App\Models\Technology;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
  * Demo data from the handover plan: 3 teams, 5 projects, 8 services, each with a production deployment and one runtime.
- * Needs TechnologySeeder first.
  */
 class DemoSeeder extends Seeder
 {
     /**
-     * @var array<string, array<string, list<array{0: string, 1: ServiceKind, 2: Exposure, 3: string, 4: string}>>>
+     * @var array<string, array<string, list<array{0: string, 1: ServiceKind, 2: Exposure, 3: Technology, 4: string}>>>
      */
     private const TEAMS = [
         'Commerce' => [
             'Shop' => [
-                ['shop-api', ServiceKind::Ecs, Exposure::Public, 'php', '8.3.12'],
-                ['shop-web', ServiceKind::Ecs, Exposure::Public, 'nodejs', '22.11.0'],
+                ['shop-api', ServiceKind::Ecs, Exposure::Public, Technology::Php, '8.3.12'],
+                ['shop-web', ServiceKind::Ecs, Exposure::Public, Technology::Nodejs, '22.11.0'],
             ],
             'Partner Portal' => [
-                ['partner-portal', ServiceKind::Server, Exposure::Public, 'php', '8.4.2'],
+                ['partner-portal', ServiceKind::Server, Exposure::Public, Technology::Php, '8.4.2'],
             ],
         ],
         'Booking' => [
             'Booking' => [
-                ['booking-api', ServiceKind::Server, Exposure::Public, 'ruby', '3.3.6'],
-                ['booking-worker', ServiceKind::Server, Exposure::Internal, 'ruby', '3.2.6'],
-                ['realtime-gateway', ServiceKind::Ecs, Exposure::Public, 'nodejs', '20.18.0'],
+                ['booking-api', ServiceKind::Server, Exposure::Public, Technology::Ruby, '3.3.6'],
+                ['booking-worker', ServiceKind::Server, Exposure::Internal, Technology::Ruby, '3.2.6'],
+                ['realtime-gateway', ServiceKind::Ecs, Exposure::Public, Technology::Nodejs, '20.18.0'],
             ],
         ],
         'Internal Tools' => [
             'Legacy CMS' => [
-                ['legacy-cms', ServiceKind::Server, Exposure::Internal, 'php', '8.1.31'],
+                ['legacy-cms', ServiceKind::Server, Exposure::Internal, Technology::Php, '8.1.31'],
             ],
             'HR' => [
-                ['hr-internal', ServiceKind::Server, Exposure::Internal, 'php', '8.2.27'],
+                ['hr-internal', ServiceKind::Server, Exposure::Internal, Technology::Php, '8.2.27'],
             ],
         ],
     ];
@@ -54,8 +53,6 @@ class DemoSeeder extends Seeder
      */
     public function run(): void
     {
-        $technologies = Technology::pluck('id', 'slug');
-
         foreach (self::TEAMS as $teamName => $projects) {
             $team = Team::factory()->create([
                 'name' => $teamName,
@@ -80,7 +77,7 @@ class DemoSeeder extends Seeder
                     $deployment = Deployment::factory()->for($service)->create();
 
                     Runtime::factory()->for($deployment)->create([
-                        'technology_id' => $technologies[$technology],
+                        'technology' => $technology,
                         'raw_version' => $version,
                         'version' => $version,
                     ]);

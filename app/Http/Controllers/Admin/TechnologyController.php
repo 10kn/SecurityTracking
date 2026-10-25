@@ -2,113 +2,119 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Enums\ReleaseSource;
+use App\Enums\CatalogStatus;
+use App\Enums\Technology;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Admin\TechnologyRequest;
-use App\Http\Resources\Admin\TechnologyResource;
-use App\Jobs\SyncTechnologyCatalogJob;
-use App\Models\Technology;
+use App\Models\Runtime;
+use App\Models\RuntimeBranch;
+use App\Models\RuntimeRelease;
+use App\Models\SourceHeartbeat;
 use App\Support\TableQuery;
-use Illuminate\Http\RedirectResponse;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/**
+ * The supported technologies are defined in code (App\Enums\Technology). Admins only read their version catalogs and
+ * sync them on demand.
+ */
 class TechnologyController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(): Response
     {
-        $table = TableQuery::fromRequest($request, ['name', 'branches_count', 'runtimes_count'], 'name');
-
-        $technologies = $table->search(Technology::query(), ['name', 'slug', 'endoflife_product'])
-            ->withCount(['branches', 'runtimes'])
-            ->orderBy($table->sort, $table->direction())
-            ->orderBy('id')
-            ->paginate($table->perPage)
-            ->withQueryString();
+        $branchCounts = RuntimeBranch::toBase()->selectRaw('technology, count(*) as aggregate')->groupBy('technology')->pluck('aggregate', 'technology');
+        $runtimeCounts = Runtime::toBase()->selectRaw('technology, count(*) as aggregate')->groupBy('technology')->pluck('aggregate', 'technology');
+        $heartbeats = SourceHeartbeat::whereIn('source', array_map(fn (Technology $technology): string => $technology->catalogSourceKey(), Technology::cases()))->get()->keyBy('source');
 
         return Inertia::render('technologies/index', [
-            'technologies' => TechnologyResource::collection($technologies),
-            'table' => $table->toArray(),
-        ]);
-    }
-
-    public function create(): Response
-    {
-        return Inertia::render('technologies/create', [
-            'releaseSources' => $this->releaseSourceOptions(),
+            'technologies' => collect(Technology::cases())
+                ->sortBy(fn (Technology $technology): string => $technology->getLabel())
+                ->map(fn (Technology $technology): array => [
+                    ...$this->summary($technology, $heartbeats->get($technology->catalogSourceKey())),
+                    'branches_count' => (int) ($branchCounts[$technology->value] ?? 0),
+                    'runtimes_count' => (int) ($runtimeCounts[$technology->value] ?? 0),
+                ])
+                ->values()
+                ->all(),
         ]);
     }
 
     /**
-     * The first sync runs right away so the version list is ready when the technology is picked on a service.
+     * The branches with their support dates, and every known release, newest first, filtered by branch or version.
      */
-    public function store(TechnologyRequest $request): RedirectResponse
+    public function show(Request $request, Technology $technology): Response
     {
-        $technology = Technology::create($request->validated());
+        $table = TableQuery::fromRequest($request, ['version'], '-version');
+        $branchFilter = $request->string('branch')->toString() ?: null;
 
-        SyncTechnologyCatalogJob::dispatch($technology);
+        $branches = RuntimeBranch::where('technology', $technology)
+            ->get()
+            ->sort(fn (RuntimeBranch $a, RuntimeBranch $b): int => version_compare($b->branch, $a->branch))
+            ->values();
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã thêm :technology và đưa vào hàng đợi đồng bộ.', ['technology' => $technology->name])]);
+        $releases = RuntimeRelease::where('technology', $technology)
+            ->when($branchFilter !== null, fn ($query) => $query->where('branch', $branchFilter))
+            ->when($table->search !== '', fn ($query) => $query->whereLike('version', '%'.addcslashes($table->search, '\\%_').'%'))
+            ->get()
+            ->sort(fn (RuntimeRelease $a, RuntimeRelease $b): int => version_compare($b->version, $a->version))
+            ->values();
 
-        return to_route('admin.technologies.index');
-    }
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $releasePage = new LengthAwarePaginator(
+            $releases->forPage($page, $table->perPage)->map(fn (RuntimeRelease $release): array => [
+                'version' => $release->version,
+                'branch' => $release->branch,
+                'released_at' => $this->date($release->released_at),
+                'is_security_release' => $release->is_security_release,
+            ])->values(),
+            $releases->count(),
+            $table->perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
 
-    public function edit(Technology $technology): Response
-    {
-        return Inertia::render('technologies/edit', [
+        return Inertia::render('technologies/show', [
             'technology' => [
-                ...$technology->only(['id', 'name', 'slug', 'endoflife_product']),
-                'release_source' => $technology->release_source->value,
-                'is_used' => $technology->runtimes()->exists(),
+                ...$this->summary($technology, $technology->catalogHeartbeat()),
+                'endoflife_url' => $technology->endoflifeUrl(),
+                'release_source_url' => $technology->releaseSourceUrl(),
+                'runtimes_count' => Runtime::where('technology', $technology)->count(),
             ],
-            'releaseSources' => $this->releaseSourceOptions(),
+            'branches' => $branches->map(fn (RuntimeBranch $branch): array => [
+                'branch' => $branch->branch,
+                'latest_version' => $branch->latest_version,
+                'released_at' => $this->date($branch->released_at),
+                'active_support_until' => $this->date($branch->active_support_until),
+                'security_support_until' => $this->date($branch->security_support_until),
+                'support' => $branch->support()->dot(),
+            ])->all(),
+            'releases' => JsonResource::collection($releasePage),
+            'table' => [...$table->toArray(), 'branch' => $branchFilter],
         ]);
     }
 
     /**
-     * A different product or release source means a different catalog, so sync it now.
+     * @return array{value: string, name: string, release_source: string, catalog: array{label: string, tone: string}, last_synced: string|null, last_error: string|null}
      */
-    public function update(TechnologyRequest $request, Technology $technology): RedirectResponse
+    private function summary(Technology $technology, ?SourceHeartbeat $heartbeat): array
     {
-        $technology->update($request->validated());
-
-        if ($technology->wasChanged(['endoflife_product', 'release_source'])) {
-            SyncTechnologyCatalogJob::dispatch($technology);
-        }
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã lưu :technology.', ['technology' => $technology->name])]);
-
-        return to_route('admin.technologies.edit', $technology);
+        return [
+            'value' => $technology->value,
+            'name' => $technology->getLabel(),
+            'release_source' => $technology->releaseSourceLabel(),
+            'catalog' => CatalogStatus::fromHeartbeat($heartbeat)->dot(),
+            'last_synced' => $heartbeat?->last_success_at === null
+                ? null
+                : __('lần cuối :time', ['time' => $heartbeat->last_success_at->diffForHumans()]),
+            'last_error' => $heartbeat?->last_error,
+        ];
     }
 
-    /**
-     * Runtimes restrict deleting their technology.
-     */
-    public function destroy(Technology $technology): RedirectResponse
+    private function date(?CarbonInterface $date): ?string
     {
-        if ($technology->runtimes()->exists()) {
-            Inertia::flash('toast', ['type' => 'error', 'message' => __('Còn service đang dùng công nghệ này.')]);
-
-            return back();
-        }
-
-        $technology->delete();
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã xóa :technology.', ['technology' => $technology->name])]);
-
-        return to_route('admin.technologies.index');
-    }
-
-    /**
-     * @return list<array{value: string, label: string, description: string}>
-     */
-    private function releaseSourceOptions(): array
-    {
-        return array_map(fn (ReleaseSource $source): array => [
-            'value' => $source->value,
-            'label' => $source->getLabel(),
-            'description' => $source->getDescription(),
-        ], ReleaseSource::cases());
+        return $date?->translatedFormat(__('d/m/Y'));
     }
 }

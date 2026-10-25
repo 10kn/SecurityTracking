@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Enums\BranchSupport;
+use App\Enums\Technology;
 use Database\Factories\RuntimeBranchFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['technology_id', 'branch', 'latest_version', 'released_at', 'active_support_until', 'security_support_until', 'is_eol', 'synced_at'])]
+#[Fillable(['technology', 'branch', 'latest_version', 'released_at', 'active_support_until', 'security_support_until', 'is_eol', 'synced_at'])]
 class RuntimeBranch extends Model
 {
     /** @use HasFactory<RuntimeBranchFactory> */
@@ -22,6 +23,7 @@ class RuntimeBranch extends Model
     protected function casts(): array
     {
         return [
+            'technology' => Technology::class,
             'active_support_until' => 'date',
             'released_at' => 'date',
             'security_support_until' => 'date',
@@ -31,10 +33,14 @@ class RuntimeBranch extends Model
     }
 
     /**
-     * @return BelongsTo<Technology, $this>
+     * A branch without an end of active support date (Ruby) counts as active until it reaches end of life.
      */
-    public function technology(): BelongsTo
+    public function support(): BranchSupport
     {
-        return $this->belongsTo(Technology::class);
+        return match (true) {
+            $this->is_eol || $this->security_support_until?->isBefore(today()) === true => BranchSupport::Eol,
+            $this->active_support_until?->isBefore(today()) === true => BranchSupport::SecurityOnly,
+            default => BranchSupport::Active,
+        };
     }
 }

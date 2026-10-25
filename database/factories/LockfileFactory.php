@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\Ecosystem;
+use App\Enums\LockfileSource;
 use App\Models\Deployment;
 use App\Models\Lockfile;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -41,6 +42,17 @@ class LockfileFactory extends Factory
             'path' => $path,
             'content' => $content,
             'content_hash' => hash('sha256', $content),
+        ]);
+    }
+
+    /**
+     * A lockfile read from the project's GitHub repository at the commit.
+     */
+    public function fromGitHub(string $commitSha): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'source' => LockfileSource::GitHub,
+            'commit_sha' => $commitSha,
         ]);
     }
 }

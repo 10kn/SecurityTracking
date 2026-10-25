@@ -28,7 +28,7 @@ class EvaluateChangedDeployment implements ShouldQueue
     {
         $deployment = $event->deployment;
 
-        $this->evaluateRuntimes->handle($deployment->runtimes()->with('technology')->get());
+        $this->evaluateRuntimes->handle($deployment->runtimes()->get());
         $this->evaluateRuntimes->syncRuntimeFindings([$deployment->id]);
 
         $this->syncComponents->handle($deployment);

@@ -68,4 +68,15 @@ class Service extends Model
             ->where('environment', Environment::Production)
             ->where('is_current', true);
     }
+
+    /**
+     * The current production deployment, created on first use.
+     */
+    public function productionDeploymentOrCreate(): Deployment
+    {
+        return $this->productionDeployment()->firstOrCreate([
+            'environment' => Environment::Production,
+            'is_current' => true,
+        ]);
+    }
 }

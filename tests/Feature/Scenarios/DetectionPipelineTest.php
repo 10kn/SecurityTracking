@@ -4,11 +4,11 @@ use App\Actions\UpdateProductionInventory;
 use App\Enums\FindingRule;
 use App\Enums\FindingState;
 use App\Enums\RuntimeStatus;
+use App\Enums\Technology;
 use App\Models\Finding;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\Team;
-use App\Models\Technology;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
@@ -65,14 +65,13 @@ it('sends one alert to the owning team when a security release comes out, and no
     $released = false;
     fakePhpCatalogBefore8336($released);
     fakeCatalogSources();
-    $php = Technology::factory()->php()->create();
     artisan('psm:sync-runtimes')->assertSuccessful();
 
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     $booking = teamWithChatSpace('Booking', 'BOOKING');
     $shopApi = serviceOfTeam($commerce, 'shop-api');
-    app(UpdateProductionInventory::class)->handle($shopApi, [$php->id => '8.3.35']);
-    app(UpdateProductionInventory::class)->handle(serviceOfTeam($booking, 'booking-api'), [$php->id => '8.4.27']);
+    app(UpdateProductionInventory::class)->handle($shopApi, ['php' => '8.3.35']);
+    app(UpdateProductionInventory::class)->handle(serviceOfTeam($booking, 'booking-api'), ['php' => '8.4.27']);
 
     expect($shopApi->productionDeployment->runtimes()->sole()->status)->toBe(RuntimeStatus::Ok)
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(0);
@@ -90,13 +89,13 @@ it('sends one alert to the owning team when a security release comes out, and no
 
 it('closes the old finding and opens an end-of-life one when the version moves to an end-of-life branch, then reports the fix in the next digest', function () {
     $this->travelTo('2026-10-23 10:00:00');
-    $php = syncedTechnology('php');
+    syncedTechnology(Technology::Php);
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     $shopApi = serviceOfTeam($commerce, 'shop-api');
     $inventory = app(UpdateProductionInventory::class);
 
-    $inventory->handle($shopApi, [$php->id => '8.3.35']);
-    $inventory->handle($shopApi, [$php->id => '8.1.34']);
+    $inventory->handle($shopApi, ['php' => '8.3.35']);
+    $inventory->handle($shopApi, ['php' => '8.1.34']);
 
     $findings = Finding::orderBy('id')->get();
     expect($findings->pluck('rule')->all())->toBe([FindingRule::RuntimeOutdatedSecurity, FindingRule::RuntimeEol])
@@ -104,7 +103,7 @@ it('closes the old finding and opens an end-of-life one when the version moves t
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(2)
         ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('8.1');
 
-    $inventory->handle($shopApi, [$php->id => '8.3.36']);
+    $inventory->handle($shopApi, ['php' => '8.3.36']);
 
     expect(Finding::open()->count())->toBe(0)
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(2);
@@ -118,17 +117,17 @@ it('closes the old finding and opens an end-of-life one when the version moves t
 
 it('lists every affected service of a team in one alert', function () {
     $this->travelTo('2026-10-23 10:00:00');
-    $php = syncedTechnology('php');
+    syncedTechnology(Technology::Php);
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     $booking = teamWithChatSpace('Booking', 'BOOKING');
 
     foreach (['shop-api', 'shop-admin', 'partner-portal'] as $name) {
         serviceOfTeam($commerce, $name)->deployments()->create(['environment' => 'production'])
-            ->runtimes()->create(['technology_id' => $php->id, 'raw_version' => '8.3.35', 'source' => 'manual', 'observed_at' => now()]);
+            ->runtimes()->create(['technology' => Technology::Php, 'raw_version' => '8.3.35', 'source' => 'manual', 'observed_at' => now()]);
     }
 
     serviceOfTeam($booking, 'booking-api')->deployments()->create(['environment' => 'production'])
-        ->runtimes()->create(['technology_id' => $php->id, 'raw_version' => '8.3.33', 'source' => 'manual', 'observed_at' => now()]);
+        ->runtimes()->create(['technology' => Technology::Php, 'raw_version' => '8.3.33', 'source' => 'manual', 'observed_at' => now()]);
 
     artisan('psm:sync-runtimes')->assertSuccessful();
 
@@ -146,10 +145,9 @@ it('turns php runtimes unknown and alerts the admin space once when php.net fail
         return $failing ? Http::response('Service Unavailable', 503) : Http::response((string) file_get_contents(base_path('tests/Fixtures/catalog/php-releases-8.json')));
     }]);
     fakeCatalogSources();
-    $php = Technology::factory()->php()->create();
     artisan('psm:sync-runtimes')->assertSuccessful();
     $runtime = serviceOfTeam(teamWithChatSpace('Commerce', 'COMMERCE'), 'shop-api')->deployments()->create(['environment' => 'production'])
-        ->runtimes()->create(['technology_id' => $php->id, 'raw_version' => '8.3.35', 'source' => 'manual', 'observed_at' => now()]);
+        ->runtimes()->create(['technology' => Technology::Php, 'raw_version' => '8.3.35', 'source' => 'manual', 'observed_at' => now()]);
     artisan('psm:evaluate-runtimes')->assertSuccessful();
     expect($runtime->refresh()->status)->toBe(RuntimeStatus::OutdatedSecurity);
 
@@ -170,16 +168,14 @@ it('turns php runtimes unknown and alerts the admin space once when php.net fail
 it('warns each team running php once when php.net pre-announces a critical security release, and not again on the next polls', function () {
     $this->travelTo('2026-10-20 20:45:00');
     fakeNoticeFeeds();
-    $php = Technology::factory()->php()->create();
-    $nodejs = Technology::factory()->nodejs()->create();
     $inventory = app(UpdateProductionInventory::class);
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     $booking = teamWithChatSpace('Booking', 'BOOKING');
     $analytics = teamWithChatSpace('Analytics', 'ANALYTICS');
-    $inventory->handle(serviceOfTeam($commerce, 'shop-api'), [$php->id => '8.3.35']);
-    $inventory->handle(serviceOfTeam($commerce, 'shop-web'), [$php->id => '8.4.26', $nodejs->id => '22.20.0']);
-    $inventory->handle(serviceOfTeam($booking, 'booking-api'), [$php->id => '8.2.34']);
-    $inventory->handle(serviceOfTeam($analytics, 'events'), [$nodejs->id => '22.20.0']);
+    $inventory->handle(serviceOfTeam($commerce, 'shop-api'), ['php' => '8.3.35']);
+    $inventory->handle(serviceOfTeam($commerce, 'shop-web'), ['php' => '8.4.26', 'nodejs' => '22.20.0']);
+    $inventory->handle(serviceOfTeam($booking, 'booking-api'), ['php' => '8.2.34']);
+    $inventory->handle(serviceOfTeam($analytics, 'events'), ['nodejs' => '22.20.0']);
 
     artisan('psm:watch-notices')->assertSuccessful();
 
@@ -211,7 +207,7 @@ it('warns each team running php once when php.net pre-announces a critical secur
 
 it('alerts the owning team right after a lockfile with a vulnerable package is uploaded', function () {
     $this->travelTo('2026-10-23 10:00:00');
-    fakeOsv();
+    fakePackagist();
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     teamWithChatSpace('Booking', 'BOOKING');
 
@@ -224,10 +220,10 @@ it('alerts the owning team right after a lockfile with a vulnerable package is u
         ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(4);
 });
 
-it('sends each team one card listing its affected services when OSV publishes a new advisory, and nothing when the scan runs again', function () {
+it('sends each team one card listing its affected services when Packagist publishes a new advisory, and nothing when the scan runs again', function () {
     $this->travelTo('2026-10-23 10:00:00');
     $published = false;
-    fakeOsv(function (string $id) use (&$published): bool {
+    fakePackagist(function (string $id) use (&$published): bool {
         return $published || $id !== 'GHSA-8xf4-w7qw-pjjw';
     });
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');

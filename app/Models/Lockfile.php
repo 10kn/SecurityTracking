@@ -3,13 +3,14 @@
 namespace App\Models;
 
 use App\Enums\Ecosystem;
+use App\Enums\LockfileSource;
 use Database\Factories\LockfileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['deployment_id', 'ecosystem', 'path', 'content', 'content_hash', 'parsed_hash', 'parse_error', 'package_count', 'uploaded_at'])]
+#[Fillable(['deployment_id', 'ecosystem', 'path', 'source', 'commit_sha', 'content', 'content_hash', 'parsed_hash', 'parse_error', 'package_count', 'uploaded_at'])]
 class Lockfile extends Model
 {
     /** @use HasFactory<LockfileFactory> */
@@ -21,6 +22,15 @@ class Lockfile extends Model
     public const int MAX_UPLOAD_KILOBYTES = 20480;
 
     /**
+     * Mirrors the column defaults, so a lockfile created without a source reads as uploaded before it is reloaded.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'source' => 'upload',
+    ];
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -29,6 +39,7 @@ class Lockfile extends Model
     {
         return [
             'ecosystem' => Ecosystem::class,
+            'source' => LockfileSource::class,
             'package_count' => 'integer',
             'uploaded_at' => 'datetime',
         ];

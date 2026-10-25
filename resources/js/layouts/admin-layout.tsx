@@ -95,7 +95,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                                         href={item.href}
                                         aria-current={isActive ? 'page' : undefined}
                                         className={cn(
-                                            'flex h-9 items-center gap-2.5 rounded-md border border-transparent px-2 text-nav font-medium text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+                                            'flex h-9 items-center gap-2.5 rounded-md border border-transparent px-2 text-nav font-medium text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
                                             isActive && 'border-nav-active-border bg-nav-active text-nav-active-text hover:bg-nav-active',
                                         )}
                                     >
@@ -109,7 +109,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 </nav>
                 {user && (
                     <DropdownMenu>
-                        <DropdownMenuTrigger className="flex items-center gap-2.5 border-t border-border px-5 py-3 text-left text-sm hover:bg-surface-2">
+                        <DropdownMenuTrigger className="flex items-center gap-2.5 border-t border-border px-5 py-3 text-left text-sm hover:bg-foreground/5">
                             <span className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-muted-foreground">{user.initials}</span>
                             <span className="grid min-w-0">
                                 <span className="truncate">{user.name}</span>

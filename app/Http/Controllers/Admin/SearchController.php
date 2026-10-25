@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\Team;
-use App\Models\Technology;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -48,11 +48,13 @@ class SearchController extends Controller
                     'hint' => __('Team'),
                     'url' => route('admin.teams.edit', $team, false),
                 ]),
-            ...$this->matching(Technology::query(), $pattern)->orderBy('name')->limit(self::LIMIT_PER_TYPE)->get()
+            ...collect(Technology::cases())
+                ->filter(fn (Technology $technology): bool => mb_stripos($technology->getLabel(), $search) !== false || mb_stripos($technology->value, $search) !== false)
+                ->sortBy(fn (Technology $technology): string => $technology->getLabel())
                 ->map(fn (Technology $technology): array => [
-                    'label' => $technology->name,
+                    'label' => $technology->getLabel(),
                     'hint' => __('Công nghệ'),
-                    'url' => route('admin.technologies.edit', $technology, false),
+                    'url' => route('admin.technologies.show', $technology, false),
                 ]),
         ];
 

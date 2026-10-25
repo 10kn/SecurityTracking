@@ -2,8 +2,14 @@
 
 namespace App\Providers;
 
+use Anthropic\Client;
+use App\Services\Notices\ClaudeNoticeClassifier;
+use App\Services\Notices\NoticeClassifier;
 use App\Services\Packages\OsvVulnerabilityMatcher;
+use App\Services\Packages\PackagistVulnerabilityMatcher;
 use App\Services\Packages\VulnerabilityMatcher;
+use App\Services\Repositories\GitHubRepositoryReader;
+use App\Services\Repositories\RepositoryReader;
 use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\ServiceProvider;
 
@@ -14,7 +20,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(VulnerabilityMatcher::class, OsvVulnerabilityMatcher::class);
+        $this->app->tag([PackagistVulnerabilityMatcher::class, OsvVulnerabilityMatcher::class], VulnerabilityMatcher::class);
+
+        $this->app->bind(NoticeClassifier::class, ClaudeNoticeClassifier::class);
+        $this->app->bind(RepositoryReader::class, GitHubRepositoryReader::class);
+        $this->app->singleton(Client::class, fn (): Client => new Client(
+            apiKey: (string) config('psm.notices.classifier.api_key'),
+            requestOptions: ['timeout' => (float) config('psm.notices.classifier.timeout_seconds'), 'maxRetries' => 2],
+        ));
     }
 
     /**

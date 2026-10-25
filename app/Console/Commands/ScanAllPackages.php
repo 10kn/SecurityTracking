@@ -12,11 +12,11 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('psm:scan-packages')]
-#[Description('Match the packages of every current deployment against OSV and alert the owning teams about new advisories')]
+#[Description('Match the packages of every current deployment against Packagist and OSV and alert the owning teams about new advisories')]
 class ScanAllPackages extends Command
 {
     /**
-     * Handover 5.2: every 6 hours, so an advisory published in OSV reaches the team within 6 hours. Lockfiles not read
+     * Handover 5.2: every 6 hours, so an advisory published in Packagist or OSV reaches the team within 6 hours. Lockfiles not read
      * yet are read first. Deployments whose packages are all gone are scanned too, so their findings get resolved.
      */
     public function handle(SyncComponents $syncComponents, ScanPackages $scanPackages, SendFindingAlerts $sendFindingAlerts): int
@@ -38,7 +38,7 @@ class ScanAllPackages extends Command
         } catch (Throwable $exception) {
             $failed = true;
             report($exception);
-            $this->components->error("OSV: {$exception->getMessage()}");
+            $this->components->error($exception->getMessage());
         }
 
         $this->components->info($sendFindingAlerts->handle().' finding cards queued.');

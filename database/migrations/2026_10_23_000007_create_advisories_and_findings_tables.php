@@ -21,7 +21,7 @@ return new class extends Migration
             $table->text('summary')->nullable();
             $table->string('severity')->default('unknown');
             $table->decimal('cvss_score', 3, 1)->nullable();
-            $table->foreignId('technology_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('technology')->nullable();
             $table->string('url')->nullable();
             $table->timestamp('published_at')->nullable();
             $table->timestamp('source_modified_at')->nullable();

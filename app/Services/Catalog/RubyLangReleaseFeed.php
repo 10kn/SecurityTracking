@@ -2,7 +2,7 @@
 
 namespace App\Services\Catalog;
 
-use App\Models\Technology;
+use App\Enums\Technology;
 
 /**
  * https://cache.ruby-lang.org/pub/ruby/index.txt lists every Ruby tarball. It does not say which releases are security

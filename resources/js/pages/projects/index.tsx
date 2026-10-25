@@ -40,7 +40,7 @@ export default function ProjectsIndex({ projects, table, teams }: { projects: Pa
                         <TableSearch value={table.search} placeholder={t('Tìm project')} onSearch={(search) => query({ search })} />
                         <TableFilter value={table.team} label={t('Team')} allLabel={t('Mọi team')} options={teams} onChange={(team) => query({ team })} />
                     </div>
-                    <span className="text-sm text-faint">{t(':count project', { count: projects.meta.total })}</span>
+                    <span className="text-sm text-faint max-sm:hidden">{t(':count project', { count: projects.meta.total })}</span>
                 </CardHeader>
                 {projects.data.length === 0 ? (
                     isFiltered ? (

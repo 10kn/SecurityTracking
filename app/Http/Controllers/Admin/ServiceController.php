@@ -6,14 +6,15 @@ use App\Actions\UpdateProductionInventory;
 use App\Enums\Exposure;
 use App\Enums\FindingState;
 use App\Enums\ServiceKind;
+use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ServiceRequest;
 use App\Http\Resources\Admin\ServiceResource;
+use App\Jobs\SyncProjectLockfilesJob;
 use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
-use App\Models\Technology;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -69,6 +70,8 @@ class ServiceController extends Controller
             return $service;
         });
 
+        $this->syncLockfilesWhenDirectoryChanged($service);
+
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã tạo service :service. Hệ thống đang đánh giá lại.', ['service' => $service->name])]);
 
         return to_route('admin.services.edit', $service);
@@ -87,13 +90,15 @@ class ServiceController extends Controller
                 'exposure' => $service->exposure->value,
                 'project' => ['id' => $service->project->id, 'name' => $service->project->name, 'team' => $service->project->team->name],
                 'runtimes' => ($deployment->runtimes ?? collect())
-                    ->map(fn (Runtime $runtime): array => ['technology_id' => $runtime->technology_id, 'raw_version' => $runtime->raw_version])
+                    ->map(fn (Runtime $runtime): array => ['technology' => $runtime->technology->value, 'raw_version' => $runtime->raw_version])
                     ->values()
                     ->all(),
                 'lockfiles' => ($deployment->lockfiles ?? collect())
                     ->sortBy('path')
                     ->map(fn (Lockfile $lockfile): array => [
                         'path' => $lockfile->path,
+                        'source' => $lockfile->source->value,
+                        'commit' => $lockfile->commit_sha === null ? null : substr($lockfile->commit_sha, 0, 7),
                         'uploaded_at' => $lockfile->uploaded_at->translatedFormat(__('d/m/Y H:i')),
                     ])
                     ->values()
@@ -115,6 +120,8 @@ class ServiceController extends Controller
             );
         });
 
+        $this->syncLockfilesWhenDirectoryChanged($service);
+
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã lưu service :service. Hệ thống đang đánh giá lại.', ['service' => $service->name])]);
 
         return to_route('admin.services.edit', $service);
@@ -133,21 +140,36 @@ class ServiceController extends Controller
     }
 
     /**
+     * A service added to a project that reads its lockfiles from GitHub, or moved to another directory, gets them right
+     * away instead of at the next daily sync.
+     */
+    private function syncLockfilesWhenDirectoryChanged(Service $service): void
+    {
+        $project = $service->project()->first();
+
+        if ($project?->syncs_lockfiles && ($service->wasRecentlyCreated || $service->wasChanged(['project_id', 'repository_path']))) {
+            SyncProjectLockfilesJob::dispatch($project);
+        }
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function formOptions(): array
     {
         return [
             'projects' => $this->projectOptions(),
+            'lockfileSyncProjectIds' => Project::where('syncs_lockfiles', true)->pluck('id')->all(),
             'kinds' => array_map(fn (ServiceKind $kind): array => ['value' => $kind->value, 'label' => $kind->getLabel()], ServiceKind::cases()),
             'exposures' => array_map(fn (Exposure $exposure): array => ['value' => $exposure->value, 'label' => $exposure->getLabel()], Exposure::cases()),
-            'technologies' => Technology::orderBy('name')
-                ->get()
+            'technologies' => collect(Technology::cases())
+                ->sortBy(fn (Technology $technology): string => $technology->getLabel())
                 ->map(fn (Technology $technology): array => [
-                    'value' => $technology->id,
-                    'label' => $technology->name,
+                    'value' => $technology->value,
+                    'label' => $technology->getLabel(),
                     'versions' => $technology->versionSuggestions(),
                 ])
+                ->values()
                 ->all(),
         ];
     }

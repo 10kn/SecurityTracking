@@ -1,16 +1,62 @@
 import { Link, router } from '@inertiajs/react';
 import { ArrowDownIcon, ArrowUpIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { Paginated, TableState } from '@/types';
 
+/** How far the edges fade while a wide table scrolls sideways, so a cut column reads as "more to scroll". */
+const SCROLL_FADE = '32px';
+
+/**
+ * A table that scrolls sideways when the screen is narrower than its columns. The edge with more columns behind it
+ * fades out.
+ */
 export function Table({ className, ...props }: React.ComponentProps<'table'>) {
+    const scrollerRef = useRef<HTMLDivElement>(null);
+    const [hiddenSides, setHiddenSides] = useState({ start: false, end: false });
+
+    useEffect(() => {
+        const scroller = scrollerRef.current;
+
+        if (!scroller) {
+            return;
+        }
+
+        const measure = () => {
+            const start = scroller.scrollLeft > 1;
+            const end = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1;
+
+            setHiddenSides((sides) => (sides.start === start && sides.end === end ? sides : { start, end }));
+        };
+        const observer = new ResizeObserver(measure);
+
+        measure();
+        observer.observe(scroller);
+
+        if (scroller.firstElementChild) {
+            observer.observe(scroller.firstElementChild);
+        }
+
+        scroller.addEventListener('scroll', measure, { passive: true });
+
+        return () => {
+            observer.disconnect();
+            scroller.removeEventListener('scroll', measure);
+        };
+    }, []);
+
+    const fade =
+        hiddenSides.start || hiddenSides.end
+            ? `linear-gradient(to right, ${hiddenSides.start ? 'transparent' : '#000'}, #000 ${SCROLL_FADE}, #000 calc(100% - ${SCROLL_FADE}), ${hiddenSides.end ? 'transparent' : '#000'})`
+            : undefined;
+
     return (
-        <div className="overflow-x-auto">
+        <div ref={scrollerRef} className="overflow-x-auto" style={{ maskImage: fade }}>
             <table className={cn('w-full min-w-[760px] border-collapse text-left', className)} {...props} />
         </div>
     );
@@ -47,7 +93,7 @@ export function SortableTh({
         <Th align={align} aria-sort={isActive ? (isDescending ? 'descending' : 'ascending') : undefined}>
             <button
                 type="button"
-                className={cn('inline-flex items-center gap-1 hover:text-foreground', align === 'right' && 'flex-row-reverse', isActive && 'text-foreground')}
+                className={cn('inline-flex h-9 items-center gap-1 hover:text-foreground', align === 'right' && 'flex-row-reverse', isActive && 'text-foreground')}
                 onClick={() => onSort(isActive && !isDescending ? `-${column}` : column)}
             >
                 {children}
@@ -106,7 +152,7 @@ export function TableSearch({ value, placeholder, onSearch }: { value: string; p
     );
 }
 
-/** A compact native select for table filters, e.g. "Mọi team". */
+/** A compact select for table filters, e.g. "Mọi team", drawn like the selects of the forms. */
 export function TableFilter<TValue extends string | number>({
     value,
     label,
@@ -121,11 +167,11 @@ export function TableFilter<TValue extends string | number>({
     onChange: (value: string | null) => void;
 }) {
     return (
-        <select
+        <NativeSelect
             aria-label={label}
             value={value ?? ''}
             onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
-            className="h-9 max-w-[220px] rounded-md border border-border bg-surface pr-7 pl-3 text-sm outline-none focus:border-primary focus:shadow-[0_0_0_3px_var(--focus)]"
+            className="h-9 max-w-[220px] border-border text-sm"
         >
             <option value="">{allLabel}</option>
             {options.map((option) => (
@@ -133,7 +179,7 @@ export function TableFilter<TValue extends string | number>({
                     {option.label}
                 </option>
             ))}
-        </select>
+        </NativeSelect>
     );
 }
 
@@ -149,18 +195,18 @@ export function TablePagination({ meta, table, onChange }: { meta: Paginated<unk
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm text-muted-foreground max-sm:px-3.5">
             <span className="tabular-nums">{t('Đang hiện :from–:to / :total', { from: meta.from ?? 0, to: meta.to ?? 0, total: meta.total })}</span>
             <div className="flex items-center gap-2">
-                <select
+                <NativeSelect
                     aria-label={t('Số dòng mỗi trang')}
                     value={table.per_page}
                     onChange={(event) => onChange({ per_page: Number(event.target.value) })}
-                    className="h-[30px] rounded-md border border-border bg-surface pr-6 pl-2 text-sm outline-none"
+                    className="h-[30px] border-border pl-2.5 text-sm"
                 >
                     {table.per_page_options.map((option) => (
                         <option key={option} value={option}>
                             {t(':count / trang', { count: option })}
                         </option>
                     ))}
-                </select>
+                </NativeSelect>
                 {meta.last_page > 1 && (
                     <>
                         <Button

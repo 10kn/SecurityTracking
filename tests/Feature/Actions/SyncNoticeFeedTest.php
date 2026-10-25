@@ -3,11 +3,16 @@
 use App\Actions\SyncNoticeFeed;
 use App\Enums\AdvisoryKind;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\SourceHeartbeat;
-use App\Models\Technology;
+use App\Services\Notices\NoticeClassification;
+use App\Services\Notices\NoticeClassifier;
+use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
@@ -17,7 +22,7 @@ beforeEach(function () {
 
 it('stores the security news of php.net as pre-notices and leaves release announcements to the catalog sync', function () {
     fakeNoticeFeeds();
-    $php = Technology::factory()->php()->create();
+    $php = Technology::Php;
 
     app(SyncNoticeFeed::class)->handle($php);
 
@@ -30,8 +35,8 @@ it('stores the security news of php.net as pre-notices and leaves release announ
     $preNotice = Advisory::where('external_id', 'https://www.php.net/archive/2026.php#2026-10-20-1')->sole();
     expect($preNotice)
         ->kind->toBe(AdvisoryKind::PreNotice)
-        ->source->toBe('notice:php_net')
-        ->technology_id->toBe($php->id)
+        ->source->toBe('notice:php')
+        ->technology->toBe($php)
         ->severity->toBe(Severity::Critical)
         ->cvss_score->toBe('9.2')
         ->url->toBe('https://www.php.net/archive/2026.php#2026-10-20-1')
@@ -45,11 +50,11 @@ it('stores the security news of php.net as pre-notices and leaves release announ
 it('keeps every entry of the nodejs.org vulnerability feed and only the security news of ruby-lang.org', function () {
     fakeNoticeFeeds();
 
-    app(SyncNoticeFeed::class)->handle(Technology::factory()->nodejs()->create());
-    app(SyncNoticeFeed::class)->handle(Technology::factory()->ruby()->create());
+    app(SyncNoticeFeed::class)->handle(Technology::Nodejs);
+    app(SyncNoticeFeed::class)->handle(Technology::Ruby);
 
     expect(Advisory::where('source', 'notice:nodejs')->count())->toBe(3)
-        ->and(Advisory::where('source', 'notice:ruby_lang')->orderBy('published_at')->pluck('title')->all())->toBe([
+        ->and(Advisory::where('source', 'notice:ruby')->orderBy('published_at')->pluck('title')->all())->toBe([
             'Security advisories: CVE-2026-80212 and CVE-2026-80213',
             "Regexp compilation fixes related to GitLab's CVE-2026-89078, CVE-2026-93577, CVE-2026-97229 and CVE-2026-110264",
         ]);
@@ -59,7 +64,7 @@ it('follows the configured keywords', function () {
     config(['psm.notices.keywords' => ['conference']]);
     fakeNoticeFeeds();
 
-    app(SyncNoticeFeed::class)->handle(Technology::factory()->php()->create());
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
 
     expect(Advisory::pluck('title')->all())->toContain('Dutch PHP Conference 2027')->not->toContain('Upcoming Critical PHP Security Release');
 });
@@ -69,7 +74,7 @@ it('is idempotent and follows edits the vendor makes to an entry', function () {
     Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
         return Http::response($feed);
     }]);
-    $php = Technology::factory()->php()->create();
+    $php = Technology::Php;
     app(SyncNoticeFeed::class)->handle($php);
     $before = Advisory::orderBy('id')->get(['id', 'updated_at'])->toArray();
 
@@ -89,9 +94,9 @@ it('is idempotent and follows edits the vendor makes to an entry', function () {
 it('records a successful poll on the feed heartbeat', function () {
     fakeNoticeFeeds();
 
-    app(SyncNoticeFeed::class)->handle(Technology::factory()->php()->create());
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
 
-    expect(SourceHeartbeat::where('source', 'notice:php_net')->sole())
+    expect(SourceHeartbeat::where('source', 'notice:php')->sole())
         ->name->toBe('Tin bảo mật php.net')
         ->threshold_minutes->toBe(120)
         ->last_success_at->not->toBeNull()
@@ -101,20 +106,153 @@ it('records a successful poll on the feed heartbeat', function () {
 it('records a failed poll on the feed heartbeat and rethrows', function () {
     Sleep::fake();
     Http::fake([PhpNetNoticeFeed::URL => Http::response('Service Unavailable', 503)]);
-    $php = Technology::factory()->php()->create();
+    $php = Technology::Php;
 
     expect(fn () => app(SyncNoticeFeed::class)->handle($php))->toThrow(RequestException::class);
 
-    expect(SourceHeartbeat::where('source', 'notice:php_net')->sole())
+    expect(SourceHeartbeat::where('source', 'notice:php')->sole())
         ->last_success_at->toBeNull()
         ->last_failure_at->not->toBeNull()
         ->last_error->toStartWith('RequestException')
         ->and(Advisory::count())->toBe(0);
 });
 
-it('polls nothing for a technology whose release source has no news feed', function () {
-    Http::preventStrayRequests();
+/**
+ * Classifies every entry with `$answer`, which may throw, and keeps the titles of the entries it was given.
+ *
+ * @param  Closure(NoticeEntry): NoticeClassification  $answer
+ */
+function classifyNoticesWith(Closure $answer): ArrayObject
+{
+    $titles = new ArrayObject;
 
-    expect(app(SyncNoticeFeed::class)->handle(Technology::factory()->create()))->toBe([])
-        ->and(SourceHeartbeat::count())->toBe(0);
+    app()->instance(NoticeClassifier::class, new class($answer, $titles) implements NoticeClassifier
+    {
+        public function __construct(private Closure $answer, private ArrayObject $titles) {}
+
+        public function isEnabled(): bool
+        {
+            return true;
+        }
+
+        public function name(): string
+        {
+            return 'claude-haiku-5-5';
+        }
+
+        public function classify(Technology $technology, NoticeEntry $entry): NoticeClassification
+        {
+            $this->titles[] = $entry->title;
+
+            return ($this->answer)($entry);
+        }
+    });
+
+    return $titles;
+}
+
+it('classifies the fresh entries it keeps and stores what the classifier read', function () {
+    fakeNoticeFeeds();
+    $classified = classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(
+        isSecurityNews: true,
+        severity: Severity::Critical,
+        plannedReleaseAt: CarbonImmutable::parse('2026-10-21 14:00:00'),
+        affectedBranches: ['8.3', '8.4'],
+        summary: 'PHP sẽ vá hai lỗ hổng nghiêm trọng.',
+    ));
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect($classified->getArrayCopy())->toEqualCanonicalizing([
+        'Security advisory: Critical remote code execution vulnerabilities, update now',
+        'Upcoming Critical PHP Security Release',
+    ])->and(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
+        ->classified_by->toBe('claude-haiku-5-5')
+        ->classified_severity->toBe(Severity::Critical)
+        ->planned_release_at->toIso8601String()->toBe('2026-10-21T14:00:00+00:00')
+        ->affected_branches->toBe(['8.3', '8.4'])
+        ->localized_summary->toBe('PHP sẽ vá hai lỗ hổng nghiêm trọng.')
+        ->is_dismissed->toBeFalse()
+        ->and(Advisory::where('title', 'PHPKonf 2025 Baku')->sole())
+        ->classified_by->toBeNull();
+});
+
+it('classifies an entry again only when the vendor edits it', function () {
+    $feed = noticeFixture('php-feed.atom');
+    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+        return Http::response($feed);
+    }]);
+    $classified = classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical));
+    $php = Technology::Php;
+    app(SyncNoticeFeed::class)->handle($php);
+
+    $this->travel(15)->minutes();
+    $advisories = app(SyncNoticeFeed::class)->handle($php);
+
+    expect($classified)->toHaveCount(2)
+        ->and(collect($advisories)->contains(fn (Advisory $advisory): bool => $advisory->wasRecentlyCreated || $advisory->wasChanged()))->toBeFalse();
+
+    $feed = str_replace('scheduled for Wednesday, 21 October 2026 at 14:00 UTC', 'scheduled for Thursday, 22 October 2026 at 14:00 UTC', $feed);
+    app(SyncNoticeFeed::class)->handle($php);
+
+    expect($classified)->toHaveCount(3)
+        ->and($classified[2])->toBe('Upcoming Critical PHP Security Release');
+});
+
+it('lets the classifier raise the keyword severity but not lower it', function () {
+    fakeNoticeFeeds();
+    classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(
+        isSecurityNews: true,
+        severity: str_starts_with($entry->title, 'Upcoming') ? Severity::Low : Severity::Critical,
+    ));
+    config(['psm.notices.escalation_days' => 1000]);
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::where('title', 'Upcoming Critical PHP Security Release')->value('severity'))->toBe(Severity::Critical)
+        ->and(Advisory::where('title', 'PHPKonf 2025 Baku')->value('severity'))->toBe(Severity::Critical);
+});
+
+it('dismisses an entry the classifier finds is not security news only when the keywords found no severity in it', function () {
+    fakeNoticeFeeds();
+    classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: false, severity: Severity::Unknown));
+    config(['psm.notices.escalation_days' => 1000]);
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::where('is_dismissed', true)->pluck('title')->all())->toBe(['PHPKonf 2025 Baku']);
+});
+
+it('keeps the keyword result when the classifier fails, and classifies the entry on the next poll', function () {
+    Exceptions::fake();
+    fakeNoticeFeeds();
+    $fails = true;
+    $classified = classifyNoticesWith(function () use (&$fails): NoticeClassification {
+        return $fails ? throw new RuntimeException('Overloaded') : new NoticeClassification(isSecurityNews: true, severity: Severity::Critical);
+    });
+    $php = Technology::Php;
+
+    app(SyncNoticeFeed::class)->handle($php);
+
+    Exceptions::assertReported(RuntimeException::class);
+    expect(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
+        ->severity->toBe(Severity::Critical)
+        ->classified_by->toBeNull()
+        ->and(SourceHeartbeat::where('source', 'notice:php')->value('last_error'))->toBeNull();
+
+    $fails = false;
+    $this->travel(15)->minutes();
+    app(SyncNoticeFeed::class)->handle($php);
+
+    expect($classified)->toHaveCount(4)
+        ->and(Advisory::whereNotNull('classified_by')->count())->toBe(2);
+});
+
+it('does not call the classifier when no API key is configured', function () {
+    fakeNoticeFeeds();
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::whereNotNull('classified_by')->count())->toBe(0)
+        ->and(Advisory::count())->toBe(3);
 });

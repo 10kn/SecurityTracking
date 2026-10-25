@@ -1,4 +1,4 @@
-import { router, useForm } from '@inertiajs/react';
+import { Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 
 import { show as showProject } from '@/actions/App/Http/Controllers/Admin/ProjectController';
@@ -98,8 +98,8 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
                                 <Button type="submit" loading={form.processing}>
                                     {t('Lưu thay đổi')}
                                 </Button>
-                                <Button type="button" variant="secondary" disabled={!form.isDirty} onClick={() => form.resetAndClearErrors()}>
-                                    {t('Hủy')}
+                                <Button variant="secondary" asChild>
+                                    <Link href={index.url()}>{t('Hủy')}</Link>
                                 </Button>
                             </FormActions>
                         </CardBody>

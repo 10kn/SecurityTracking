@@ -17,6 +17,8 @@ use Illuminate\Support\Traits\Localizable;
  * sent, so the first poll does not replay a feed's history. A team that starts running the technology later gets the
  * card on a later run while the pre-notice is still fresh. Running it again sends nothing new.
  *
+ * Pre-notices the classifier dismissed as not security news are not sent.
+ *
  * Pre-notices only notify and never open findings, so FindingRule::PreNotice stays unused. A critical pre-notice
  * raises the severity of runtime findings instead (see RuntimeFindings).
  */
@@ -32,9 +34,9 @@ class SendPreNoticeAlerts
     public function handle(): int
     {
         return Advisory::where('kind', AdvisoryKind::PreNotice)
-            ->whereNotNull('technology_id')
+            ->whereNotNull('technology')
+            ->where('is_dismissed', false)
             ->where('published_at', '>=', now()->subHours(config('psm.notices.max_age_hours')))
-            ->with('technology')
             ->orderBy('published_at')
             ->get()
             ->sum(fn (Advisory $advisory): int => $this->send($advisory));
@@ -42,9 +44,9 @@ class SendPreNoticeAlerts
 
     private function send(Advisory $advisory): int
     {
-        $runtimesByTeam = Runtime::where('technology_id', $advisory->technology_id)
+        $runtimesByTeam = Runtime::where('technology', $advisory->technology)
             ->whereHas('deployment', fn ($query) => $query->where('is_current', true))
-            ->with(['technology', 'deployment.service.project.team'])
+            ->with('deployment.service.project.team')
             ->get()
             ->groupBy(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id);
 

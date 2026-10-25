@@ -2,16 +2,16 @@
 
 use App\Actions\SendPreNoticeAlerts;
 use App\Enums\ChatNotificationKind;
+use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\ChatNotification;
 use App\Models\Finding;
 use App\Models\Team;
-use App\Models\Technology;
 
 beforeEach(function () {
     $this->travelTo('2026-10-20 21:00:00');
     fakeGoogleChat();
-    $this->php = Technology::factory()->php()->create();
+    $this->php = Technology::Php;
     $this->commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
     $this->booking = Team::factory()->create(['name' => 'Booking', 'google_chat_webhook_url' => chatWebhook('BOOKING')]);
     $this->preNotice = Advisory::factory()->preNotice($this->php)->create([
@@ -28,7 +28,7 @@ it('sends one card to each team running the technology, listing its services wit
     runtimeAt($this->commerce, 'shop-admin', $this->php, '8.4.26');
     runtimeAt($this->booking, 'booking-api', $this->php, '8.2.30');
     $analytics = Team::factory()->create(['google_chat_webhook_url' => chatWebhook('ANALYTICS')]);
-    runtimeAt($analytics, 'events', Technology::factory()->nodejs()->create(), '22.20.0');
+    runtimeAt($analytics, 'events', Technology::Nodejs, '22.20.0');
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(2);
 
@@ -83,6 +83,28 @@ it('does not send pre-notices older than the configured age, so the first poll d
 
 it('ignores runtimes of deployments that are no longer current', function () {
     runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35')->deployment->update(['is_current' => false]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+});
+
+it('shows what the classifier read: the summary in the alert locale, the planned release and the affected branches', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update([
+        'localized_summary' => 'PHP sẽ vá hai lỗ hổng nghiêm trọng.',
+        'planned_release_at' => '2026-10-21 14:00:00',
+        'affected_branches' => ['8.3', '8.4'],
+    ]);
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))
+        ->toContain('PHP sẽ vá hai lỗ hổng nghiêm trọng.', 'Dự kiến phát hành 21/10/2026 14:00 UTC · Nhánh bị ảnh hưởng: 8.3, 8.4')
+        ->not->toContain('It addresses two critical vulnerabilities.');
+});
+
+it('does not send pre-notices the classifier dismissed', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['is_dismissed' => true]);
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
 });

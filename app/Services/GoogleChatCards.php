@@ -74,14 +74,21 @@ class GoogleChatCards
         $title = $advisory->severity === Severity::Unknown ? $advisory->title : "[{$advisory->severity->getLabel()}] {$advisory->title}";
 
         $facts = array_filter([
-            __('Nguồn: :source', ['source' => $technology->release_source->getLabel()]),
+            __('Nguồn: :source', ['source' => $technology->releaseSourceLabel()]),
             $advisory->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $advisory->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
             $advisory->cvss_score === null ? null : "CVSS {$advisory->cvss_score}",
         ]);
 
+        $plan = array_filter([
+            $advisory->planned_release_at === null ? null : __('Dự kiến phát hành :time UTC', ['time' => $advisory->planned_release_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
+            blank($advisory->affected_branches) ? null : __('Nhánh bị ảnh hưởng: :branches', ['branches' => implode(', ', $advisory->affected_branches)]),
+        ]);
+        $summary = $advisory->localized_summary ?? $advisory->summary;
+
         $widgets = [
-            ['textParagraph' => ['text' => e(__('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->name]))]],
-            ...(filled($advisory->summary) ? [['textParagraph' => ['text' => e($advisory->summary)]]] : []),
+            ['textParagraph' => ['text' => e(__('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->getLabel()]))]],
+            ...(filled($summary) ? [['textParagraph' => ['text' => e($summary)]]] : []),
+            ...($plan === [] ? [] : [['textParagraph' => ['text' => e(implode(' · ', $plan))]]]),
             ['textParagraph' => ['text' => e(implode(' · ', $facts))]],
         ];
 
@@ -94,7 +101,7 @@ class GoogleChatCards
 
         $sections = [
             ['widgets' => $widgets],
-            ['header' => __(':count service đang chạy :technology', ['count' => $runtimes->count(), 'technology' => $technology->name]), 'widgets' => [...$services, ...$this->moreWidget($runtimes->count())]],
+            ['header' => __(':count service đang chạy :technology', ['count' => $runtimes->count(), 'technology' => $technology->getLabel()]), 'widgets' => [...$services, ...$this->moreWidget($runtimes->count())]],
         ];
 
         if (filled($advisory->url)) {

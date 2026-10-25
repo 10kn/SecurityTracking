@@ -21,6 +21,7 @@ beforeEach(function () {
 });
 
 it('reads lockfiles not read yet, scans every current deployment and alerts the teams', function () {
+    fakePackagist();
     fakeOsv();
     Lockfile::factory()->for($this->deployment)->withContent('composer.lock', lockfileFixture('composer.lock'))->create();
     $old = Deployment::factory()->for($this->deployment->service)->create(['is_current' => false]);
@@ -32,11 +33,11 @@ it('reads lockfiles not read yet, scans every current deployment and alerts the 
         ->and($old->components()->count())->toBe(0)
         ->and(Finding::open()->count())->toBe(4)
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(1)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt', 'Firebase PHP-JWT key/algorithm type confusion', 'nâng lên 6.0.0', 'https://osv.dev/vulnerability/GHSA-8xf4-w7qw-pjjw');
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt', 'Key/algorithm type confusion', 'nâng lên 6.0.0', 'https://github.com/advisories/GHSA-8xf4-w7qw-pjjw');
 });
 
 it('resolves the findings of a deployment whose lockfiles were all removed', function () {
-    fakeOsv();
+    fakePackagist();
     $lockfile = Lockfile::factory()->for($this->deployment)->withContent('composer.lock', lockfileFixture('composer.lock'))->create();
     artisan('psm:scan-packages')->assertSuccessful();
 
@@ -47,11 +48,11 @@ it('resolves the findings of a deployment whose lockfiles were all removed', fun
         ->and($this->deployment->components()->count())->toBe(0);
 });
 
-it('fails, keeping the findings open, when OSV fails', function () {
+it('fails, keeping the findings open, when a source fails', function () {
     Sleep::fake();
     $failing = false;
-    fakeOsvOutage($failing);
-    fakeOsv();
+    fakePackagistOutage($failing);
+    fakePackagist();
     Lockfile::factory()->for($this->deployment)->withContent('composer.lock', lockfileFixture('composer.lock'))->create();
     artisan('psm:scan-packages')->assertSuccessful();
 
@@ -62,11 +63,13 @@ it('fails, keeping the findings open, when OSV fails', function () {
 });
 
 it('makes no request when there is nothing to scan', function () {
+    fakePackagist();
     fakeOsv();
 
     artisan('psm:scan-packages')->assertSuccessful();
 
-    expect(osvRequests())->toHaveCount(0);
+    expect(osvRequests())->toHaveCount(0)
+        ->and(packagistRequests())->toHaveCount(0);
 });
 
 it('is scheduled every 6 hours', function () {

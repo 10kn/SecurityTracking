@@ -16,12 +16,12 @@ const cache = new Map<string, RuntimeEvaluationPreview>();
  * How the server would evaluate the version, e.g. "● Thiếu bản vá bảo mật · Đã có bản vá bảo mật 8.3.14", fetched
  * 150 ms after the version stops changing.
  */
-export function useRuntimeEvaluation(technologyId: number | null, version: string): RuntimeEvaluationPreview | null {
-    const key = technologyId === null || version.trim() === '' ? null : `${technologyId}:${version.trim()}`;
+export function useRuntimeEvaluation(technology: string | null, version: string): RuntimeEvaluationPreview | null {
+    const key = technology === null || version.trim() === '' ? null : `${technology}:${version.trim()}`;
     const [preview, setPreview] = useState<RuntimeEvaluationPreview | null>(key === null ? null : (cache.get(key) ?? null));
 
     useEffect(() => {
-        if (key === null || technologyId === null) {
+        if (key === null || technology === null) {
             setPreview(null);
 
             return;
@@ -37,7 +37,7 @@ export function useRuntimeEvaluation(technologyId: number | null, version: strin
 
         const controller = new AbortController();
         const timeout = window.setTimeout(() => {
-            getJson<RuntimeEvaluationPreview>(RuntimeEvaluationController.url({ query: { technology_id: technologyId, version: version.trim() } }), controller.signal)
+            getJson<RuntimeEvaluationPreview>(RuntimeEvaluationController.url({ query: { technology, version: version.trim() } }), controller.signal)
                 .then((response) => {
                     cache.set(key, response);
                     setPreview(response);
@@ -49,7 +49,7 @@ export function useRuntimeEvaluation(technologyId: number | null, version: strin
             window.clearTimeout(timeout);
             controller.abort();
         };
-    }, [key, technologyId, version]);
+    }, [key, technology, version]);
 
     return preview;
 }

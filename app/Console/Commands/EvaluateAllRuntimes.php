@@ -16,7 +16,7 @@ class EvaluateAllRuntimes extends Command
 {
     public function handle(EvaluateRuntimes $evaluateRuntimes, SendFindingAlerts $sendFindingAlerts): int
     {
-        Runtime::with('technology')->chunkById(200, fn (Collection $runtimes) => $evaluateRuntimes->handle($runtimes));
+        Runtime::query()->chunkById(200, fn (Collection $runtimes) => $evaluateRuntimes->handle($runtimes));
 
         $sendFindingAlerts->handle();
 

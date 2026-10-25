@@ -51,14 +51,20 @@ return [
     | Vendor pre-notices
     |--------------------------------------------------------------------------
     |
-    | psm:watch-notices polls the security news feed of each technology's release source (php.net, nodejs.org,
-    | ruby-lang.org) every 15 minutes. An entry is kept when its title or text contains one of `keywords` (case does
+    | psm:watch-notices polls the security news feed of each technology (php.net, nodejs.org, ruby-lang.org) every
+    | 15 minutes. An entry is kept when its title or text contains one of `keywords` (case does
     | not matter; a feed that only publishes security news keeps every entry), unless its title matches one of
     | `ignored_title_patterns`: release announcements are left to the hourly catalog sync, which already alerts on
     | each security release with the exact version to upgrade to. Entries published within `max_age_hours` are sent
     | to every team running the technology, so the first poll does not replay the feed's history. A runtime missing
     | a security fix is Critical instead of High while a critical pre-notice of its technology is younger than
     | `escalation_days`. A feed that has not been polled successfully within `stale_after_minutes` alerts the admin.
+    |
+    | When `classifier.api_key` is set, Claude (`classifier.model`) reads each kept entry younger than
+    | `escalation_days` once, and again when the vendor edits it: the planned release time, the affected branches and
+    | a summary in the alert locale. Its severity can only raise the one the keywords give, and it can drop an entry
+    | as not security news only when the keywords found no severity. When the API fails, the entry keeps the keyword
+    | result and is classified on a later poll.
     |
     */
 
@@ -69,28 +75,65 @@ return [
         'escalation_days' => (int) env('PSM_NOTICE_ESCALATION_DAYS', 14),
         'stale_after_minutes' => (int) env('PSM_NOTICE_STALE_AFTER_MINUTES', 120),
         'summary_length' => 500,
+        'classifier' => [
+            'api_key' => env('ANTHROPIC_API_KEY'),
+            'model' => env('PSM_NOTICE_CLASSIFIER_MODEL', 'claude-haiku-5-5'),
+            'effort' => env('PSM_NOTICE_CLASSIFIER_EFFORT', 'low'),
+            'timeout_seconds' => (int) env('PSM_NOTICE_CLASSIFIER_TIMEOUT', 60),
+        ],
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Package vulnerabilities (OSV)
+    | Package vulnerabilities (Packagist, OSV)
     |--------------------------------------------------------------------------
     |
-    | psm:scan-packages matches the packages of every uploaded lockfile against the OSV API at `osv_url` every 6
-    | hours, and a deployment is scanned again as soon as its lockfiles change. Package versions are sent in batches
-    | of `batch_size` (OSV accepts up to 1000 per request); vulnerabilities not stored yet are fetched `concurrency`
-    | at a time. When OSV has not answered successfully within `stale_after_minutes` the admin is alerted; while it
-    | fails, open package findings stay open.
+    | psm:scan-packages matches the packages of every uploaded lockfile every 6 hours, and a deployment is scanned
+    | again as soon as its lockfiles change. Composer packages are matched against the Packagist security advisories
+    | at `packagist_url` (the source of `composer audit`), `packagist_batch_size` package names per request. npm and
+    | RubyGems packages are matched against the OSV API at `osv_url`: package versions in batches of `batch_size` (OSV
+    | accepts up to 1000 per request), vulnerabilities not stored yet fetched `concurrency` at a time. When a source
+    | has not answered successfully within `stale_after_minutes` the admin is alerted; while it fails, the open
+    | findings of its packages stay open.
     |
     */
 
     'packages' => [
+        'packagist_url' => env('PSM_PACKAGIST_URL', 'https://packagist.org'),
+        'packagist_batch_size' => (int) env('PSM_PACKAGIST_BATCH_SIZE', 500),
         'osv_url' => env('PSM_OSV_URL', 'https://api.osv.dev/v1'),
         'batch_size' => (int) env('PSM_OSV_BATCH_SIZE', 1000),
-        'stale_after_minutes' => (int) env('PSM_OSV_STALE_AFTER_MINUTES', 720),
-        'http_timeout_seconds' => (int) env('PSM_OSV_HTTP_TIMEOUT', 30),
+        'stale_after_minutes' => (int) env('PSM_PACKAGES_STALE_AFTER_MINUTES', 720),
+        'http_timeout_seconds' => (int) env('PSM_PACKAGES_HTTP_TIMEOUT', 30),
         'concurrency' => (int) env('PSM_OSV_CONCURRENCY', 10),
         'summary_length' => 500,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lockfiles from GitHub
+    |--------------------------------------------------------------------------
+    |
+    | Handover D12. psm:sync-lockfiles reads, once a day at `sync_time` in `timezone`, the lockfiles of every project
+    | that turned it on: at the tip of the project's branch (its default branch when none is set), in each service's
+    | directory. It signs in as a GitHub App installed on the organisation with read access to contents and metadata
+    | only: `app_id` (or the App's client ID), `installation_id`, and the App's private key in a file at
+    | `private_key_path` that only the app user can read, outside the web root and never committed. For GitHub
+    | Enterprise Server, set `host` and `api_url`. When GitHub has not answered successfully within
+    | `stale_after_minutes` the admin is alerted; the lockfiles read last stay in use meanwhile.
+    |
+    */
+
+    'github' => [
+        'app_id' => env('PSM_GITHUB_APP_ID'),
+        'installation_id' => env('PSM_GITHUB_INSTALLATION_ID'),
+        'private_key_path' => env('PSM_GITHUB_PRIVATE_KEY_PATH'),
+        'host' => env('PSM_GITHUB_HOST', 'github.com'),
+        'api_url' => env('PSM_GITHUB_API_URL', 'https://api.github.com'),
+        'http_timeout_seconds' => (int) env('PSM_GITHUB_HTTP_TIMEOUT', 30),
+        'sync_time' => env('PSM_GITHUB_SYNC_TIME', '06:30'),
+        'timezone' => env('PSM_GITHUB_SYNC_TIMEZONE', 'Asia/Ho_Chi_Minh'),
+        'stale_after_minutes' => (int) env('PSM_GITHUB_STALE_AFTER_MINUTES', 1500),
     ],
 
     /*

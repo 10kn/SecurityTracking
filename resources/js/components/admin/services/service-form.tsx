@@ -23,14 +23,14 @@ const RAW_VERSION_MAX_LENGTH = 64;
 const LOCKFILE_NAMES = ['composer.lock', 'Gemfile.lock', 'package-lock.json'];
 const MAX_LOCKFILE_BYTES = 20480 * 1024;
 
-export interface TechnologyOption extends Option<number> {
+export interface TechnologyOption extends Option<string> {
     versions: string[];
 }
 
 export interface RuntimeRow {
     /** Only for React; removed before the form is sent. */
     key: string;
-    technology_id: number | null;
+    technology: string | null;
     raw_version: string;
 }
 
@@ -48,18 +48,27 @@ export interface ServiceFormData {
 
 export interface ServiceFormOptions {
     projects: Option<number>[];
+    /** Projects that read their lockfiles from GitHub: their services take no uploads. */
+    lockfileSyncProjectIds: number[];
     kinds: Option<string>[];
     exposures: Option<string>[];
     technologies: TechnologyOption[];
 }
 
-export function newRuntimeRow(technologyId: number | null = null, rawVersion = ''): RuntimeRow {
-    return { key: crypto.randomUUID(), technology_id: technologyId, raw_version: rawVersion };
+export interface ExistingLockfile {
+    path: string;
+    source: 'upload' | 'github';
+    commit: string | null;
+    uploaded_at: string;
+}
+
+export function newRuntimeRow(technology: string | null = null, rawVersion = ''): RuntimeRow {
+    return { key: crypto.randomUUID(), technology, raw_version: rawVersion };
 }
 
 /** The form data as the server expects it: runtimes without their React keys. */
 export function serviceRequestData({ runtimes, ...data }: ServiceFormData) {
-    return { ...data, runtimes: runtimes.map(({ technology_id, raw_version }) => ({ technology_id, raw_version })) };
+    return { ...data, runtimes: runtimes.map(({ technology, raw_version }) => ({ technology, raw_version })) };
 }
 
 export function ServiceFields({
@@ -71,11 +80,12 @@ export function ServiceFields({
     form: InertiaFormProps<ServiceFormData>;
     options: ServiceFormOptions;
     isCreating: boolean;
-    existingLockfiles?: { path: string; uploaded_at: string }[];
+    existingLockfiles?: ExistingLockfile[];
 }) {
     const t = useTranslation();
     const slug = useSlugFromName(isCreating, (value) => form.setData('slug', value));
     const errors = form.errors as Record<string, string | undefined>;
+    const syncsLockfiles = form.data.project_id !== null && options.lockfileSyncProjectIds.includes(form.data.project_id);
 
     return (
         <>
@@ -86,7 +96,14 @@ export function ServiceFields({
                             id="project_id"
                             value={form.data.project_id}
                             options={options.projects}
-                            onChange={(projectId) => form.setData('project_id', projectId)}
+                            onChange={(projectId) =>
+                                // A project that reads lockfiles from GitHub takes no uploads, so files picked before are dropped.
+                                form.setData(
+                                    projectId !== null && options.lockfileSyncProjectIds.includes(projectId)
+                                        ? { ...form.data, project_id: projectId, lockfile_uploads: [], removed_lockfiles: [] }
+                                        : { ...form.data, project_id: projectId },
+                                )
+                            }
                             placeholder={t('Chọn project')}
                             searchPlaceholder={t('Tìm project')}
                             invalid={form.errors.project_id !== undefined}
@@ -156,18 +173,43 @@ export function ServiceFields({
             </FormSection>
             <FormSection
                 title={t('Môi trường production')}
-                description={t('Chọn công nghệ, nhập version đang chạy và tải lockfile. Lưu xong, hệ thống đánh giá lại service này.')}
+                description={
+                    syncsLockfiles
+                        ? t('Chọn công nghệ và nhập version đang chạy. Lockfile lấy từ GitHub mỗi ngày, trong thư mục của service. Lưu xong, hệ thống đánh giá lại service này.')
+                        : t('Chọn công nghệ, nhập version đang chạy và tải lockfile. Lưu xong, hệ thống đánh giá lại service này.')
+                }
             >
                 <FormFields>
                     <Field label={t('Runtime / công nghệ')} error={errors.runtimes}>
                         <RuntimeRows form={form} technologies={options.technologies} errors={errors} />
                     </Field>
-                    {existingLockfiles.length > 0 && (
+                    {syncsLockfiles && (
+                        <Field
+                            label={t('Lockfile từ GitHub')}
+                            error={errors.lockfile_uploads ?? errors.removed_lockfiles}
+                            help={t('Project này lấy lockfile từ GitHub, không tải lên hay xóa tay được.')}
+                        >
+                            {existingLockfiles.length === 0 ? (
+                                <p className="text-muted-foreground">{isCreating ? t('Lấy ngay sau khi lưu.') : t('Chưa có lockfile nào trong thư mục của service.')}</p>
+                            ) : (
+                                <ul className="grid gap-2">
+                                    {existingLockfiles.map((lockfile) => (
+                                        <li key={lockfile.path} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                                            <span className="font-mono text-sm whitespace-nowrap">{lockfile.path}</span>
+                                            <LockfileOrigin lockfile={lockfile} />
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </Field>
+                    )}
+                    {!syncsLockfiles && existingLockfiles.length > 0 && (
                         <Field label={t('Lockfile hiện có')} help={t('Đánh dấu để xóa lockfile khi lưu.')}>
                             <div className="grid gap-2">
                                 {existingLockfiles.map((lockfile) => (
-                                    <label key={lockfile.path} className="flex items-center gap-2.5 text-base">
+                                    <label key={lockfile.path} className="flex items-start gap-2.5 text-base">
                                         <Checkbox
+                                            className="mt-[3px]"
                                             checked={form.data.removed_lockfiles.includes(lockfile.path)}
                                             onCheckedChange={(checked) =>
                                                 form.setData(
@@ -176,17 +218,34 @@ export function ServiceFields({
                                                 )
                                             }
                                         />
-                                        <span className={cn('font-mono text-sm', form.data.removed_lockfiles.includes(lockfile.path) && 'text-faint line-through')}>{lockfile.path}</span>
-                                        <span className="text-sm text-muted-foreground">· {t('tải lên :time', { time: lockfile.uploaded_at })}</span>
+                                        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                                            <span className={cn('font-mono text-sm whitespace-nowrap', form.data.removed_lockfiles.includes(lockfile.path) && 'text-faint line-through')}>
+                                                {lockfile.path}
+                                            </span>
+                                            <LockfileOrigin lockfile={lockfile} />
+                                        </span>
                                     </label>
                                 ))}
                             </div>
                         </Field>
                     )}
-                    <LockfileUpload form={form} errors={errors} />
+                    {!syncsLockfiles && <LockfileUpload form={form} errors={errors} />}
                 </FormFields>
             </FormSection>
         </>
+    );
+}
+
+/** "tải lên 24/10/2026 09:12", or "GitHub · abc1234 · lấy lúc 24/10/2026 06:30". */
+function LockfileOrigin({ lockfile }: { lockfile: ExistingLockfile }) {
+    const t = useTranslation();
+
+    return (
+        <span className="text-sm text-muted-foreground">
+            {lockfile.source === 'github'
+                ? t('GitHub · :commit · lấy lúc :time', { commit: lockfile.commit ?? '—', time: lockfile.uploaded_at })
+                : t('tải lên :time', { time: lockfile.uploaded_at })}
+        </span>
     );
 }
 
@@ -217,9 +276,9 @@ function RuntimeRows({ form, technologies, errors }: { form: InertiaFormProps<Se
                             row={row}
                             technologies={technologies.map((technology) => ({
                                 ...technology,
-                                disabled: technology.value !== row.technology_id && rows.some((other) => other.technology_id === technology.value),
+                                disabled: technology.value !== row.technology && rows.some((other) => other.technology === technology.value),
                             }))}
-                            technologyError={errors[`runtimes.${index}.technology_id`]}
+                            technologyError={errors[`runtimes.${index}.technology`]}
                             versionError={errors[`runtimes.${index}.raw_version`]}
                             onChange={(changes) => updateRow(row.key, changes)}
                             onRemove={() =>
@@ -258,17 +317,17 @@ function RuntimeRowFields({
     onRemove: () => void;
 }) {
     const t = useTranslation();
-    const technology = technologies.find((option) => option.value === row.technology_id);
-    const preview = useRuntimeEvaluation(row.technology_id, row.raw_version);
+    const technology = technologies.find((option) => option.value === row.technology);
+    const preview = useRuntimeEvaluation(row.technology, row.raw_version);
     const versionOptions = (technology?.versions ?? []).map((version) => ({ value: version, label: version }));
 
     return (
         <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_40px] items-start gap-3 border-b border-border px-3 py-3 last:border-b-0 max-sm:grid-cols-[minmax(0,1fr)_40px]">
             <div className="min-w-0 max-sm:col-span-1">
                 <Combobox
-                    value={row.technology_id}
+                    value={row.technology}
                     options={technologies}
-                    onChange={(technologyId) => onChange({ technology_id: technologyId })}
+                    onChange={(technology) => onChange({ technology })}
                     placeholder={t('Chọn công nghệ')}
                     searchPlaceholder={t('Tìm công nghệ')}
                     invalid={technologyError !== undefined}
@@ -288,7 +347,7 @@ function RuntimeRowFields({
                     searchPlaceholder={t('Gõ để lọc hoặc nhập version khác')}
                     emptyText={t('Version chỉ gồm chữ, số và . + ~ _ -')}
                     invalid={versionError !== undefined}
-                    disabled={row.technology_id === null}
+                    disabled={row.technology === null}
                 />
                 {versionError ? (
                     <p className="mt-1.5 text-sm text-danger-text">{versionError}</p>

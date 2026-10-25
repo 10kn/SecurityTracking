@@ -11,17 +11,20 @@ import { useTranslation } from '@/lib/i18n';
 import type { Option } from '@/types';
 
 interface Props {
-    project: { id: number; team_id: number; name: string; slug: string; repository_url: string | null };
+    project: { id: number; team_id: number; name: string; slug: string; repository_url: string | null; repository_branch: string | null; syncs_lockfiles: boolean };
     teams: Option<number>[];
+    gitHubConfigured: boolean;
 }
 
-export default function ProjectsEdit({ project, teams }: Props) {
+export default function ProjectsEdit({ project, teams, gitHubConfigured }: Props) {
     const t = useTranslation();
     const form = useForm<ProjectFormData>({
         team_id: project.team_id,
         name: project.name,
         slug: project.slug,
         repository_url: project.repository_url ?? '',
+        repository_branch: project.repository_branch ?? '',
+        syncs_lockfiles: project.syncs_lockfiles,
     });
 
     return (
@@ -39,7 +42,7 @@ export default function ProjectsEdit({ project, teams }: Props) {
                 noValidate
             >
                 <CardBody>
-                    <ProjectFields form={form} teams={teams} isCreating={false} />
+                    <ProjectFields form={form} teams={teams} isCreating={false} gitHubConfigured={gitHubConfigured} />
                     <FormActions>
                         <Button type="submit" loading={form.processing}>
                             {t('Lưu thay đổi')}

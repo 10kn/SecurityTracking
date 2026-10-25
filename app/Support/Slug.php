@@ -3,7 +3,7 @@
 namespace App\Support;
 
 /**
- * Slugs of teams, projects, services and technologies.
+ * Slugs of teams, projects and services.
  */
 final class Slug
 {

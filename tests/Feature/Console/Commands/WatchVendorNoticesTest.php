@@ -3,12 +3,12 @@
 use App\Enums\FindingEventType;
 use App\Enums\FindingRule;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\FindingEvent;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
-use App\Models\Technology;
 use App\Services\Notices\PhpNetNoticeFeed;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
@@ -22,18 +22,14 @@ beforeEach(function () {
     fakeGoogleChat();
 });
 
-it('polls the news feed of every release source in use, once each', function () {
+it('polls the news feed of every technology, once each', function () {
     fakeNoticeFeeds();
-    Technology::factory()->php()->create();
-    Technology::factory()->nodejs()->create();
-    Technology::factory()->ruby()->create();
-    Technology::factory()->create(['name' => 'Python', 'slug' => 'python', 'endoflife_product' => 'python']);
 
     artisan('psm:watch-notices')->assertSuccessful();
 
     expect(Advisory::groupBy('source')->selectRaw('source, count(*) as total')->pluck('total', 'source')->all())
-        ->toEqual(['notice:nodejs' => 3, 'notice:php_net' => 3, 'notice:ruby_lang' => 2])
-        ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:nodejs', 'notice:php_net', 'notice:ruby_lang'])
+        ->toEqual(['notice:nodejs' => 3, 'notice:php' => 3, 'notice:ruby' => 2])
+        ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:nodejs', 'notice:php', 'notice:ruby'])
         ->and(Http::recorded())->toHaveCount(3);
 });
 
@@ -41,13 +37,11 @@ it('keeps polling the other feeds when one fails, records the failure and alerts
     Sleep::fake();
     Http::fake([PhpNetNoticeFeed::URL => Http::response('Service Unavailable', 503)]);
     fakeNoticeFeeds();
-    Technology::factory()->php()->create();
-    Technology::factory()->nodejs()->create();
 
     artisan('psm:watch-notices')->assertFailed();
 
     expect(Advisory::where('source', 'notice:nodejs')->count())->toBe(3)
-        ->and(SourceHeartbeat::where('source', 'notice:php_net')->sole())
+        ->and(SourceHeartbeat::where('source', 'notice:php')->sole())
         ->last_failure_at->not->toBeNull()
         ->last_success_at->toBeNull();
 
@@ -57,7 +51,7 @@ it('keeps polling the other feeds when one fails, records the failure and alerts
 });
 
 it('escalates a runtime missing a security fix to critical after a critical pre-notice and alerts the team again', function () {
-    $php = syncedTechnology('php');
+    $php = syncedTechnology(Technology::Php);
     fakeNoticeFeeds();
     $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
     runtimeAt($commerce, 'shop-api', $php, '8.3.35');
@@ -87,7 +81,7 @@ it('escalates a runtime missing a security fix to critical after a critical pre-
 });
 
 it('stops escalating once the critical pre-notice is older than the configured days', function () {
-    $php = syncedTechnology('php');
+    $php = syncedTechnology(Technology::Php);
     fakeNoticeFeeds();
     runtimeAt(Team::factory()->create(), 'shop-api', $php, '8.3.35');
     artisan('psm:watch-notices')->assertSuccessful();
@@ -107,4 +101,14 @@ it('is scheduled every 15 minutes', function () {
     expect($event)
         ->expression->toBe('*/15 * * * *')
         ->withoutOverlapping->toBeTrue();
+});
+
+it('does not escalate on a critical pre-notice the classifier dismissed', function () {
+    $php = syncedTechnology(Technology::Php);
+    runtimeAt(Team::factory()->create(), 'shop-api', $php, '8.3.35');
+    Advisory::factory()->preNotice($php)->create(['published_at' => now()->subDay(), 'is_dismissed' => true]);
+
+    artisan('psm:evaluate-runtimes')->assertSuccessful();
+
+    expect(Finding::sole()->severity)->toBe(Severity::High);
 });

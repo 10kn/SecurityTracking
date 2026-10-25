@@ -6,9 +6,9 @@ use App\Enums\AdvisoryKind;
 use App\Enums\FindingRule;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Runtime;
-use App\Models\Technology;
 
 /**
  * Turns evaluated runtimes into findings: eol and outdated_security open one; outdated, ok and unknown do not
@@ -25,9 +25,9 @@ class RuntimeFindings
     public const array RULES = [FindingRule::RuntimeEol, FindingRule::RuntimeOutdatedSecurity];
 
     /**
-     * The latest critical pre-notice of each technology id, looked up once per evaluation run.
+     * The latest critical pre-notice of each technology, looked up once per evaluation run.
      *
-     * @var array<int, Advisory|null>
+     * @var array<string, Advisory|null>
      */
     private array $criticalPreNotices = [];
 
@@ -58,8 +58,7 @@ class RuntimeFindings
         $locale = config('psm.alerts.locale');
 
         $context = [
-            'technology_id' => $technology->id,
-            'technology' => $technology->name,
+            'technology' => $technology->getLabel(),
             'version' => $runtime->raw_version,
             'branch' => $runtime->branch,
             'latest' => $latest,
@@ -69,12 +68,12 @@ class RuntimeFindings
 
         if ($rule === FindingRule::RuntimeEol) {
             return new FindingData(
-                fingerprint: FindingData::fingerprint($rule, $runtime->deployment_id, "technology:{$technology->id}", $runtime->branch),
+                fingerprint: FindingData::fingerprint($rule, $runtime->deployment_id, "technology:{$technology->value}", $runtime->branch),
                 rule: $rule,
                 severity: $this->policy->severityFor($rule),
-                title: __(':technology :branch hết hỗ trợ', ['technology' => $technology->name, 'branch' => $runtime->branch], $locale),
-                groupKey: "{$rule->value}:{$technology->id}:{$runtime->branch}",
-                context: [...$context, 'source_url' => 'https://endoflife.date/'.rawurlencode($technology->endoflife_product)],
+                title: __(':technology :branch hết hỗ trợ', ['technology' => $technology->getLabel(), 'branch' => $runtime->branch], $locale),
+                groupKey: "{$rule->value}:{$technology->value}:{$runtime->branch}",
+                context: [...$context, 'source_url' => $technology->endoflifeUrl()],
                 runtimeId: $runtime->id,
             );
         }
@@ -86,27 +85,28 @@ class RuntimeFindings
         }
 
         return new FindingData(
-            fingerprint: FindingData::fingerprint($rule, $runtime->deployment_id, "technology:{$technology->id}", $runtime->branch),
+            fingerprint: FindingData::fingerprint($rule, $runtime->deployment_id, "technology:{$technology->value}", $runtime->branch),
             rule: $rule,
             severity: $preNotice !== null ? Severity::Critical : $this->policy->severityFor($rule),
-            title: __(':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest', ['technology' => $technology->name, 'branch' => $runtime->branch, 'latest' => (string) $latest], $locale),
-            groupKey: "{$rule->value}:{$technology->id}:{$latest}",
-            context: [...$context, 'source_url' => $technology->release_source->releaseUrl($technology->endoflife_product, (string) $latest)],
+            title: __(':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest', ['technology' => $technology->getLabel(), 'branch' => $runtime->branch, 'latest' => (string) $latest], $locale),
+            groupKey: "{$rule->value}:{$technology->value}:{$latest}",
+            context: [...$context, 'source_url' => $technology->releaseUrl((string) $latest)],
             runtimeId: $runtime->id,
         );
     }
 
     private function criticalPreNotice(Technology $technology): ?Advisory
     {
-        if (! array_key_exists($technology->id, $this->criticalPreNotices)) {
-            $this->criticalPreNotices[$technology->id] = Advisory::where('kind', AdvisoryKind::PreNotice)
-                ->where('technology_id', $technology->id)
+        if (! array_key_exists($technology->value, $this->criticalPreNotices)) {
+            $this->criticalPreNotices[$technology->value] = Advisory::where('kind', AdvisoryKind::PreNotice)
+                ->where('technology', $technology)
                 ->where('severity', Severity::Critical)
+                ->where('is_dismissed', false)
                 ->where('published_at', '>=', now()->subDays(config('psm.notices.escalation_days')))
                 ->latest('published_at')
                 ->first();
         }
 
-        return $this->criticalPreNotices[$technology->id];
+        return $this->criticalPreNotices[$technology->value];
     }
 }

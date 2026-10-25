@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncTechnologyCatalogJob;
-use App\Models\Technology;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
@@ -14,7 +14,7 @@ class TechnologyCatalogSyncController extends Controller
     {
         SyncTechnologyCatalogJob::dispatch($technology);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã đưa :technology vào hàng đợi đồng bộ.', ['technology' => $technology->name])]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã đưa :technology vào hàng đợi đồng bộ.', ['technology' => $technology->getLabel()])]);
 
         return back();
     }

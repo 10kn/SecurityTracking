@@ -1,6 +1,6 @@
 # Project Security Manager — Handover & kế hoạch tiếp theo
 
-> Cập nhật: 24/10/2026 (bản rút gọn phạm vi MVP; đã chốt prototype UI v2 — mục 10; **M0 → M5 xong**, admin UI chuyển từ Filament sang React + Inertia (D2), còn Pilot — mục 3). Tài liệu bàn giao giữa các phiên làm việc (người hoặc AI).
+> Cập nhật: 24/10/2026 (bản rút gọn phạm vi MVP; đã chốt prototype UI v2 — mục 10; **M0 → M6 xong**, admin UI chuyển từ Filament sang React + Inertia (D2), M6 lấy lockfile từ GitHub (D12), còn Pilot — mục 3). Tài liệu bàn giao giữa các phiên làm việc (người hoặc AI).
 > Đọc mục 1–3 trước khi viết code. Mục 5 là logic phát hiện, phần lõi của MVP. Mục 9 là cách làm việc đã thống nhất với chủ dự án. Mục 10 là spec giao diện đã chốt — đọc trước khi làm bất kỳ màn hình admin nào.
 
 ## 1. Bối cảnh
@@ -19,13 +19,14 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 | D1 | Backend: **Laravel 13** + **PostgreSQL** | Chủ dự án review được code PHP; người khác trong công ty tiếp quản được. |
 | D2 | Admin UI: **React + Inertia** (Laravel adapter `inertiajs/inertia-laravel` 3, React 19, TypeScript, shadcn/ui chỉnh theo token của prototype v2), đường dẫn `/admin` (24/10/2026) | Thay cho Filament 5 (dùng ở M1–M5): Filament khó tùy biến (vd. ô chọn version vừa lọc tại chỗ vừa nhận version mới) và mỗi thao tác đều gọi server. |
 | D3 | Phạm vi MVP: **runtime ngôn ngữ (PHP, Ruby, Node.js) + package từ lockfile** (Composer, Bundler, npm) | OS để giai đoạn sau. yarn / pnpm làm nếu còn thời gian. |
-| D4 | Engine lỗ hổng package: **OSV** (không dùng Dependency-Track) | Thiết kế để đổi được: lưu component theo PURL, interface `VulnerabilityMatcher`. |
+| D4 | Engine lỗ hổng package: **Packagist** cho Composer (cùng nguồn với `composer audit`: GitHub + FriendsOfPHP), **OSV** cho npm và RubyGems (24/10/2026; không dùng Dependency-Track) | Thiết kế để đổi được: lưu component theo PURL, interface `VulnerabilityMatcher` (mỗi matcher khai báo `ecosystems()`). Đo trên lockfile thật: OSV thiếu advisory chỉ có ở FriendsOfPHP (vd. 2 advisory Symfony tháng 8–9/2026). |
 | D5 | Runtime dùng **quy tắc riêng**, không chờ CVE | MVP dùng 4 trạng thái: eol → outdated_security → outdated → ok, cộng `unknown`. `unknown` không bao giờ được coi là `ok`. Trạng thái `vulnerable` (đối chiếu dải CVE) để sau MVP. |
 | D6 | **Hub là nguồn sự thật duy nhất** của trạng thái finding | MVP chỉ có 2 trạng thái **tự động**: `open` / `resolved`. Vòng đời thủ công (Đã nhận, Không ảnh hưởng, Chấp nhận rủi ro) để sau MVP. |
 | D7 | Kênh cảnh báo: **Google Chat** (webhook theo team) | Gộp tin: 1 vấn đề × N service = 1 tin. Lỗi hệ thống gửi về một space riêng của admin (thay cho email dự phòng). |
-| D8 | Nguồn thông tin version ở MVP: **admin nhập tay** trên màn hình admin | Version runtime theo service, upload lockfile. Collector, ingest API, đọc Git repo để sau. |
+| D8 | Nguồn thông tin version ở MVP: **admin nhập tay** trên màn hình admin | Version runtime theo service, upload lockfile. Collector, ingest API để sau. Từ M6, lockfile có thể lấy từ GitHub (D12). |
 | D9 | MVP **không có** màn hình finding, dashboard | Card Google Chat link về trang sửa service (`/admin/services/{id}/edit`) và link nguồn tin gốc. Tìm kiếm ⌘K có từ UI React (D2). |
-| D11 | **Công nghệ là dữ liệu**, admin tự thêm trên màn Công nghệ (23/10/2026) | Thay cho 3 ngôn ngữ cố định. Mỗi công nghệ gắn một mã sản phẩm endoflife.date (nhánh, ngày hết hỗ trợ, bản mới nhất). PHP / Node.js / Ruby có thêm nguồn chính thức liệt kê mọi bản (php.net, nodejs.org, ruby-lang.org). Form service: danh sách động "công nghệ + version"; version là ô tự nhập có gợi ý từ danh mục, không bắt buộc chọn trong danh sách. Không thêm ô framework: lỗ hổng framework lấy từ lockfile (M5); muốn theo dõi framework hết hỗ trợ thì thêm như một công nghệ (vd. `laravel`). Bỏ ý "nhắc dữ liệu nhập tay đã cũ". |
+| D11 | **Công nghệ cố định trong code** (enum `App\Enums\Technology`: PHP, Node.js, Ruby), admin không thêm / sửa / xóa (24/10/2026; thay cho "công nghệ là dữ liệu" ngày 23/10) | Mỗi công nghệ khai báo trong code: mã sản phẩm endoflife.date (nhánh, ngày hết hỗ trợ, bản mới nhất), nguồn chính thức liệt kê mọi bản (php.net, nodejs.org, ruby-lang.org) và **bắt buộc** có feed tin bảo mật sớm. Lý do: thông báo sớm chỉ có trên kênh riêng của từng hãng, công nghệ thêm động chỉ có endoflife.date thì không phát hiện được bản vá khẩn cấp. Hỗ trợ thêm công nghệ (vd. Python) = thêm một case vào enum kèm các class feed. Không còn bảng `technologies`: các bảng khác lưu cột `technology` (giá trị enum). Màn Công nghệ chỉ xem danh mục (nhánh, ngày hết hỗ trợ, các bản) và "Đồng bộ ngay". Form service: danh sách động "công nghệ + version"; version là ô tự nhập có gợi ý từ danh mục. Không thêm ô framework: lỗ hổng framework lấy từ lockfile (M5). |
+| D12 | **Hub chủ động đọc lockfile từ GitHub** (pull), không dùng CI/CD đẩy SBOM lên (24/10/2026) | Công ty chỉ dùng GitHub. Pull không phải cấu hình từng repo, không tốn phút CI, dùng lại parser lockfile của M5. Đăng nhập bằng **GitHub App** (quyền `Contents: Read` + `Metadata: Read`, cài cho các repo được chọn): ký JWT RS256 bằng `firebase/php-jwt` (chủ dự án đồng ý thêm), đổi lấy installation token 1 giờ, token chỉ giữ trong bộ nhớ. Không dùng PAT vì gắn với một người và phải gia hạn tay. **Mỗi ngày 1 lần** (06:30 `Asia/Ho_Chi_Minh`) + nút "Lấy lockfile ngay"; Hub chỉ chạy trong mạng nội bộ nên không dùng webhook. Repo + branch đặt ở project (branch trống = branch mặc định), thư mục là `repository_path` của service. Bật đồng bộ thì GitHub là nguồn duy nhất của lockfile service đó (không upload tay). Code đọc repo qua interface `RepositoryReader` để thêm GitLab sau. Phương án CI/CD + SBOM để sau (mục 7). |
 | D10 | Giao diện admin theo **prototype v2** (`public/prototypes/admin-v2/`): flat, tối giản; **4 theme** người dùng tự chọn (Graphite, Ocean, Forest, Night); **song ngữ Việt / Nhật** với font và cỡ chữ riêng cho tiếng Nhật | Spec ở mục 10. Áp dụng cho các resource của MVP (Team, Project, Service). Màn Tổng quan và Findings trong prototype là mẫu cho giai đoạn sau MVP; D9 giữ nguyên. Prototype v1 (`public/prototypes/admin/`) bị loại vì rối mắt, chỉ giữ để đối chiếu. |
 
 ## 3. Hiện trạng code (M0 → M5 xong — 23/10/2026)
@@ -33,7 +34,7 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 ### 3.1 Đã có
 
 - App Laravel 13 ở thư mục gốc (PHP 8.5, Pest 5). Đã `git init` (nhánh `main`), **chưa có commit**.
-- Package: `inertiajs/inertia-laravel` 3.5, `laravel/wayfinder` 0.1, `larastan/larastan` (dev), `laravel/boost` (dev). `filament/filament` đã gỡ (24/10/2026).
+- Package: `inertiajs/inertia-laravel` 3.5, `laravel/wayfinder` 0.1, `firebase/php-jwt` 7.2 (M6, ký JWT cho GitHub App), `larastan/larastan` (dev), `laravel/boost` (dev). `filament/filament` đã gỡ (24/10/2026).
 - Laravel Boost đã cài: `CLAUDE.md`, `AGENTS.md`, `.claude/skills/`, `.agents/`, `.mcp.json`, `boost.json`.
 - Database: `compose.yaml` chạy Postgres 17 ở cổng 5432 (user `psm` / mật khẩu `secret`). Docker chạy qua OrbStack.
   - `psm`: database dev. `php artisan migrate:fresh --seed` chạy được.
@@ -57,9 +58,9 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
   - Avatar: `App\Filament\AvatarProviders\InitialsAvatarProvider` vẽ chữ tắt tại chỗ, thay cho mặc định của Filament (gọi ui-avatars.com, lộ tên admin ra bên thứ ba).
   - Kiểm tra: 80 test Pest xanh, Larastan level 6 sạch, Pint sạch. Đã xem bằng Brave headless: 4 theme, VI / JA, màn 390px.
 - **M2 (danh mục version + đánh giá):**
-  - Bảng `technologies` (`name`, `slug`, `endoflife_product`, `release_source`); màn **Công nghệ** (nhóm Cài đặt): thêm bằng mã endoflife.date (kiểm tra mã có tồn tại, tự điền tên), trạng thái danh mục (Đã đồng bộ / Lần gần nhất lỗi / Lỗi quá ngưỡng / Chưa đồng bộ), nút "Đồng bộ ngay"; thêm hoặc đổi nguồn thì tự đồng bộ ngay (job). `TechnologySeeder` tạo PHP / Node.js / Ruby (chạy được ở production).
-  - Nguồn: `App\Services\Catalog\EndoflifeDateClient` (API v1) + `ReleaseFeed`: `PhpNetReleaseFeed` (nhãn `security`), `NodejsReleaseFeed` (cờ `security`), `RubyLangReleaseFeed` (`cache.ruby-lang.org/pub/ruby/index.txt`, không có cờ), `EndoflifeReleaseFeed` (chỉ bản mới nhất mỗi nhánh). Bản mới nhất của nhánh = bản lớn nhất giữa endoflife.date và nguồn chính thức.
-  - `App\Actions\SyncTechnologyCatalog` ghi heartbeat `catalog:{id}` vào `source_heartbeats`; ngưỡng `PSM_CATALOG_STALE_AFTER_MINUTES` (mặc định 180) trong `config/psm.php`.
+  - Enum `App\Enums\Technology` (D11); màn **Công nghệ** (nhóm Cài đặt): danh sách có trạng thái danh mục (Đã đồng bộ / Lần gần nhất lỗi / Lỗi quá ngưỡng / Chưa đồng bộ) và nút "Đồng bộ ngay" (job); trang chi tiết `/admin/technologies/{php|nodejs|ruby}` chỉ xem: các nhánh với ngày hết hỗ trợ, các bản (lọc theo nhánh, tìm version) có đánh dấu bản vá bảo mật.
+  - Nguồn: `App\Services\Catalog\EndoflifeDateClient` (API v1) + `ReleaseFeed`: `PhpNetReleaseFeed` (nhãn `security`), `NodejsReleaseFeed` (cờ `security`), `RubyLangReleaseFeed` (`cache.ruby-lang.org/pub/ruby/index.txt`, không có cờ). Bản mới nhất của nhánh = bản lớn nhất giữa endoflife.date và nguồn chính thức.
+  - `App\Actions\SyncTechnologyCatalog` ghi heartbeat `catalog:{technology}` (vd. `catalog:php`) vào `source_heartbeats`; ngưỡng `PSM_CATALOG_STALE_AFTER_MINUTES` (mặc định 180) trong `config/psm.php`.
   - `App\Support\Version` (chuẩn hóa: `v20.11.0` → `20.11.0`, `8.3.12-1+deb.sury.org+1` → `8.3.12`; tìm nhánh dài nhất khớp). `App\Services\RuntimeEvaluator` theo mục 5.3; lý do lưu ở `runtimes.status_reason` (khóa dịch) + `status_context`.
   - Đánh giá chạy: ngay khi admin lưu (listener queued `EvaluateChangedDeployment`), sau mỗi lần đồng bộ, và `psm:evaluate-runtimes` lúc 00:05. Lịch trong `routes/console.php`: `psm:sync-runtimes` mỗi giờ.
   - **Chạy thật cần:** queue worker và scheduler. Dev: `composer run dev` (đã thêm `schedule:work` vào danh sách tiến trình). Production: cron `* * * * * php artisan schedule:run` + `php artisan queue:work`.
@@ -75,6 +76,7 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
   - Cột "Finding mở" ở danh sách Team, Service và tab Services của Project. Dòng trạng thái Google Chat bỏ qua tin đang chờ retry.
 - **M4 (thông báo sớm):** `psm:watch-notices` (15 phút) đọc feed php.net (Atom), nodejs.org vulnerability (RSS), ruby-lang.org news (RSS) qua `ReleaseSource::noticeFeed()`; parser `app/Services/Notices/` (không dùng mạng khi parse XML, từ chối DOCTYPE). Lọc từ khóa `psm.notices.keywords`; **bỏ qua bài "x.y.z Released"** (catalog đã báo đúng version cần nâng). Lưu `advisories` (`kind = pre_notice`, mức Critical / High theo chữ trong tin, CVSS, CVE). Mỗi team đang chạy công nghệ đó nhận 1 card "Cảnh báo chuẩn bị" mỗi tin (chỉ tin < 72 giờ). Tin Critical trong 14 ngày → finding `outdated_security` của công nghệ đó lên Critical và gửi lại. Không tạo finding cho tin báo trước (`FindingRule::PreNotice` chưa dùng). Heartbeat `notice:{nguồn}` (ngưỡng 120 phút). Fixture thật trong `tests/Fixtures/notices/` (có tin php.net "Upcoming Critical PHP Security Release" 20/10/2026 20:32 UTC).
 - **M5 (lỗ hổng package):** tự parse lockfile (`app/Services/Lockfiles/`: composer.lock, Gemfile.lock, package-lock.json v1/v2/v3) → `components` (PURL qua `App\Support\PackageUrl`, `is_dev`), parse lại khi `content_hash` đổi; lockfile không đọc được thì giữ component cũ, lưu `parse_error`. `VulnerabilityMatcher` → `OsvVulnerabilityMatcher` (`querybatch` ≤ 1000, phân trang, chỉ lấy chi tiết advisory mới / đã sửa, bỏ advisory withdrawn). Mức: GitHub severity → CVSS v3.1 tự tính (`App\Support\Cvss3`) → `unknown`. Finding `dependency_vulnerable` theo (deployment, package, advisory), gom card theo advisory; dev dependency chỉ vào bản tổng hợp (`PSM_IMMEDIATE_DEV_DEPENDENCIES`). Quét khi lockfile đổi và `psm:scan-packages` mỗi 6 giờ; OSV lỗi → giữ finding đang mở, heartbeat `osv` (ngưỡng 720 phút). Migration nháp: `lockfiles` thêm `parsed_hash`, `parse_error`, `package_count`; unique của `components` thêm `version`; `advisories` thêm `source_modified_at`, `withdrawn_at`, `fixed_versions`. Cột Packages hiện số package và số package có lỗ hổng. Fixture OSV thật trong `tests/Fixtures/osv/`.
+  - **Packagist cho Composer (24/10/2026):** `PackagistVulnerabilityMatcher` gọi `POST packagist.org/api/security-advisories/`, so version bằng `composer/semver` (thêm vào `require`) như `composer audit`. Advisory lưu theo mã PKSA (không đổi khi Packagist gộp nguồn) nên fingerprint ổn định; tiêu đề hiện mã GHSA, không có thì CVE (`Advisory::reference()`). Advisory chỉ có ở FriendsOfPHP không có mức độ → `unknown` → chỉ vào bản tổng hợp. `ScanPackages` chạy từng matcher theo hệ sinh thái; một nguồn lỗi thì finding của hệ sinh thái đó giữ mở, nguồn còn lại vẫn đồng bộ; heartbeat `packagist` và `osv` riêng. OSV tải chi tiết advisory song song (`PSM_OSV_CONCURRENCY`, mặc định 10). Fixture Packagist thật trong `tests/Fixtures/packagist/`.
 - **UI React (24/10/2026, thay Filament — D2):**
   - Server: route trong `routes/web.php` (tiền tố `/admin`, tên `admin.*`), controller `app/Http/Controllers/Admin/`, form request `app/Http/Requests/Admin/`, resource `app/Http/Resources/Admin/` (dòng bảng). Bảng tìm / sắp xếp / phân trang qua query string (`App\Support\TableQuery`). Đăng nhập riêng (`SessionController`, giới hạn 6 lần / phút), chỉ admin (`EnsureUserIsAdmin`). Toast qua `Inertia::flash('toast', …)`.
   - `HandleInertiaRequests` chia sẻ người dùng, theme / ngôn ngữ, danh sách theme và bản dịch `lang/{locale}.json` (gửi một lần, chỉ khi không phải tiếng Việt). `ApplyUserPreferences` đặt locale trước khi chia sẻ.
@@ -82,7 +84,16 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
   - Route TypeScript sinh bằng Wayfinder (`resources/js/actions/`, không commit; plugin Vite tự sinh lại).
   - Ô version của service: lọc ngay trong trình duyệt theo tiền tố, nhận version không có trong danh mục ("Dùng “…”"); kết quả đánh giá lấy từ `GET /admin/runtime-evaluation`. Tìm kiếm ⌘K: `GET /admin/search`.
   - Kiểm tra: 320 test Pest (`tests/Feature/Admin/` thay cho test Filament), Larastan level 6 sạch, Pint sạch, `tsc` sạch; đã xem bằng Brave headless: 4 theme, VI / JA, màn 390px.
-- Lịch (`routes/console.php`): `psm:sync-runtimes` mỗi giờ, `psm:watch-notices` và `psm:check-sources` 15 phút, `psm:scan-packages` 6 giờ, `psm:evaluate-runtimes` 00:05, `psm:send-digest` theo `psm.digest`.
+- **M6 (lockfile từ GitHub, D12 — 24/10/2026):**
+  - Cấu hình `psm.github` (`config/psm.php`, `.env`: `PSM_GITHUB_APP_ID`, `PSM_GITHUB_INSTALLATION_ID`, `PSM_GITHUB_PRIVATE_KEY_PATH`, `PSM_GITHUB_SYNC_TIME`, `PSM_GITHUB_SYNC_TIMEZONE`, `PSM_GITHUB_STALE_AFTER_MINUTES`; GitHub Enterprise: `PSM_GITHUB_HOST`, `PSM_GITHUB_API_URL`). Private key là file riêng ngoài web root (`chmod 600`), `.env` chỉ ghi đường dẫn.
+  - `app/Services/Repositories/`: interface `RepositoryReader` (bind sang `GitHubRepositoryReader` trong `AppServiceProvider`), `GitHubAppAuthenticator` (JWT 9 phút → installation token 1 giờ, xin token mới khi còn < 5 phút, xin quyền `contents: read` + `metadata: read`), `GitHubRepository` (đọc `https://github.com/org/repo(.git)` và `git@github.com:org/repo.git`), `RepositoryNotFoundException` (404 / 409 / 422 = cấu hình sai, không retry).
+  - `App\Actions\SyncProjectLockfiles`: lấy SHA đầu branch → liệt kê file trong thư mục của từng service tại SHA đó → tải `composer.lock` / `Gemfile.lock` / `package-lock.json` → `App\Actions\ReplaceLockfiles` (tách từ `UpdateProductionInventory`, dùng chung cho upload). Lockfile đổi nội dung → `DeploymentInventoryChanged` (đánh giá lại như khi upload). Lockfile không còn trong thư mục → xóa (kể cả bản upload). File > 20 MB hoặc không đọc được → giữ bản cũ, ghi lỗi.
+  - Lỗi cấu hình (repo / branch / thư mục không có, App chưa được cấp quyền, chưa cấu hình App) → `projects.lockfiles_sync_error` + 1 tin vào space admin mỗi đợt lỗi (khóa theo `lockfiles_synced_at`). GitHub không trả lời → heartbeat `github` (ngưỡng 1500 phút), `psm:check-sources` báo admin. Cả hai trường hợp đều giữ lockfile cũ.
+  - `psm:sync-lockfiles` (06:30 mỗi ngày); job `SyncProjectLockfilesJob` chạy ngay khi bật đồng bộ, đổi repo / branch, thêm service hoặc đổi thư mục service, và khi bấm "Lấy lockfile ngay" (`POST /admin/projects/{project}/lockfile-sync`).
+  - Migration `2026_10_24_145411_add_lockfile_sync_to_projects_and_lockfiles` (migration mới, không sửa migration cũ vì DB dev đã có dữ liệu thật): `projects` thêm `repository_branch`, `syncs_lockfiles`, `lockfiles_synced_at`, `lockfiles_commit_sha`, `lockfiles_sync_error`; `lockfiles` thêm `source` (enum `LockfileSource`: `upload` / `github`), `commit_sha`.
+  - UI: form project có section "Lockfile từ GitHub" (bật đồng bộ, branch; khóa ô bật khi server chưa cấu hình App); trang project hiện trạng thái, branch, commit (link GitHub), lần thành công gần nhất, lỗi và nút "Lấy lockfile ngay"; form service của project đang đồng bộ ẩn phần upload và hiện nguồn từng lockfile ("GitHub · abc1234 · lấy lúc …").
+  - Kiểm tra: test Pest mới `tests/Feature/Services/GitHubRepositoryReaderTest.php`, `tests/Feature/Actions/SyncProjectLockfilesTest.php`, `tests/Feature/Console/Commands/SyncRepositoryLockfilesTest.php` và thêm vào `ProjectControllerTest`, `ServiceControllerTest` (helper `fakeGitHub()` trong `tests/Pest.php`, private key sinh lúc chạy test, không commit key); Larastan sạch, Pint sạch, `tsc` sạch. **Chưa thử với GitHub thật** — xem mục 3.2.
+- Lịch (`routes/console.php`): `psm:sync-runtimes` mỗi giờ, `psm:watch-notices` và `psm:check-sources` 15 phút, `psm:scan-packages` 6 giờ, `psm:evaluate-runtimes` 00:05, `psm:send-digest` theo `psm.digest`, `psm:sync-lockfiles` 06:30 theo `psm.github`.
 - Kiểm tra (M5): 297 test Pest xanh (gồm 6 kịch bản đầu cuối trong `tests/Feature/Scenarios/DetectionPipelineTest.php`), Larastan level 6 sạch, Pint sạch. Đã chạy thử với nguồn thật trên DB dev ngày 23/10/2026 (8 finding từ dữ liệu demo, 7 tin báo trước).
 - Prototype UI (HTML/CSS/JS tĩnh, không gọi backend):
   - `public/prototypes/admin-v2/` — **bản đã chốt** (mục 10). Mở `index.html` để so sánh 4 theme.
@@ -96,6 +107,9 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 - [ ] `DemoSeeder` chưa có lockfile (thêm vào thì seed sẽ gọi OSV).
 - [ ] Bản dịch `lang/ja.json` do AI viết — cần người dùng tiếng Nhật duyệt (câu hỏi mở 4).
 - [ ] Chưa thử "Gửi thử" với một webhook Google Chat thật (test dùng `Http::fake()`).
+- [ ] M6: chưa tạo GitHub App thật. Cần admin org: tạo App (quyền repository `Contents: Read`, `Metadata: Read`; không cần webhook, bỏ chọn "Active"), cài cho các repo cần theo dõi ("Only select repositories"), tạo private key, điền 3 biến `PSM_GITHUB_*` vào `.env`, rồi bật đồng bộ ở 1 project và bấm "Lấy lockfile ngay" để thử.
+- [ ] M6: đang đọc lockfile ở **đầu branch**, chưa phải commit đang chạy trên production. Lệch nhau trong khoảng merge → deploy. Muốn đúng commit đang deploy thì đọc GitHub Deployments / Releases / tag (thêm quyền `Deployments: Read`).
+- [ ] M6: chỉ đọc lockfile nằm **ngay trong** thư mục của service (không tìm sâu hơn). Service có `package-lock.json` ở thư mục con (vd. `frontend/`) cần tách thành service riêng hoặc mở rộng sau.
 
 ### 3.3 Điểm cần xem lại
 
@@ -108,13 +122,13 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 | users | Dùng | Thêm `theme` (enum `Theme`, mặc định `graphite`) và `locale` (enum `Locale`: `vi` / `ja`, mặc định `vi`). Model mirror mặc định trong `$attributes`. |
 | teams, team_user, projects, services | Dùng | `google_chat_webhook_url` cast `encrypted` và ẩn khi serialize. `escalation_email` chưa dùng. Team còn project thì không xóa được. |
 | deployments | Dùng | Hiểu là "môi trường của service". MVP chỉ tạo `production`. Có quan hệ `runtimes`, `lockfiles`, `components`. |
-| technologies (mới, M2) | Dùng | Xem D11. Xóa bị chặn khi còn runtime dùng. |
-| runtimes | Dùng | `deployment_id` bắt buộc (cascade); `asset_id` nullable; **bỏ `app_path`**; `technology_id` thay cho `language`; unique `(deployment_id, technology_id)`; thêm `branch`, `status_context`; `source = manual`. |
-| lockfiles (mới) | Dùng (M1 upload, M5 quét) | `deployment_id`, `ecosystem`, `path`, `content`, `content_hash` (sha256), `uploaded_at`; unique `(deployment_id, path)`. |
+| technologies | Bỏ | Công nghệ là enum trong code (D11). |
+| runtimes | Dùng | `deployment_id` bắt buộc (cascade); `asset_id` nullable; **bỏ `app_path`**; `technology` (giá trị enum) thay cho `language`; unique `(deployment_id, technology)`; thêm `branch`, `status_context`; `source = manual`. |
+| lockfiles (mới) | Dùng (M1 upload, M5 quét, M6 GitHub) | `deployment_id`, `ecosystem`, `path`, `content`, `content_hash` (sha256), `uploaded_at`; unique `(deployment_id, path)`. M6 thêm `source` (`upload` / `github`), `commit_sha`. |
 | components | Dùng (M5) | Giữ nguyên. |
-| runtime_branches, runtime_releases | Dùng | `technology_id` thay cho `language`. `runtime_branches` thêm `released_at`, `is_eol` (endoflife.date báo hết hỗ trợ dù không có ngày). |
-| source_heartbeats | Dùng | Danh mục version: khóa `catalog:{technology_id}`. |
-| advisories | Dùng | Chứa thông báo sớm (M4) và advisory OSV (M5). `technology_id` thay cho `language`. |
+| runtime_branches, runtime_releases | Dùng | `technology` thay cho `language`. `runtime_branches` thêm `released_at`, `is_eol` (endoflife.date báo hết hỗ trợ dù không có ngày). |
+| source_heartbeats | Dùng | Danh mục version: khóa `catalog:{technology}`; tin bảo mật: `notice:{technology}`. |
+| advisories | Dùng | Chứa thông báo sớm (M4) và advisory OSV (M5). `technology` thay cho `language`. |
 | findings | Dùng, rút gọn | `state` chỉ `open` / `resolved` (mặc định `open`). `sla_due_at`, `accepted_until` giữ cột nhưng chưa dùng. |
 | **chat_notifications** (mới) | Dùng | Nhật ký gửi tin Google Chat: `team_id` (null = space admin), `dedupe_key` (unique), `kind`, `payload`, `attempts`, `sent_at`, `failed_at`, `last_error`. **Đặt tên `chat_notifications` thay cho `notifications`** để không trùng bảng database notification của Laravel / Filament. |
 | finding_events | Dùng | Chỉ sự kiện hệ thống: `type` (`opened` / `resolved` / `escalated`) + `data` (jsonb). Bỏ `user_id`, `from_state`, `to_state`, `note` (thêm lại khi có vòng đời thủ công). |
@@ -148,6 +162,7 @@ Trang web nội bộ theo dõi lỗ hổng bảo mật một cách chủ động
 | Tín hiệu | Nguồn | Tần suất | Độ trễ tối đa | Kết quả |
 |---|---|---|---|---|
 | Admin sửa version / lockfile | Màn hình admin | Ngay khi lưu (queued job) | Vài giây | Đánh giá lại service đó |
+| Lockfile đổi trên GitHub (D12) | GitHub API (GitHub App, chỉ đọc) | 1 lần/ngày lúc 06:30, và khi admin bấm "Lấy lockfile ngay" | 1 ngày | Đánh giá lại service có lockfile đổi |
 | Thông báo sớm của hãng | Feed php.net, nodejs.org, ruby-lang.org | 15 phút | ~15 phút | "Cảnh báo chuẩn bị" cho team đang chạy ngôn ngữ đó |
 | Bản vá bảo mật mới | Release JSON / YAML của 3 ngôn ngữ | 1 giờ | ~1 giờ | `outdated_security` |
 | Có bản mới (không phải bảo mật) | Như trên | 1 giờ | — | `outdated`, chỉ vào bản tổng hợp |
@@ -162,7 +177,7 @@ Xét theo thứ tự, dừng ở quy tắc đầu tiên khớp:
 1. `unknown`: thiếu version, không chuẩn hóa được, danh mục chưa đồng bộ hoặc quá ngưỡng heartbeat, không có nhánh khớp, hoặc version chỉ ghi nhánh (`8.3`).
 2. `eol`: nhánh có `is_eol`, hoặc hôm nay > `security_support_until`.
 3. `unknown`: version mới hơn bản mới nhất đã biết, hoặc (nguồn chính thức) version không có trong danh sách của hãng.
-4. `outdated_security`: trong nhánh có bản mới hơn **là bản vá bảo mật**. Cờ bảo mật: php.net và nodejs.org có. Khi nguồn không có cờ (Ruby, công nghệ chỉ dùng endoflife.date): coi là bản vá bảo mật nếu nhánh chỉ còn vá bảo mật **hoặc không biết nhánh đang ở giai đoạn nào** (Ruby không có ngày hết hỗ trợ tích cực) — **chọn báo thừa hơn bỏ sót, xem lại khi pilot**.
+4. `outdated_security`: trong nhánh có bản mới hơn **là bản vá bảo mật**. Cờ bảo mật: php.net và nodejs.org có. Khi nguồn không có cờ (Ruby): coi là bản vá bảo mật nếu nhánh chỉ còn vá bảo mật **hoặc không biết nhánh đang ở giai đoạn nào** (Ruby không có ngày hết hỗ trợ tích cực) — **chọn báo thừa hơn bỏ sót, xem lại khi pilot**.
 5. `outdated`: `latest_version` của nhánh mới hơn version đang dùng.
 6. `ok`.
 
@@ -209,6 +224,7 @@ Xét theo thứ tự, dừng ở quy tắc đầu tiên khớp:
 | **M3** Finding + Google Chat (3 ngày) — **xong 23/10/2026** | Đồng bộ finding theo fingerprint (mục 5.4); gửi ngay + gộp tin; bản tổng hợp; chính sách gửi và lịch gửi đọc từ `config/psm.php`; retry, chống trùng; cảnh báo admin khi nguồn lỗi | 4 kịch bản ở mục 5.6 pass |
 | **M4** Watcher thông báo sớm (2 ngày) — **xong 23/10/2026** | Feed 3 ngôn ngữ (15 phút/lần); lọc từ khóa; đối chiếu ngôn ngữ đang dùng; "Cảnh báo chuẩn bị" | Fixture tin php.net 20/10/2026 → đúng các team chạy PHP, mỗi team 1 tin, chạy lại không gửi lại |
 | **M5** Lỗ hổng package (3 ngày) — **xong 23/10/2026**, chọn tự parse + OSV API (không thêm dependency) | Parse lockfile upload → component (PURL); `VulnerabilityMatcher` qua OSV; quét lại 6 giờ/lần và khi lockfile đổi; đánh dấu dev dependency. Đầu M5 chọn: tự parse + OSV API `querybatch`, hay cài `osv-scanner` (cần chủ dự án đồng ý vì thêm dependency) | Lockfile fixture có package lỗ hổng → finding đúng team, gộp đúng; advisory mới xuất hiện → có tin ở lần quét sau |
+| **M6** Lockfile từ GitHub (D12) — **xong 24/10/2026** (chưa thử với GitHub thật) | GitHub App chỉ đọc; project có repo + branch, service có thư mục; đọc lockfile mỗi ngày + "Lấy lockfile ngay"; báo admin khi cấu hình sai hoặc GitHub lỗi | Fixture repo giả: lockfile đúng thư mục, đúng commit; lockfile không đổi → không đánh giá lại; thư mục sai → giữ lockfile cũ + 1 tin admin; GitHub lỗi → heartbeat |
 | **Pilot** (3–5 ngày) | Nhập tay 5–10 service thật, đủ 3 ngôn ngữ | Đo các chỉ số ở mục 5.6; chỉnh ngưỡng và mức gửi |
 
 M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đường ống phát hiện → Google Chat.
@@ -222,7 +238,9 @@ M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đ
 | Vòng đời thủ công: Đã nhận, Đã vá, Đã xác minh theo instance, Không ảnh hưởng, Chấp nhận rủi ro; SLA | MVP chỉ `open` / `resolved` tự động. |
 | Google SSO, policy theo team, dev đăng nhập xem team mình | MVP chỉ admin đăng nhập. |
 | Collector trên server, reporter cho CI (ECS), `POST /api/ingest`, token theo asset, hàng chờ asset chưa có chủ | Thay cho nhập tay. Cần trả lời câu hỏi về deploy và tỷ lệ ECS. |
-| Đọc lockfile qua Git API tại commit đang deploy, monorepo | Cần biết Git hosting. |
+| **CI/CD đẩy SBOM lên Hub** (phương án 1 của D12, để sau 24/10/2026) | Mỗi repo thêm 1 bước CI (vd. Syft / Trivy tạo CycloneDX) gửi lên `POST /api/ingest` kèm token theo project. Ưu điểm: Hub không cần quyền đọc source code; quét được cả image / OS (giai đoạn container). Nhược: cấu hình từng repo, tốn thời gian CI, cần parser CycloneDX / SPDX. GitLab self-host + runner riêng thì không tốn phí theo phút, chỉ tốn máy chạy runner. Làm khi tới giai đoạn quét OS / container hoặc khi có repo ngoài GitHub. Lưu thêm `lockfiles.source = ci`. |
+| Đọc lockfile tại **commit đang deploy** (GitHub Deployments / Releases / tag), lockfile ở thư mục con, yarn / pnpm từ repo | M6 đọc đầu branch, chỉ ngay trong thư mục service. |
+| GitLab self-host | Thêm một `RepositoryReader` (Group Access Token `read_repository`, `GET /projects/:id/repository/files/:path/raw?ref=`), chọn reader theo host của repository URL. Cùng mạng nội bộ nên dùng được webhook. |
 | Runtime `vulnerable` theo dải CVE (nodejs/security-wg, rubysec) | `outdated_security` đã đủ để báo kịp thời; phần này bổ sung mã CVE. |
 | Email dự phòng | MVP dùng space admin. |
 | Framework EOL (Laravel, Rails), CISA KEV, yarn / pnpm | Thêm nhanh ở M5 nếu còn thời gian. |
@@ -237,7 +255,7 @@ M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đ
 | Release (M2 dùng) | `https://www.php.net/releases/?json&version={major}&max=1000` (nhãn `security`) | `https://nodejs.org/dist/index.json` (cờ `security`) | `https://cache.ruby-lang.org/pub/ruby/index.txt` (không có cờ bảo mật) |
 | Nhánh, EOL (M2 dùng) | `https://endoflife.date/api/v1/products/php/` | `.../products/nodejs/` | `.../products/ruby/` (không có `eoasFrom`) |
 
-Công nghệ khác: chỉ `https://endoflife.date/api/v1/products/{product}/` (khoảng 485 sản phẩm, danh sách ở `.../products/`).
+Thêm công nghệ mới (D11): cần mã sản phẩm `https://endoflife.date/api/v1/products/{product}/`, một nguồn liệt kê mọi bản và một feed tin bảo mật sớm của hãng.
 
 | | PHP | Node.js | Ruby |
 |---|---|---|---|

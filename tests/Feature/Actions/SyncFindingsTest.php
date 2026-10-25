@@ -12,7 +12,7 @@ use App\Services\FindingData;
 function eolFindingData(Deployment $deployment, string $branch = '8.1', Severity $severity = Severity::High): FindingData
 {
     return new FindingData(
-        fingerprint: FindingData::fingerprint(FindingRule::RuntimeEol, $deployment->id, 'technology:1', $branch),
+        fingerprint: FindingData::fingerprint(FindingRule::RuntimeEol, $deployment->id, 'technology:php', $branch),
         rule: FindingRule::RuntimeEol,
         severity: $severity,
         title: "PHP {$branch} hết hỗ trợ",

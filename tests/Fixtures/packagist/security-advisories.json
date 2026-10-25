@@ -1,0 +1,231 @@
+{
+    "advisories": {
+        "firebase/php-jwt": [
+            {
+                "advisoryId": "PKSA-y2cr-5h3j-g3ys",
+                "packageName": "firebase/php-jwt",
+                "remoteId": "GHSA-2x45-7fc3-mxwq",
+                "title": "php-jwt contains weak encryption",
+                "link": "https://github.com/advisories/GHSA-2x45-7fc3-mxwq",
+                "cve": "CVE-2025-45769",
+                "affectedVersions": "<7.0.0",
+                "source": "GitHub",
+                "reportedAt": "2025-07-31 21:31:53",
+                "composerRepository": "https://packagist.org",
+                "severity": "low",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-2x45-7fc3-mxwq"
+                    }
+                ]
+            },
+            {
+                "advisoryId": "PKSA-2kqm-ps5x-s4f5",
+                "packageName": "firebase/php-jwt",
+                "remoteId": "firebase/php-jwt/CVE-2021-46743.yaml",
+                "title": "Key/algorithm type confusion",
+                "link": "https://github.com/advisories/GHSA-8xf4-w7qw-pjjw",
+                "cve": "CVE-2021-46743",
+                "affectedVersions": "<6.0.0",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2022-03-30 00:00:00",
+                "composerRepository": "https://packagist.org",
+                "severity": "critical",
+                "sources": [
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "firebase/php-jwt/CVE-2021-46743.yaml"
+                    },
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-8xf4-w7qw-pjjw"
+                    }
+                ]
+            },
+            {
+                "advisoryId": "PKSA-9g4f-46cc-2gr4",
+                "packageName": "firebase/php-jwt",
+                "remoteId": "firebase/php-jwt/2015-04-02.yaml",
+                "title": "Critical vulnerabilities in JSON Web Token libraries",
+                "link": "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/",
+                "cve": null,
+                "affectedVersions": "<2.0.0",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2015-04-02 00:00:00",
+                "composerRepository": "https://packagist.org",
+                "severity": "critical",
+                "sources": [
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "firebase/php-jwt/2015-04-02.yaml"
+                    },
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-h533-5v22-8vcp"
+                    }
+                ]
+            }
+        ],
+        "monolog/monolog": [
+            {
+                "advisoryId": "PKSA-dmw8-jd8k-q3c6",
+                "packageName": "monolog/monolog",
+                "remoteId": "monolog/monolog/2014-12-29-1.yaml",
+                "title": "Header injection in NativeMailerHandler",
+                "link": "https://github.com/Seldaek/monolog/pull/448#issuecomment-68208704",
+                "cve": null,
+                "affectedVersions": ">=1.8.0,<1.12.0",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2014-12-29 00:00:00",
+                "composerRepository": "https://packagist.org",
+                "severity": "low",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-f57v-q966-7fh6"
+                    },
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "monolog/monolog/2014-12-29-1.yaml"
+                    }
+                ]
+            }
+        ],
+        "symfony/process": [
+            {
+                "advisoryId": "PKSA-rkkf-636k-qjb3",
+                "packageName": "symfony/process",
+                "remoteId": "GHSA-r39x-jcww-82v6",
+                "title": "Symfony's incorrect argument escaping under MSYS2/Git Bash can lead to destructive file operations on Windows",
+                "link": "https://github.com/advisories/GHSA-r39x-jcww-82v6",
+                "cve": "CVE-2026-24739",
+                "affectedVersions": ">=8.0,<8.0.5|>=7.4,<7.4.5|>=7.3,<7.3.11|>=6.4,<6.4.33|<5.4.51",
+                "source": "GitHub",
+                "reportedAt": "2026-01-28 21:28:10",
+                "composerRepository": "https://packagist.org",
+                "severity": "medium",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-r39x-jcww-82v6"
+                    }
+                ]
+            },
+            {
+                "advisoryId": "PKSA-wws7-mr54-jsny",
+                "packageName": "symfony/process",
+                "remoteId": "symfony/process/CVE-2024-51736.yaml",
+                "title": "CVE-2024-51736: Command execution hijack on Windows with Process class",
+                "link": "https://symfony.com/cve-2024-51736",
+                "cve": "CVE-2024-51736",
+                "affectedVersions": ">=2.0.0,<3.0.0|>=3.0.0,<4.0.0|>=4.0.0,<5.0.0|>=5.0.0,<5.1.0|>=5.1.0,<5.2.0|>=5.2.0,<5.3.0|>=5.3.0,<5.4.0|>=5.4.0,<5.4.46|>=6.0.0,<6.1.0|>=6.1.0,<6.2.0|>=6.2.0,<6.3.0|>=6.3.0,<6.4.0|>=6.4.0,<6.4.14|>=7.0.0,<7.1.0|>=7.1.0,<7.1.7",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2024-11-05 08:00:00",
+                "composerRepository": "https://packagist.org",
+                "severity": "high",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-qq5c-677p-737q"
+                    },
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "symfony/process/CVE-2024-51736.yaml"
+                    }
+                ]
+            }
+        ],
+        "phpunit/phpunit": [
+            {
+                "advisoryId": "PKSA-qccq-2pht-gg3w",
+                "packageName": "phpunit/phpunit",
+                "remoteId": "GHSA-mh6w-vxff-9wqp",
+                "title": "PHPUnit: Argument injection via newline in PHP INI values forwarded to child processes",
+                "link": "https://github.com/advisories/GHSA-mh6w-vxff-9wqp",
+                "cve": null,
+                "affectedVersions": ">=13.1.5,<13.1.6|>=12.5.21,<12.5.22",
+                "source": "GitHub",
+                "reportedAt": "2026-04-22 14:56:07",
+                "composerRepository": "https://packagist.org",
+                "severity": "high",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-mh6w-vxff-9wqp"
+                    }
+                ]
+            },
+            {
+                "advisoryId": "PKSA-5jz8-6tcw-pbk4",
+                "packageName": "phpunit/phpunit",
+                "remoteId": "phpunit/phpunit/CVE-2026-41570.yaml",
+                "title": "Argument injection via newline in PHP INI values forwarded to child processes",
+                "link": "https://github.com/sebastianbergmann/phpunit/security/advisories/GHSA-qrr6-mg7r-m243",
+                "cve": "CVE-2026-41570",
+                "affectedVersions": ">=12.5.21,<12.5.22|>=13.1.5,<13.1.6",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2026-04-17 12:52:26",
+                "composerRepository": "https://packagist.org",
+                "severity": "high",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-qrr6-mg7r-m243"
+                    },
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "phpunit/phpunit/CVE-2026-41570.yaml"
+                    }
+                ]
+            },
+            {
+                "advisoryId": "PKSA-z3gr-8qht-p93v",
+                "packageName": "phpunit/phpunit",
+                "remoteId": "phpunit/phpunit/CVE-2026-24765.yaml",
+                "title": "Unsafe Deserialization in PHPT Code Coverage Handling",
+                "link": "https://github.com/sebastianbergmann/phpunit/security/advisories/GHSA-vvj3-c3rp-c85p",
+                "cve": "CVE-2026-24765",
+                "affectedVersions": ">=0,<8.5.52|>=9.0.0,<9.6.33|>=10.0.0,<10.5.62|>=11.0.0,<11.5.50|>=12.0.0,<12.5.8",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2026-01-27 05:21:14",
+                "composerRepository": "https://packagist.org",
+                "severity": "high",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-vvj3-c3rp-c85p"
+                    },
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "phpunit/phpunit/CVE-2026-24765.yaml"
+                    }
+                ]
+            },
+            {
+                "advisoryId": "PKSA-w57n-mhp6-c9sd",
+                "packageName": "phpunit/phpunit",
+                "remoteId": "phpunit/phpunit/CVE-2017-9841.yaml",
+                "title": "RCE vulnerability in phpunit",
+                "link": "https://nvd.nist.gov/vuln/detail/CVE-2017-9841",
+                "cve": "CVE-2017-9841",
+                "affectedVersions": ">=5.0.10,<5.6.3|>=4.8.19,<4.8.28",
+                "source": "FriendsOfPHP/security-advisories",
+                "reportedAt": "2016-11-13 17:52:50",
+                "composerRepository": "https://packagist.org",
+                "severity": "critical",
+                "sources": [
+                    {
+                        "name": "GitHub",
+                        "remoteId": "GHSA-r7c9-c69m-rph8"
+                    },
+                    {
+                        "name": "FriendsOfPHP/security-advisories",
+                        "remoteId": "phpunit/phpunit/CVE-2017-9841.yaml"
+                    }
+                ]
+            }
+        ],
+        "psr/log": []
+    }
+}

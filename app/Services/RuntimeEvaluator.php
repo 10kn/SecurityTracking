@@ -2,11 +2,10 @@
 
 namespace App\Services;
 
-use App\Enums\ReleaseSource;
 use App\Enums\RuntimeStatus;
+use App\Enums\Technology;
 use App\Models\RuntimeBranch;
 use App\Models\RuntimeRelease;
-use App\Models\Technology;
 use App\Support\Version;
 use Illuminate\Support\Collection;
 
@@ -20,7 +19,7 @@ use Illuminate\Support\Collection;
 class RuntimeEvaluator
 {
     /**
-     * @var array<int, Collection<string, RuntimeBranch>>
+     * @var array<string, Collection<string, RuntimeBranch>>
      */
     private array $branches = [];
 
@@ -30,7 +29,7 @@ class RuntimeEvaluator
     private array $releases = [];
 
     /**
-     * @var array<int, bool>
+     * @var array<string, bool>
      */
     private array $catalogIsFresh = [];
 
@@ -49,13 +48,13 @@ class RuntimeEvaluator
         $branches = $this->branchesOf($technology);
 
         if (! $this->catalogIsFresh($technology) || $branches->isEmpty()) {
-            return new RuntimeEvaluation(RuntimeStatus::Unknown, 'Danh mục version :technology chưa đồng bộ hoặc đang lỗi', ['technology' => $technology->name], $version);
+            return new RuntimeEvaluation(RuntimeStatus::Unknown, 'Danh mục version :technology chưa đồng bộ hoặc đang lỗi', ['technology' => $technology->getLabel()], $version);
         }
 
         $branchName = Version::branchOf($version, $branches->keys());
 
         if ($branchName === null) {
-            return new RuntimeEvaluation(RuntimeStatus::Unknown, 'Không có nhánh của :version trong danh mục :technology', ['version' => $version, 'technology' => $technology->name], $version);
+            return new RuntimeEvaluation(RuntimeStatus::Unknown, 'Không có nhánh của :version trong danh mục :technology', ['version' => $version, 'technology' => $technology->getLabel()], $version);
         }
 
         /** @var RuntimeBranch $branch */
@@ -78,8 +77,8 @@ class RuntimeEvaluator
 
         $releases = $this->releasesOf($technology, $branchName);
 
-        if ($technology->release_source !== ReleaseSource::Endoflife && $releases->isNotEmpty() && ! $releases->contains('version', $version)) {
-            return new RuntimeEvaluation(RuntimeStatus::Unknown, 'Không có version :version trong danh mục :source', ['version' => $version, 'source' => $technology->release_source->getLabel()], $version, $branchName);
+        if ($releases->isNotEmpty() && ! $releases->contains('version', $version)) {
+            return new RuntimeEvaluation(RuntimeStatus::Unknown, 'Không có version :version trong danh mục :source', ['version' => $version, 'source' => $technology->releaseSourceLabel()], $version, $branchName);
         }
 
         if ($this->hasNewerSecurityRelease($branch, $releases, $version)) {
@@ -113,7 +112,7 @@ class RuntimeEvaluator
      */
     private function branchesOf(Technology $technology): Collection
     {
-        return $this->branches[$technology->id] ??= $technology->branches()->get()->keyBy('branch');
+        return $this->branches[$technology->value] ??= RuntimeBranch::where('technology', $technology)->get()->keyBy('branch');
     }
 
     /**
@@ -121,11 +120,11 @@ class RuntimeEvaluator
      */
     private function releasesOf(Technology $technology, string $branch): Collection
     {
-        return $this->releases["{$technology->id}:{$branch}"] ??= $technology->releases()->where('branch', $branch)->get();
+        return $this->releases["{$technology->value}:{$branch}"] ??= RuntimeRelease::where('technology', $technology)->where('branch', $branch)->get();
     }
 
     private function catalogIsFresh(Technology $technology): bool
     {
-        return $this->catalogIsFresh[$technology->id] ??= $technology->catalogHeartbeat()?->isStale() === false;
+        return $this->catalogIsFresh[$technology->value] ??= $technology->catalogHeartbeat()?->isStale() === false;
     }
 }

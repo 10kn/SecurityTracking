@@ -1,3 +1,7 @@
+# Project rules
+
+- Frontend (`resources/js`) has no Prettier or ESLint config and is formatted by hand: 4-space indent, single quotes, long lines (~180 chars). Never run Prettier or `eslint --fix`; match sibling files and check TSX with `npx tsc --noEmit`. A hook in `.claude/settings.json` blocks these commands.
+
 <laravel-boost-guidelines>
 === foundation rules ===
 

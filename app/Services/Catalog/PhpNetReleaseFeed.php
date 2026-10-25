@@ -2,7 +2,7 @@
 
 namespace App\Services\Catalog;
 
-use App\Models\Technology;
+use App\Enums\Technology;
 use Carbon\CarbonImmutable;
 
 /**
