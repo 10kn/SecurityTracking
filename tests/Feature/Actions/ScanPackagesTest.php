@@ -96,7 +96,7 @@ it('lists every version of a package that the same advisory affects in one findi
 });
 
 it('scans Gemfile.lock gems by their plain version', function () {
-    fakeOsv();
+    fakeRubySec();
 
     scanWithLockfiles($this->deployment, 'Gemfile.lock');
 
@@ -151,11 +151,11 @@ it('keeps the findings of a failing source open and still syncs the packages of 
     $failing = false;
     fakePackagistOutage($failing);
     fakePackagist();
-    fakeOsv();
+    fakeRubySec();
     scanWithLockfiles($this->deployment, 'composer.lock', 'Gemfile.lock');
     expect(SourceHeartbeat::orderBy('source')->get(['source', 'name', 'threshold_minutes'])->toArray())->toBe([
-        ['source' => 'osv', 'name' => 'OSV', 'threshold_minutes' => 720],
         ['source' => 'packagist', 'name' => 'Packagist', 'threshold_minutes' => 720],
+        ['source' => 'rubysec', 'name' => 'RubySec', 'threshold_minutes' => 720],
     ]);
 
     $failing = true;
@@ -172,7 +172,7 @@ it('keeps the findings of a failing source open and still syncs the packages of 
         ->and(SourceHeartbeat::where('source', 'packagist')->sole())
         ->last_failure_at->toEqual(now())
         ->last_error->toContain('RequestException')
-        ->and(SourceHeartbeat::where('source', 'osv')->sole()->last_failure_at)->toBeNull();
+        ->and(SourceHeartbeat::where('source', 'rubysec')->sole()->last_failure_at)->toBeNull();
 });
 
 it('alerts the admin once when OSV keeps failing past its threshold', function () {
@@ -180,7 +180,7 @@ it('alerts the admin once when OSV keeps failing past its threshold', function (
     $failing = false;
     fakeOsvOutage($failing);
     fakeOsv();
-    scanWithLockfiles($this->deployment, 'Gemfile.lock');
+    scanWithLockfiles($this->deployment, 'package-lock.json');
 
     $failing = true;
     foreach ([1, 2] as $scan) {

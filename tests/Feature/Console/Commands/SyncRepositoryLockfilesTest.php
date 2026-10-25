@@ -2,7 +2,6 @@
 
 use App\Events\DeploymentInventoryChanged;
 use App\Models\Lockfile;
-use App\Models\Project;
 use App\Models\Service;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
@@ -16,10 +15,10 @@ beforeEach(function () {
     Event::fake([DeploymentInventoryChanged::class]);
 });
 
-it('reads the lockfiles of every project that syncs them', function () {
+it('reads the lockfiles of every service with a repository', function () {
     fakeGitHub(['composer.lock' => '{"packages":[]}']);
-    $syncing = Service::factory()->for(Project::factory()->syncingLockfiles())->create(['repository_path' => '/']);
-    $manual = Service::factory()->for(Project::factory())->create(['repository_path' => '/']);
+    $syncing = Service::factory()->syncingLockfiles()->create(['repository_path' => '/']);
+    $manual = Service::factory()->create(['repository_path' => '/']);
 
     artisan('psm:sync-lockfiles')->assertSuccessful();
 
@@ -31,7 +30,7 @@ it('fails when github cannot be reached', function () {
     Sleep::fake();
     Http::fake(['https://api.github.com/repos/*' => Http::response('Service Unavailable', 503)]);
     fakeGitHub();
-    Project::factory()->syncingLockfiles()->create();
+    Service::factory()->syncingLockfiles()->create();
 
     artisan('psm:sync-lockfiles')->assertFailed();
 });

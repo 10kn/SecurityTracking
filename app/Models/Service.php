@@ -14,11 +14,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path'])]
+#[Fillable(['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path', 'repository', 'repository_branch', 'lockfiles_synced_at', 'lockfiles_commit_sha', 'lockfiles_sync_error'])]
 class Service extends Model
 {
     /** @use HasFactory<ServiceFactory> */
     use HasFactory;
+
+    /**
+     * A repository's full name such as "acme/shop".
+     */
+    public const string REPOSITORY_PATTERN = '/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/';
+
+    /**
+     * A git branch name such as "main" or "release/2026-10"; ".." is rejected separately.
+     */
+    public const string REPOSITORY_BRANCH_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/';
 
     /**
      * Get the attributes that should be cast.
@@ -30,7 +40,16 @@ class Service extends Model
         return [
             'kind' => ServiceKind::class,
             'exposure' => Exposure::class,
+            'lockfiles_synced_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the lockfiles are read from a GitHub repository every day rather than uploaded by hand (handover D12).
+     */
+    public function syncsLockfiles(): bool
+    {
+        return $this->repository !== null;
     }
 
     /**

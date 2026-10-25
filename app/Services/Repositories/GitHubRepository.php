@@ -10,15 +10,11 @@ final readonly class GitHubRepository
     public function __construct(public string $owner, public string $name) {}
 
     /**
-     * Reads https://github.com/acme/shop(.git) or git@github.com:acme/shop(.git). Other hosts, and URLs pointing
-     * inside a repository (e.g. /tree/main), give null.
+     * Reads a full name such as "acme/shop"; anything else, including "." and ".." segments, gives null.
      */
-    public static function fromUrl(string $repositoryUrl): ?self
+    public static function fromFullName(string $fullName): ?self
     {
-        $host = preg_quote((string) config('psm.github.host'), '#');
-
-        // The repository name is matched lazily, so a trailing ".git" is not part of it.
-        if (preg_match("#^(?:https://{$host}/|git@{$host}:)([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\\.git)?/?$#i", trim($repositoryUrl), $matches) !== 1) {
+        if (preg_match('#^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$#', $fullName, $matches) !== 1) {
             return null;
         }
 

@@ -6,7 +6,7 @@ import { Card, CardBody } from '@/components/admin/card';
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { FormActions, FormSection } from '@/components/admin/form-section';
 import { PageHeader } from '@/components/admin/page-header';
-import { type ExistingLockfile, newRuntimeRow, ServiceFields, serviceRequestData, type ServiceFormData, type ServiceFormOptions } from '@/components/admin/services/service-form';
+import { type ExistingLockfile, type LockfileSync, newRuntimeRow, ServiceFields, serviceRequestData, type ServiceFormData, type ServiceFormOptions } from '@/components/admin/services/service-form';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
 
@@ -19,9 +19,12 @@ interface Props extends ServiceFormOptions {
         kind: string;
         exposure: string;
         repository_path: string;
+        repository: string | null;
+        repository_branch: string | null;
         project: { id: number; name: string; team: string };
         runtimes: { technology: string; raw_version: string }[];
         lockfiles: ExistingLockfile[];
+        lockfile_sync: LockfileSync | null;
     };
 }
 
@@ -34,6 +37,8 @@ export default function ServicesEdit({ service, ...options }: Props) {
         kind: service.kind,
         exposure: service.exposure,
         repository_path: service.repository_path,
+        repository: service.repository,
+        repository_branch: service.repository_branch ?? '',
         runtimes: service.runtimes.map((runtime) => newRuntimeRow(runtime.technology, runtime.raw_version)),
         lockfile_uploads: [],
         removed_lockfiles: [],
@@ -64,7 +69,7 @@ export default function ServicesEdit({ service, ...options }: Props) {
                 noValidate
             >
                 <CardBody>
-                    <ServiceFields form={form} options={options} isCreating={false} existingLockfiles={service.lockfiles} />
+                    <ServiceFields form={form} options={options} isCreating={false} existingLockfiles={service.lockfiles} savedService={service} />
                     <FormActions>
                         <Button type="submit" loading={form.processing}>
                             {form.progress ? t('Đang tải lên :percent%', { percent: form.progress.percentage ?? 0 }) : t('Lưu thay đổi')}

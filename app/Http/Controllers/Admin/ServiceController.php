@@ -10,11 +10,13 @@ use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ServiceRequest;
 use App\Http\Resources\Admin\ServiceResource;
-use App\Jobs\SyncProjectLockfilesJob;
+use App\Jobs\SyncServiceLockfilesJob;
+use App\Models\AccessibleRepository;
 use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
+use App\Services\Repositories\RepositoryReader;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -25,7 +27,10 @@ use Inertia\Response;
 
 class ServiceController extends Controller
 {
-    public function __construct(private UpdateProductionInventory $updateProductionInventory) {}
+    public function __construct(
+        private UpdateProductionInventory $updateProductionInventory,
+        private RepositoryReader $repositoryReader,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -70,7 +75,7 @@ class ServiceController extends Controller
             return $service;
         });
 
-        $this->syncLockfilesWhenDirectoryChanged($service);
+        $this->syncLockfilesWhenRepositoryChanged($service);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã tạo service :service. Hệ thống đang đánh giá lại.', ['service' => $service->name])]);
 
@@ -85,7 +90,7 @@ class ServiceController extends Controller
         return Inertia::render('services/edit', [
             ...$this->formOptions(),
             'service' => [
-                ...$service->only(['id', 'project_id', 'name', 'slug', 'repository_path']),
+                ...$service->only(['id', 'project_id', 'name', 'slug', 'repository_path', 'repository', 'repository_branch']),
                 'kind' => $service->kind->value,
                 'exposure' => $service->exposure->value,
                 'project' => ['id' => $service->project->id, 'name' => $service->project->name, 'team' => $service->project->team->name],
@@ -103,6 +108,7 @@ class ServiceController extends Controller
                     ])
                     ->values()
                     ->all(),
+                'lockfile_sync' => $this->lockfileSync($service),
             ],
         ]);
     }
@@ -110,7 +116,14 @@ class ServiceController extends Controller
     public function update(ServiceRequest $request, Service $service): RedirectResponse
     {
         DB::transaction(function () use ($request, $service): void {
-            $service->update($request->serviceAttributes());
+            $service->fill($request->serviceAttributes());
+
+            // The state of the last sync belongs to the repository and branch it read.
+            if ($service->isDirty(['repository', 'repository_branch'])) {
+                $service->fill(['lockfiles_synced_at' => null, 'lockfiles_commit_sha' => null, 'lockfiles_sync_error' => null]);
+            }
+
+            $service->save();
 
             $this->updateProductionInventory->handle(
                 $service,
@@ -120,7 +133,7 @@ class ServiceController extends Controller
             );
         });
 
-        $this->syncLockfilesWhenDirectoryChanged($service);
+        $this->syncLockfilesWhenRepositoryChanged($service);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã lưu service :service. Hệ thống đang đánh giá lại.', ['service' => $service->name])]);
 
@@ -140,16 +153,40 @@ class ServiceController extends Controller
     }
 
     /**
-     * A service added to a project that reads its lockfiles from GitHub, or moved to another directory, gets them right
-     * away instead of at the next daily sync.
+     * A service that reads its lockfiles from GitHub gets them right away when it is created or its repository, branch
+     * or directory changed, instead of at the next daily sync.
      */
-    private function syncLockfilesWhenDirectoryChanged(Service $service): void
+    private function syncLockfilesWhenRepositoryChanged(Service $service): void
     {
-        $project = $service->project()->first();
-
-        if ($project?->syncs_lockfiles && ($service->wasRecentlyCreated || $service->wasChanged(['project_id', 'repository_path']))) {
-            SyncProjectLockfilesJob::dispatch($project);
+        if ($service->syncsLockfiles() && ($service->wasRecentlyCreated || $service->wasChanged(['repository', 'repository_branch', 'repository_path']))) {
+            SyncServiceLockfilesJob::dispatch($service);
         }
+    }
+
+    /**
+     * The state of reading lockfiles from the repository, or null when the service does not.
+     *
+     * @return array{status: array{label: string, tone: string}, synced_at: string|null, commit: string|null, commit_href: string|null, error: string|null}|null
+     */
+    private function lockfileSync(Service $service): ?array
+    {
+        if (! $service->syncsLockfiles()) {
+            return null;
+        }
+
+        $commitSha = $service->lockfiles_commit_sha;
+
+        return [
+            'status' => match (true) {
+                $service->lockfiles_sync_error !== null => ['label' => __('Lần đồng bộ gần nhất lỗi'), 'tone' => 'warning'],
+                $service->lockfiles_synced_at === null => ['label' => __('Chưa đồng bộ'), 'tone' => 'unknown'],
+                default => ['label' => __('Đã đồng bộ'), 'tone' => 'success'],
+            },
+            'synced_at' => $service->lockfiles_synced_at?->translatedFormat(__('d/m/Y H:i')),
+            'commit' => $commitSha === null ? null : substr($commitSha, 0, 7),
+            'commit_href' => $commitSha === null ? null : $this->repositoryReader->commitUrl((string) $service->repository, $commitSha),
+            'error' => $service->lockfiles_sync_error,
+        ];
     }
 
     /**
@@ -159,7 +196,9 @@ class ServiceController extends Controller
     {
         return [
             'projects' => $this->projectOptions(),
-            'lockfileSyncProjectIds' => Project::where('syncs_lockfiles', true)->pluck('id')->all(),
+            'repositories' => $this->repositoryOptions(),
+            'repositoriesSyncedAt' => AccessibleRepository::latest('updated_at')->first()?->updated_at?->translatedFormat(__('d/m/Y H:i')),
+            'gitHubConfigured' => $this->repositoryReader->isConfigured(),
             'kinds' => array_map(fn (ServiceKind $kind): array => ['value' => $kind->value, 'label' => $kind->getLabel()], ServiceKind::cases()),
             'exposures' => array_map(fn (Exposure $exposure): array => ['value' => $exposure->value, 'label' => $exposure->getLabel()], Exposure::cases()),
             'technologies' => collect(Technology::cases())
@@ -172,6 +211,27 @@ class ServiceController extends Controller
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * The repositories the GitHub App may read, as last refreshed.
+     *
+     * @return list<array{value: string, label: string, description: string, default_branch: string|null}>
+     */
+    private function repositoryOptions(): array
+    {
+        return AccessibleRepository::orderBy('full_name')
+            ->get()
+            ->map(fn (AccessibleRepository $repository): array => [
+                'value' => $repository->full_name,
+                'label' => $repository->full_name,
+                'description' => implode(' · ', array_filter([
+                    $repository->default_branch,
+                    $repository->is_private ? __('private') : __('public'),
+                ])),
+                'default_branch' => $repository->default_branch,
+            ])
+            ->all();
     }
 
     /**

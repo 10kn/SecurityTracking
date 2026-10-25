@@ -294,6 +294,29 @@ function packagistRequests(): Collection
 }
 
 /**
+ * Fakes the RubySec advisory database with tests/Fixtures/rubysec/ruby-advisory-db-master.tar.gz: the real advisories
+ * of 2026-10-25 for the gems of tests/Fixtures/lockfiles/Gemfile.lock, and CVE-2016-6316, filed under both actionpack
+ * and actionview, packed by `git archive` as GitHub packs the tarball of a branch.
+ */
+function fakeRubySec(): void
+{
+    Http::preventStrayRequests();
+    Http::fake(['https://github.com/rubysec/ruby-advisory-db/archive/*' => Http::response((string) file_get_contents(base_path('tests/Fixtures/rubysec/ruby-advisory-db-master.tar.gz')))]);
+}
+
+/**
+ * Requests sent for the RubySec advisory database, oldest first.
+ *
+ * @return Collection<int, Request>
+ */
+function rubySecRequests(): Collection
+{
+    return Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://github.com/rubysec/'))
+        ->map(fn (array $pair): Request => $pair[0])
+        ->values();
+}
+
+/**
  * Requests sent to the OSV API, oldest first.
  *
  * @return Collection<int, Request>

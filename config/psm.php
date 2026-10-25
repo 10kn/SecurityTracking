@@ -85,22 +85,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Package vulnerabilities (Packagist, OSV)
+    | Package vulnerabilities (Packagist, RubySec, OSV)
     |--------------------------------------------------------------------------
     |
     | psm:scan-packages matches the packages of every uploaded lockfile every 6 hours, and a deployment is scanned
     | again as soon as its lockfiles change. Composer packages are matched against the Packagist security advisories
-    | at `packagist_url` (the source of `composer audit`), `packagist_batch_size` package names per request. npm and
-    | RubyGems packages are matched against the OSV API at `osv_url`: package versions in batches of `batch_size` (OSV
-    | accepts up to 1000 per request), vulnerabilities not stored yet fetched `concurrency` at a time. When a source
-    | has not answered successfully within `stale_after_minutes` the admin is alerted; while it fails, the open
-    | findings of its packages stay open.
+    | at `packagist_url` (the source of `composer audit`), `packagist_batch_size` package names per request. Gems are
+    | matched against the RubySec advisory database (the source of `bundler-audit`), read from the tarball at
+    | `rubysec_url`. npm packages are matched against the OSV API at `osv_url`: package versions in batches of
+    | `batch_size` (OSV accepts up to 1000 per request), vulnerabilities not stored yet fetched `concurrency` at a
+    | time. When a source has not answered successfully within `stale_after_minutes` the admin is alerted; while it
+    | fails, the open findings of its packages stay open.
     |
     */
 
     'packages' => [
         'packagist_url' => env('PSM_PACKAGIST_URL', 'https://packagist.org'),
         'packagist_batch_size' => (int) env('PSM_PACKAGIST_BATCH_SIZE', 500),
+        'rubysec_url' => env('PSM_RUBYSEC_URL', 'https://github.com/rubysec/ruby-advisory-db/archive/refs/heads/master.tar.gz'),
         'osv_url' => env('PSM_OSV_URL', 'https://api.osv.dev/v1'),
         'batch_size' => (int) env('PSM_OSV_BATCH_SIZE', 1000),
         'stale_after_minutes' => (int) env('PSM_PACKAGES_STALE_AFTER_MINUTES', 720),
@@ -114,9 +116,10 @@ return [
     | Lockfiles from GitHub
     |--------------------------------------------------------------------------
     |
-    | Handover D12. psm:sync-lockfiles reads, once a day at `sync_time` in `timezone`, the lockfiles of every project
-    | that turned it on: at the tip of the project's branch (its default branch when none is set), in each service's
-    | directory. It signs in as a GitHub App installed on the organisation with read access to contents and metadata
+    | Handover D12. psm:sync-lockfiles reads, once a day at `sync_time` in `timezone`, the lockfiles of every service
+    | with a repository: at the tip of the service's branch (the default branch when none is set), in the service's
+    | directory. Services pick their repository from the ones the App may read, listed again when an admin refreshes
+    | the list. It signs in as a GitHub App installed on the organisation with read access to contents and metadata
     | only: `app_id` (or the App's client ID), `installation_id`, and the App's private key in a file at
     | `private_key_path` that only the app user can read, outside the web root and never committed. For GitHub
     | Enterprise Server, set `host` and `api_url`. When GitHub has not answered successfully within

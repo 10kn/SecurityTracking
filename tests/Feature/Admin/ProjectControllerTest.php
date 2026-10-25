@@ -1,13 +1,11 @@
 <?php
 
-use App\Jobs\SyncProjectLockfilesJob;
 use App\Models\Deployment;
 use App\Models\Finding;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
-use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\assertModelMissing;
@@ -115,83 +113,4 @@ it('deletes a project with its services', function () {
 
     assertModelMissing($project);
     assertModelMissing($service);
-});
-
-it('reads the lockfiles right away when a project starts syncing them', function () {
-    actingAsAdmin();
-    Queue::fake([SyncProjectLockfilesJob::class]);
-    $project = Project::factory()->create(['slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop']);
-
-    put("/admin/projects/{$project->id}", ['team_id' => $project->team_id, 'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop', 'repository_branch' => 'release/2026-10', 'syncs_lockfiles' => true])
-        ->assertSessionHasNoErrors();
-
-    expect($project->refresh())->syncs_lockfiles->toBeTrue()->repository_branch->toBe('release/2026-10');
-    Queue::assertPushed(SyncProjectLockfilesJob::class, fn (SyncProjectLockfilesJob $job): bool => $job->project->is($project));
-});
-
-it('does not read the lockfiles again when the repository settings stay the same', function () {
-    actingAsAdmin();
-    Queue::fake([SyncProjectLockfilesJob::class]);
-    $project = Project::factory()->syncingLockfiles('main')->create(['slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop']);
-
-    put("/admin/projects/{$project->id}", ['team_id' => $project->team_id, 'name' => 'Shop (renamed)', 'slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop', 'repository_branch' => 'main', 'syncs_lockfiles' => true])
-        ->assertSessionHasNoErrors();
-
-    Queue::assertNothingPushed();
-});
-
-it('syncs lockfiles only from a github repository', function (?string $url) {
-    actingAsAdmin();
-
-    post('/admin/projects', ['team_id' => Team::factory()->create()->id, 'name' => 'Shop', 'slug' => 'shop', 'repository_url' => $url, 'syncs_lockfiles' => true])
-        ->assertSessionHasErrors(['syncs_lockfiles' => 'Cần repository URL trên GitHub, ví dụ https://github.com/org/repo.']);
-})->with([
-    'no repository' => null,
-    'another host' => 'https://git.example.com/acme/shop',
-]);
-
-it('rejects a branch name git would not accept', function (string $branch) {
-    actingAsAdmin();
-
-    post('/admin/projects', ['team_id' => Team::factory()->create()->id, 'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop', 'repository_branch' => $branch])
-        ->assertSessionHasErrors(['repository_branch' => 'Tên branch không hợp lệ.']);
-})->with(['main..dev', '-main', 'feature branch']);
-
-it('shows how the lockfiles of a project are synced', function () {
-    actingAsAdmin();
-    configureGitHubApp();
-    $project = Project::factory()->syncingLockfiles()->create([
-        'repository_url' => 'https://github.com/acme/shop',
-        'lockfiles_synced_at' => '2026-10-24 06:30:00',
-        'lockfiles_commit_sha' => GITHUB_COMMIT,
-    ]);
-
-    get("/admin/projects/{$project->id}")->assertInertia(fn (Assert $page) => $page
-        ->where('project.lockfile_sync.status.label', 'Đã đồng bộ')
-        ->where('project.lockfile_sync.commit', '3f78685')
-        ->where('project.lockfile_sync.commit_href', 'https://github.com/acme/shop/commit/'.GITHUB_COMMIT)
-        ->where('project.lockfile_sync.error', null));
-
-    get("/admin/projects/{$project->id}/edit")->assertInertia(fn (Assert $page) => $page
-        ->where('project.syncs_lockfiles', true)
-        ->where('gitHubConfigured', true));
-});
-
-it('queues reading the lockfiles of a project on request', function () {
-    actingAsAdmin();
-    Queue::fake([SyncProjectLockfilesJob::class]);
-    $project = Project::factory()->syncingLockfiles()->create();
-
-    post("/admin/projects/{$project->id}/lockfile-sync")->assertRedirect();
-
-    Queue::assertPushed(SyncProjectLockfilesJob::class);
-});
-
-it('has nothing to sync for a project that does not read its lockfiles from github', function () {
-    actingAsAdmin();
-    Queue::fake([SyncProjectLockfilesJob::class]);
-
-    post('/admin/projects/'.Project::factory()->create()->id.'/lockfile-sync')->assertNotFound();
-
-    Queue::assertNothingPushed();
 });

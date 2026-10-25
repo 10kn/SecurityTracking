@@ -17,6 +17,8 @@ export default function ServicesCreate({ defaultProjectId, ...options }: Service
         kind: options.kinds[0]?.value ?? '',
         exposure: options.exposures.find((exposure) => exposure.value === 'internal')?.value ?? options.exposures[0]?.value ?? '',
         repository_path: '/',
+        repository: null,
+        repository_branch: '',
         runtimes: [],
         lockfile_uploads: [],
         removed_lockfiles: [],

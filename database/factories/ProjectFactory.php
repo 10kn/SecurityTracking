@@ -28,16 +28,4 @@ class ProjectFactory extends Factory
             'repository_url' => 'https://github.com/example/'.Str::slug($name),
         ];
     }
-
-    /**
-     * A project that reads its lockfiles from its GitHub repository every day.
-     */
-    public function syncingLockfiles(?string $branch = null): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'repository_url' => 'https://github.com/acme/'.Str::slug((string) $attributes['name']),
-            'repository_branch' => $branch,
-            'syncs_lockfiles' => true,
-        ]);
-    }
 }

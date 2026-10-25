@@ -4,7 +4,8 @@ use App\Actions\UpdateProductionInventory;
 use App\Enums\RuntimeStatus;
 use App\Enums\Technology;
 use App\Events\DeploymentInventoryChanged;
-use App\Jobs\SyncProjectLockfilesJob;
+use App\Jobs\SyncServiceLockfilesJob;
+use App\Models\AccessibleRepository;
 use App\Models\Deployment;
 use App\Models\Lockfile;
 use App\Models\Project;
@@ -12,7 +13,9 @@ use App\Models\Runtime;
 use App\Models\Service;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\assertModelMissing;
@@ -179,7 +182,7 @@ it('shows the package count and the vulnerable packages of each lockfile', funct
     $this->travelTo('2026-10-23 10:00:00');
     actingAsAdmin();
     fakePackagist();
-    fakeOsv();
+    fakeRubySec();
     $scanned = Service::factory()->create(['name' => 'shop-api']);
     $unreadable = Service::factory()->create(['name' => 'shop-web']);
     $waiting = Service::factory()->create(['name' => 'shop-admin']);
@@ -252,47 +255,175 @@ it('deletes a service and returns to its project', function () {
     assertModelMissing($service);
 });
 
-it('takes no lockfile uploads for a project that reads them from github', function () {
+it('takes no lockfile uploads for a service that reads them from github', function () {
     actingAsAdmin();
-    $project = Project::factory()->syncingLockfiles()->create();
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
+    configureGitHubApp();
 
     post('/admin/services', serviceForm([
-        'project_id' => $project->id,
+        'repository' => 'acme/shop',
         'lockfile_uploads' => [UploadedFile::fake()->createWithContent('composer.lock', lockfileFixture('composer.lock'))],
-    ]))->assertSessionHasErrors(['lockfile_uploads' => 'Project này lấy lockfile từ GitHub, không tải lên hay xóa tay được.']);
+    ]))->assertSessionHasErrors(['lockfile_uploads' => 'Service lấy lockfile từ GitHub thì không tải lên hay xóa tay được.']);
 });
 
-it('reads the lockfiles of a new service of a project that syncs them', function () {
+it('creates a service that reads its lockfiles from a github repository right away', function () {
     actingAsAdmin();
-    Queue::fake([SyncProjectLockfilesJob::class]);
-    $project = Project::factory()->syncingLockfiles()->create();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
+    Http::fake(['https://api.github.com/repos/acme/shop/branches/release%2F2026-10' => Http::response(['name' => 'release/2026-10'])]);
+    fakeGitHub();
 
-    post('/admin/services', serviceForm(['project_id' => $project->id, 'repository_path' => '/apps/api']))->assertSessionHasNoErrors();
+    post('/admin/services', serviceForm(['repository' => 'acme/shop', 'repository_branch' => 'release/2026-10', 'repository_path' => '/apps/api']))->assertSessionHasNoErrors();
 
-    Queue::assertPushed(SyncProjectLockfilesJob::class, fn (SyncProjectLockfilesJob $job): bool => $job->project->is($project));
+    $service = Service::sole();
+    expect($service)->repository->toBe('acme/shop')->repository_branch->toBe('release/2026-10');
+    Queue::assertPushed(SyncServiceLockfilesJob::class, fn (SyncServiceLockfilesJob $job): bool => $job->service->is($service));
 });
 
-it('reads the lockfiles again when a service moves to another directory', function () {
+it('only takes a repository the github app may read', function () {
     actingAsAdmin();
-    Queue::fake([SyncProjectLockfilesJob::class]);
-    $service = Service::factory()->for(Project::factory()->syncingLockfiles())->create(['repository_path' => '/']);
-    $form = serviceForm(['project_id' => $service->project_id, 'name' => $service->name, 'slug' => $service->slug, '_method' => 'put']);
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
 
-    post("/admin/services/{$service->id}", [...$form, 'repository_path' => '/'])->assertSessionHasNoErrors();
+    post('/admin/services', serviceForm(['repository' => 'acme/secret']))
+        ->assertSessionHasErrors(['repository' => 'Repository không có trong danh sách GitHub App được đọc. Làm mới danh sách rồi chọn lại.']);
+});
+
+it('keeps a repository that left the list until another one is picked', function () {
+    actingAsAdmin();
+    Http::preventStrayRequests();
+    $service = Service::factory()->syncingLockfiles('acme/gone', 'main')->create();
+
+    post("/admin/services/{$service->id}", serviceForm([
+        'project_id' => $service->project_id,
+        'name' => 'shop-api (renamed)',
+        'slug' => $service->slug,
+        'repository' => 'acme/gone',
+        'repository_branch' => 'main',
+        '_method' => 'put',
+    ]))->assertSessionHasNoErrors();
+
+    expect($service->fresh()->repository)->toBe('acme/gone');
+});
+
+it('checks on github that a branch typed by hand exists', function () {
+    actingAsAdmin();
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
+    Http::fake(['https://api.github.com/repos/acme/shop/branches/*' => Http::response(['message' => 'Branch not found'], 404)]);
+    fakeGitHub();
+
+    post('/admin/services', serviceForm(['repository' => 'acme/shop', 'repository_branch' => 'gone']))
+        ->assertSessionHasErrors(['repository_branch' => 'Không thấy branch gone trong acme/shop.']);
+
+    expect(Service::count())->toBe(0);
+});
+
+it('cannot save a new branch while github is down', function () {
+    actingAsAdmin();
+    Sleep::fake();
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
+    Http::fake(['https://api.github.com/repos/*' => Http::response('Service Unavailable', 503)]);
+    fakeGitHub();
+
+    post('/admin/services', serviceForm(['repository' => 'acme/shop', 'repository_branch' => 'main']))->assertSessionHasErrors('repository_branch');
+
+    expect(session('errors')->first('repository_branch'))->toStartWith('Không kiểm tra được branch trên GitHub, thử lại sau:');
+});
+
+it('rejects a branch name git would not accept', function (string $branch) {
+    actingAsAdmin();
+    Http::preventStrayRequests();
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
+
+    post('/admin/services', serviceForm(['repository' => 'acme/shop', 'repository_branch' => $branch]))
+        ->assertSessionHasErrors(['repository_branch' => 'Tên branch không hợp lệ.']);
+})->with(['main..dev', '-main', 'feature branch']);
+
+it('reads the lockfiles again when the service moves to another directory', function () {
+    actingAsAdmin();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+    $service = Service::factory()->syncingLockfiles('acme/shop')->create([
+        'repository_path' => '/',
+        'lockfiles_synced_at' => '2026-10-24 06:30:00',
+        'lockfiles_commit_sha' => GITHUB_COMMIT,
+    ]);
+    $form = serviceForm(['project_id' => $service->project_id, 'name' => $service->name, 'slug' => $service->slug, 'repository' => 'acme/shop', '_method' => 'put']);
+
+    post("/admin/services/{$service->id}", $form)->assertSessionHasNoErrors();
     Queue::assertNothingPushed();
 
     post("/admin/services/{$service->id}", [...$form, 'repository_path' => '/apps/api'])->assertSessionHasNoErrors();
-    Queue::assertPushed(SyncProjectLockfilesJob::class);
+    Queue::assertPushed(SyncServiceLockfilesJob::class, 1);
+    expect($service->fresh()->lockfiles_commit_sha)->toBe(GITHUB_COMMIT);
 });
 
-it('shows where each lockfile came from', function () {
+it('forgets the last sync when the service moves to another repository', function () {
     actingAsAdmin();
-    $project = Project::factory()->syncingLockfiles()->create();
-    $deployment = Deployment::factory()->for(Service::factory()->for($project))->create();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+    AccessibleRepository::factory()->create(['full_name' => 'acme/storefront']);
+    $service = Service::factory()->syncingLockfiles('acme/shop')->create([
+        'lockfiles_synced_at' => '2026-10-24 06:30:00',
+        'lockfiles_commit_sha' => GITHUB_COMMIT,
+        'lockfiles_sync_error' => 'Không thấy thư mục /apps/api tại commit 3f78685.',
+    ]);
+
+    post("/admin/services/{$service->id}", serviceForm([
+        'project_id' => $service->project_id,
+        'name' => $service->name,
+        'slug' => $service->slug,
+        'repository' => 'acme/storefront',
+        '_method' => 'put',
+    ]))->assertSessionHasNoErrors();
+
+    expect($service->fresh())->lockfiles_synced_at->toBeNull()->lockfiles_commit_sha->toBeNull()->lockfiles_sync_error->toBeNull();
+    Queue::assertPushed(SyncServiceLockfilesJob::class);
+});
+
+it('forgets the branch when the service stops reading lockfiles from github', function () {
+    actingAsAdmin();
+    $service = Service::factory()->syncingLockfiles('acme/shop', 'main')->create();
+
+    post("/admin/services/{$service->id}", serviceForm([
+        'project_id' => $service->project_id,
+        'name' => $service->name,
+        'slug' => $service->slug,
+        'repository' => null,
+        'repository_branch' => 'main',
+        'lockfile_uploads' => [UploadedFile::fake()->createWithContent('composer.lock', lockfileFixture('composer.lock'))],
+        '_method' => 'put',
+    ]))->assertSessionHasNoErrors();
+
+    expect($service->fresh())->repository->toBeNull()->repository_branch->toBeNull();
+});
+
+it('shows the repository list, the last sync and where each lockfile came from', function () {
+    actingAsAdmin();
+    configureGitHubApp();
+    $this->travelTo('2026-10-25 09:00:00');
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop', 'default_branch' => 'develop', 'is_private' => true]);
+    $service = Service::factory()->syncingLockfiles('acme/shop')->create([
+        'lockfiles_synced_at' => '2026-10-24 06:30:00',
+        'lockfiles_commit_sha' => GITHUB_COMMIT,
+    ]);
+    $deployment = Deployment::factory()->for($service)->create();
     Lockfile::factory()->for($deployment)->fromGitHub(GITHUB_COMMIT)->create(['path' => 'composer.lock']);
 
-    get("/admin/services/{$deployment->service_id}/edit")->assertInertia(fn (Assert $page) => $page
+    get("/admin/services/{$service->id}/edit")->assertInertia(fn (Assert $page) => $page
+        ->where('repositories', [['value' => 'acme/shop', 'label' => 'acme/shop', 'description' => 'develop · private', 'default_branch' => 'develop']])
+        ->where('repositoriesSyncedAt', '25/10/2026 09:00')
+        ->where('gitHubConfigured', true)
+        ->where('service.repository', 'acme/shop')
+        ->where('service.lockfile_sync.status.label', 'Đã đồng bộ')
+        ->where('service.lockfile_sync.commit_href', 'https://github.com/acme/shop/commit/'.GITHUB_COMMIT)
         ->where('service.lockfiles.0.source', 'github')
-        ->where('service.lockfiles.0.commit', '3f78685')
-        ->where('lockfileSyncProjectIds', [$project->id]));
+        ->where('service.lockfiles.0.commit', '3f78685'));
+});
+
+it('queues reading the lockfiles of a service on request', function () {
+    actingAsAdmin();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+
+    post('/admin/services/'.Service::factory()->syncingLockfiles()->create()->id.'/lockfile-sync')->assertRedirect();
+    post('/admin/services/'.Service::factory()->create()->id.'/lockfile-sync')->assertNotFound();
+
+    Queue::assertPushed(SyncServiceLockfilesJob::class, 1);
 });

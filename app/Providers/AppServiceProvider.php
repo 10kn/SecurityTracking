@@ -7,6 +7,7 @@ use App\Services\Notices\ClaudeNoticeClassifier;
 use App\Services\Notices\NoticeClassifier;
 use App\Services\Packages\OsvVulnerabilityMatcher;
 use App\Services\Packages\PackagistVulnerabilityMatcher;
+use App\Services\Packages\RubySecVulnerabilityMatcher;
 use App\Services\Packages\VulnerabilityMatcher;
 use App\Services\Repositories\GitHubRepositoryReader;
 use App\Services\Repositories\RepositoryReader;
@@ -20,7 +21,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->tag([PackagistVulnerabilityMatcher::class, OsvVulnerabilityMatcher::class], VulnerabilityMatcher::class);
+        $this->app->tag([PackagistVulnerabilityMatcher::class, RubySecVulnerabilityMatcher::class, OsvVulnerabilityMatcher::class], VulnerabilityMatcher::class);
 
         $this->app->bind(NoticeClassifier::class, ClaudeNoticeClassifier::class);
         $this->app->bind(RepositoryReader::class, GitHubRepositoryReader::class);

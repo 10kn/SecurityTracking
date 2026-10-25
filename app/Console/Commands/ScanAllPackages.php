@@ -12,12 +12,12 @@ use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('psm:scan-packages')]
-#[Description('Match the packages of every current deployment against Packagist and OSV and alert the owning teams about new advisories')]
+#[Description('Match the packages of every current deployment against Packagist, RubySec and OSV and alert the owning teams about new advisories')]
 class ScanAllPackages extends Command
 {
     /**
-     * Handover 5.2: every 6 hours, so an advisory published in Packagist or OSV reaches the team within 6 hours. Lockfiles not read
-     * yet are read first. Deployments whose packages are all gone are scanned too, so their findings get resolved.
+     * Handover 5.2: every 6 hours, so an advisory published in Packagist, RubySec or OSV reaches the team within 6
+     * hours. Lockfiles not read yet are read first. Deployments whose packages are all gone are scanned too, so their findings get resolved.
      */
     public function handle(SyncComponents $syncComponents, ScanPackages $scanPackages, SendFindingAlerts $sendFindingAlerts): int
     {

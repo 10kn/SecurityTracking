@@ -1,7 +1,9 @@
-import type { InertiaFormProps } from '@inertiajs/react';
-import { FileIcon, PlusIcon, Trash2Icon, UploadIcon, XIcon } from 'lucide-react';
+import { type InertiaFormProps, router } from '@inertiajs/react';
+import { FileIcon, PlusIcon, RefreshCwIcon, Trash2Icon, UploadIcon, XIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 
+import { store as syncRepositories } from '@/actions/App/Http/Controllers/Admin/AccessibleRepositorySyncController';
+import { store as syncLockfiles } from '@/actions/App/Http/Controllers/Admin/ServiceLockfileSyncController';
 import { Combobox } from '@/components/admin/combobox';
 import { Field, FormFields, FormSection } from '@/components/admin/form-section';
 import { StatusDot } from '@/components/admin/status-dot';
@@ -13,7 +15,7 @@ import { useRuntimeEvaluation } from '@/hooks/use-runtime-evaluation';
 import { useSlugFromName } from '@/hooks/use-slug-from-name';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { Option } from '@/types';
+import type { Option, StatusDotData } from '@/types';
 
 /** Mirrors Runtime::RAW_VERSION_PATTERN and RAW_VERSION_MAX_LENGTH, e.g. "8.3.12", "v20.11.0", "8.3.12-1+deb.sury.org+1". */
 const RAW_VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+~_-]*$/;
@@ -41,15 +43,24 @@ export interface ServiceFormData {
     kind: string;
     exposure: string;
     repository_path: string;
+    /** E.g. "acme/shop"; null when lockfiles are uploaded by hand. */
+    repository: string | null;
+    repository_branch: string;
     runtimes: RuntimeRow[];
     lockfile_uploads: File[];
     removed_lockfiles: string[];
 }
 
+export interface RepositoryOption extends Option<string> {
+    default_branch: string | null;
+}
+
 export interface ServiceFormOptions {
     projects: Option<number>[];
-    /** Projects that read their lockfiles from GitHub: their services take no uploads. */
-    lockfileSyncProjectIds: number[];
+    /** The repositories the GitHub App may read, as last refreshed. */
+    repositories: RepositoryOption[];
+    repositoriesSyncedAt: string | null;
+    gitHubConfigured: boolean;
     kinds: Option<string>[];
     exposures: Option<string>[];
     technologies: TechnologyOption[];
@@ -60,6 +71,22 @@ export interface ExistingLockfile {
     source: 'upload' | 'github';
     commit: string | null;
     uploaded_at: string;
+}
+
+export interface LockfileSync {
+    status: StatusDotData;
+    synced_at: string | null;
+    commit: string | null;
+    commit_href: string | null;
+    error: string | null;
+}
+
+/** The service as saved, for the state of its last sync. */
+export interface SavedService {
+    id: number;
+    repository: string | null;
+    repository_branch: string | null;
+    lockfile_sync: LockfileSync | null;
 }
 
 export function newRuntimeRow(technology: string | null = null, rawVersion = ''): RuntimeRow {
@@ -76,16 +103,18 @@ export function ServiceFields({
     options,
     isCreating,
     existingLockfiles = [],
+    savedService,
 }: {
     form: InertiaFormProps<ServiceFormData>;
     options: ServiceFormOptions;
     isCreating: boolean;
     existingLockfiles?: ExistingLockfile[];
+    savedService?: SavedService;
 }) {
     const t = useTranslation();
     const slug = useSlugFromName(isCreating, (value) => form.setData('slug', value));
     const errors = form.errors as Record<string, string | undefined>;
-    const syncsLockfiles = form.data.project_id !== null && options.lockfileSyncProjectIds.includes(form.data.project_id);
+    const syncsLockfiles = form.data.repository !== null;
 
     return (
         <>
@@ -96,14 +125,7 @@ export function ServiceFields({
                             id="project_id"
                             value={form.data.project_id}
                             options={options.projects}
-                            onChange={(projectId) =>
-                                // A project that reads lockfiles from GitHub takes no uploads, so files picked before are dropped.
-                                form.setData(
-                                    projectId !== null && options.lockfileSyncProjectIds.includes(projectId)
-                                        ? { ...form.data, project_id: projectId, lockfile_uploads: [], removed_lockfiles: [] }
-                                        : { ...form.data, project_id: projectId },
-                                )
-                            }
+                            onChange={(projectId) => form.setData('project_id', projectId)}
                             placeholder={t('Chọn project')}
                             searchPlaceholder={t('Tìm project')}
                             invalid={form.errors.project_id !== undefined}
@@ -153,24 +175,9 @@ export function ServiceFields({
                             ))}
                         </NativeSelect>
                     </Field>
-                    <Field
-                        label={t('Thư mục trong repository')}
-                        htmlFor="repository_path"
-                        required
-                        error={form.errors.repository_path}
-                        help={t('Dùng cho monorepo. Để "/" nếu service nằm ở gốc repository.')}
-                        className="sm:col-span-2"
-                    >
-                        <Input
-                            id="repository_path"
-                            className="font-mono text-[calc(var(--fs-sm)-0.5px)]"
-                            value={form.data.repository_path}
-                            onChange={(event) => form.setData('repository_path', event.target.value)}
-                            aria-invalid={form.errors.repository_path !== undefined}
-                        />
-                    </Field>
                 </FormFields>
             </FormSection>
+            <RepositoryFields form={form} options={options} savedService={savedService} />
             <FormSection
                 title={t('Môi trường production')}
                 description={
@@ -187,10 +194,10 @@ export function ServiceFields({
                         <Field
                             label={t('Lockfile từ GitHub')}
                             error={errors.lockfile_uploads ?? errors.removed_lockfiles}
-                            help={t('Project này lấy lockfile từ GitHub, không tải lên hay xóa tay được.')}
+                            help={t('Service lấy lockfile từ GitHub thì không tải lên hay xóa tay được.')}
                         >
                             {existingLockfiles.length === 0 ? (
-                                <p className="text-muted-foreground">{isCreating ? t('Lấy ngay sau khi lưu.') : t('Chưa có lockfile nào trong thư mục của service.')}</p>
+                                <p className="text-muted-foreground">{savedService?.repository === form.data.repository ? t('Chưa có lockfile nào trong thư mục của service.') : t('Lấy ngay sau khi lưu.')}</p>
                             ) : (
                                 <ul className="grid gap-2">
                                     {existingLockfiles.map((lockfile) => (
@@ -233,6 +240,159 @@ export function ServiceFields({
                 </FormFields>
             </FormSection>
         </>
+    );
+}
+
+/**
+ * The repository to read lockfiles from, picked from the repositories the GitHub App may read. The list only changes
+ * when the refresh button asks GitHub again; the rest of the form keeps what was typed meanwhile.
+ */
+function RepositoryFields({ form, options, savedService }: { form: InertiaFormProps<ServiceFormData>; options: ServiceFormOptions; savedService?: SavedService }) {
+    const t = useTranslation();
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const repository = form.data.repository;
+    const selected = options.repositories.find((option) => option.value === repository);
+
+    const repositoryOptions = [
+        { value: '', label: t('Không dùng GitHub'), description: t('Tải lockfile tay') },
+        // A repository picked before stays selectable after the App lost access to it.
+        ...(repository !== null && selected === undefined ? [{ value: repository, label: repository, description: t('Không còn trong danh sách GitHub App được đọc') }] : []),
+        ...options.repositories,
+    ];
+
+    const refreshRepositories = () =>
+        router.post(
+            syncRepositories.url(),
+            {},
+            {
+                preserveState: true,
+                preserveScroll: true,
+                only: ['repositories', 'repositoriesSyncedAt'],
+                onStart: () => setIsRefreshing(true),
+                onFinish: () => setIsRefreshing(false),
+            },
+        );
+
+    const listHelp = !options.gitHubConfigured
+        ? t('Server chưa cấu hình GitHub App (PSM_GITHUB_* trong .env), chỉ tải lockfile tay được.')
+        : options.repositoriesSyncedAt === null
+          ? t('Chưa có danh sách. Bấm làm mới để lấy các repository GitHub App được đọc.')
+          : t('Danh sách lấy lúc :time. Thiếu repository thì cấp quyền cho GitHub App trên GitHub rồi bấm làm mới.', { time: options.repositoriesSyncedAt });
+
+    const isSaved = savedService !== undefined && savedService.repository === repository && (savedService.repository_branch ?? '') === form.data.repository_branch;
+
+    return (
+        <FormSection
+            title={t('Repository')}
+            description={t('Chọn repository GitHub để mỗi ngày hệ thống tự đọc composer.lock, Gemfile.lock và package-lock.json trong thư mục của service, tại commit mới nhất của branch. GitHub App chỉ có quyền đọc.')}
+        >
+            <FormFields columns={2}>
+                <Field label={t('Repository GitHub')} htmlFor="repository" error={form.errors.repository} help={listHelp} className="sm:col-span-2">
+                    <div className="flex gap-2">
+                        <Combobox
+                            id="repository"
+                            className="min-w-0 flex-1"
+                            value={repository ?? ''}
+                            options={repositoryOptions}
+                            onChange={(value) => {
+                                const picked = value === '' ? null : value;
+
+                                if (picked === repository) {
+                                    return;
+                                }
+
+                                // A service that reads lockfiles from GitHub takes no uploads, so files picked before are dropped.
+                                form.setData(
+                                    picked === null
+                                        ? { ...form.data, repository: null, repository_branch: '' }
+                                        : { ...form.data, repository: picked, repository_branch: '', lockfile_uploads: [], removed_lockfiles: [] },
+                                );
+                            }}
+                            placeholder={t('Chọn repository')}
+                            searchPlaceholder={t('Tìm repository')}
+                            invalid={form.errors.repository !== undefined}
+                        />
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="icon"
+                            aria-label={t('Làm mới danh sách repository')}
+                            title={t('Làm mới danh sách repository')}
+                            disabled={!options.gitHubConfigured || isRefreshing}
+                            onClick={refreshRepositories}
+                        >
+                            <RefreshCwIcon className={cn(isRefreshing && 'animate-spin')} />
+                        </Button>
+                    </div>
+                </Field>
+                <Field
+                    label={t('Branch')}
+                    htmlFor="repository_branch"
+                    error={form.errors.repository_branch}
+                    help={t('Để trống để dùng branch mặc định. Khi lưu, hệ thống kiểm tra branch có trên GitHub không.')}
+                >
+                    <Input
+                        id="repository_branch"
+                        className="font-mono text-[calc(var(--fs-sm)-0.5px)]"
+                        placeholder={selected?.default_branch ?? 'main'}
+                        value={form.data.repository_branch}
+                        disabled={repository === null}
+                        onChange={(event) => form.setData('repository_branch', event.target.value)}
+                        aria-invalid={form.errors.repository_branch !== undefined}
+                    />
+                </Field>
+                <Field
+                    label={t('Thư mục trong repository')}
+                    htmlFor="repository_path"
+                    required
+                    error={form.errors.repository_path}
+                    help={t('Dùng cho monorepo. Để "/" nếu service nằm ở gốc repository.')}
+                >
+                    <Input
+                        id="repository_path"
+                        className="font-mono text-[calc(var(--fs-sm)-0.5px)]"
+                        value={form.data.repository_path}
+                        onChange={(event) => form.setData('repository_path', event.target.value)}
+                        aria-invalid={form.errors.repository_path !== undefined}
+                    />
+                </Field>
+                {isSaved && savedService.lockfile_sync && (
+                    <Field label={t('Lần đồng bộ gần nhất')} className="sm:col-span-2">
+                        <LockfileSyncState serviceId={savedService.id} sync={savedService.lockfile_sync} />
+                    </Field>
+                )}
+            </FormFields>
+        </FormSection>
+    );
+}
+
+function LockfileSyncState({ serviceId, sync }: { serviceId: number; sync: LockfileSync }) {
+    const t = useTranslation();
+
+    return (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+            <div className="min-w-0">
+                <StatusDot status={sync.status} className="items-baseline whitespace-normal" />
+                {sync.commit && (
+                    <span className="mt-0.5 block text-sm text-muted-foreground">
+                        {t('Commit')}{' '}
+                        {sync.commit_href ? (
+                            <a href={sync.commit_href} target="_blank" rel="noreferrer noopener" className="font-mono text-link hover:underline hover:underline-offset-3">
+                                {sync.commit}
+                            </a>
+                        ) : (
+                            <span className="font-mono">{sync.commit}</span>
+                        )}
+                    </span>
+                )}
+                {sync.synced_at && <span className="mt-0.5 block text-sm text-muted-foreground">{t('Thành công gần nhất: :time', { time: sync.synced_at })}</span>}
+                {sync.error && <span className="mt-0.5 block text-sm whitespace-pre-line text-danger-text">{sync.error}</span>}
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={() => router.post(syncLockfiles.url(serviceId), {}, { preserveState: true, preserveScroll: true })}>
+                <RefreshCwIcon />
+                {t('Lấy lockfile ngay')}
+            </Button>
+        </div>
     );
 }
 

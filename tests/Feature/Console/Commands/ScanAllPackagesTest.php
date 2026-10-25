@@ -64,12 +64,14 @@ it('fails, keeping the findings open, when a source fails', function () {
 
 it('makes no request when there is nothing to scan', function () {
     fakePackagist();
+    fakeRubySec();
     fakeOsv();
 
     artisan('psm:scan-packages')->assertSuccessful();
 
     expect(osvRequests())->toHaveCount(0)
-        ->and(packagistRequests())->toHaveCount(0);
+        ->and(packagistRequests())->toHaveCount(0)
+        ->and(rubySecRequests())->toHaveCount(0);
 });
 
 it('is scheduled every 6 hours', function () {

@@ -31,4 +31,15 @@ class ServiceFactory extends Factory
             'repository_path' => '/',
         ];
     }
+
+    /**
+     * A service that reads its lockfiles from a GitHub repository every day.
+     */
+    public function syncingLockfiles(string $repository = 'acme/shop', ?string $branch = null): static
+    {
+        return $this->state([
+            'repository' => $repository,
+            'repository_branch' => $branch,
+        ]);
+    }
 }

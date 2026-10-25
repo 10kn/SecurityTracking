@@ -1,11 +1,12 @@
 <?php
 
+use App\Http\Controllers\Admin\AccessibleRepositorySyncController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
-use App\Http\Controllers\Admin\ProjectLockfileSyncController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
 use App\Http\Controllers\Admin\SearchController;
 use App\Http\Controllers\Admin\ServiceController;
+use App\Http\Controllers\Admin\ServiceLockfileSyncController;
 use App\Http\Controllers\Admin\SessionController;
 use App\Http\Controllers\Admin\TeamController;
 use App\Http\Controllers\Admin\TeamTestMessageController;
@@ -36,8 +37,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('search', SearchController::class)->name('search');
 
         Route::resource('projects', ProjectController::class);
-        Route::post('projects/{project}/lockfile-sync', [ProjectLockfileSyncController::class, 'store'])->name('projects.lockfile-sync.store');
         Route::resource('services', ServiceController::class)->except('show');
+        Route::post('services/{service}/lockfile-sync', [ServiceLockfileSyncController::class, 'store'])->name('services.lockfile-sync.store');
+        Route::post('repositories/sync', [AccessibleRepositorySyncController::class, 'store'])->name('repositories.sync.store');
         Route::get('runtime-evaluation', RuntimeEvaluationController::class)->name('runtime-evaluation');
 
         Route::resource('teams', TeamController::class)->except('show');

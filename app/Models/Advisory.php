@@ -7,6 +7,7 @@ use App\Enums\Ecosystem;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Services\Packages\PackagistVulnerabilityMatcher;
+use App\Services\Packages\RubySecVulnerabilityMatcher;
 use Database\Factories\AdvisoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -52,12 +53,12 @@ class Advisory extends Model
     }
 
     /**
-     * The id people know the advisory by, for titles and cards. Packagist's own PKSA id is only the stable key: its
-     * GitHub id, else its CVE, is shown instead.
+     * The id people know the advisory by, for titles and cards. The ids of Packagist (PKSA) and RubySec (the file name)
+     * are only stable keys: the GitHub id, else the CVE, is shown instead.
      */
     public function reference(): string
     {
-        if ($this->source !== PackagistVulnerabilityMatcher::SOURCE) {
+        if (! in_array($this->source, [PackagistVulnerabilityMatcher::SOURCE, RubySecVulnerabilityMatcher::SOURCE], true)) {
             return $this->external_id;
         }
 

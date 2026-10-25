@@ -10,7 +10,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
-const SHOP_REPOSITORY = 'https://github.com/acme/shop';
+const SHOP_REPOSITORY = 'acme/shop';
 
 beforeEach(function () {
     $this->travelTo('2026-10-24 06:30:00');
@@ -111,17 +111,51 @@ it('is not configured without the app id, installation id and private key', func
         ->and(fn () => $reader->latestCommitSha(SHOP_REPOSITORY, null))->toThrow(RuntimeException::class);
 });
 
-it('reads github repository urls', function (string $url, ?array $repository) {
-    $parsed = GitHubRepository::fromUrl($url);
+it('lists every repository the app was installed on, page by page', function () {
+    $page = fn (int $from, int $count): array => array_map(fn (int $number): array => [
+        'full_name' => "acme/repo-{$number}",
+        'default_branch' => 'main',
+        'private' => $number % 2 === 0,
+    ], range($from, $from + $count - 1));
+    Http::fake([
+        'https://api.github.com/installation/repositories?per_page=100&page=1' => Http::response(['total_count' => 101, 'repositories' => $page(1, 100)]),
+        'https://api.github.com/installation/repositories?per_page=100&page=2' => Http::response(['total_count' => 101, 'repositories' => [['full_name' => 'acme/shop', 'default_branch' => 'develop', 'private' => true]]]),
+    ]);
+    fakeGitHub();
+
+    $repositories = app(GitHubRepositoryReader::class)->repositories();
+
+    expect($repositories)->toHaveCount(101)
+        ->and($repositories[0])->toBe(['full_name' => 'acme/repo-1', 'default_branch' => 'main', 'is_private' => false])
+        ->and($repositories[100])->toBe(['full_name' => 'acme/shop', 'default_branch' => 'develop', 'is_private' => true])
+        ->and(gitHubRequests('installation/repositories'))->toHaveCount(2);
+});
+
+it('checks whether a branch exists', function () {
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/branches/release%2F2026-10' => Http::response(['name' => 'release/2026-10']),
+        'https://api.github.com/repos/acme/shop/branches/*' => Http::response(['message' => 'Branch not found'], 404),
+    ]);
+    fakeGitHub();
+    $reader = app(GitHubRepositoryReader::class);
+
+    expect($reader->branchExists(SHOP_REPOSITORY, 'release/2026-10'))->toBeTrue()
+        ->and($reader->branchExists(SHOP_REPOSITORY, 'gone'))->toBeFalse();
+});
+
+it('links to a commit on github', function () {
+    expect(app(GitHubRepositoryReader::class)->commitUrl(SHOP_REPOSITORY, GITHUB_COMMIT))->toBe('https://github.com/acme/shop/commit/'.GITHUB_COMMIT)
+        ->and(app(GitHubRepositoryReader::class)->commitUrl('not a repository', GITHUB_COMMIT))->toBeNull();
+});
+
+it('reads repository full names', function (string $fullName, ?array $repository) {
+    $parsed = GitHubRepository::fromFullName($fullName);
 
     expect($parsed === null ? null : [$parsed->owner, $parsed->name])->toBe($repository);
 })->with([
-    'https' => ['https://github.com/acme/shop', ['acme', 'shop']],
-    'https with .git' => ['https://github.com/acme/shop.git', ['acme', 'shop']],
-    'trailing slash' => ['https://github.com/acme/shop-api/', ['acme', 'shop-api']],
-    'ssh' => ['git@github.com:acme/shop.git', ['acme', 'shop']],
-    'dots in the name' => ['https://github.com/acme/shop.web', ['acme', 'shop.web']],
-    'another host' => ['https://git.example.com/acme/shop', null],
-    'inside the repository' => ['https://github.com/acme/shop/tree/main', null],
-    'parent directory' => ['https://github.com/acme/..', null],
+    'owner and name' => ['acme/shop', ['acme', 'shop']],
+    'dots in the name' => ['acme/shop.web', ['acme', 'shop.web']],
+    'url' => ['https://github.com/acme/shop', null],
+    'nested path' => ['acme/shop/tree', null],
+    'parent directory' => ['acme/..', null],
 ]);
