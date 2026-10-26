@@ -101,6 +101,24 @@ class Incident extends Model
     }
 
     /**
+     * The branches of the runtimes the vendor confirmed as affected (see scopeFor()): the runtime's branch, or its
+     * version when the branch is not known.
+     *
+     * @param  Collection<int, Runtime>  $runtimes
+     * @return list<string>
+     */
+    public function confirmedBranches(Collection $runtimes): array
+    {
+        return $runtimes
+            ->filter(fn (Runtime $runtime): bool => $this->scopeFor($runtime) === IncidentScope::Confirmed)
+            ->map(fn (Runtime $runtime): string => (string) ($runtime->branch ?? $runtime->version ?? $runtime->raw_version))
+            ->unique()
+            ->sort(SORT_NATURAL)
+            ->values()
+            ->all();
+    }
+
+    /**
      * Derives the title, severity, dates and branches from the pre-notices that were not dismissed: the title of the
      * first one, the highest known severity, the release time of the latest one that gives one. `changed_at` moves only
      * when what the incident asks of the teams changes, its severity or branches, so news that only adds to it, a merge
@@ -150,13 +168,18 @@ class Incident extends Model
     /**
      * The branches the vendor has a fix for: a pre-notice of the incident that was not dismissed names the version in
      * an "Update to …" sentence (see NoticeEntry::patchVersions()), and the catalog lists that version as a security
-     * release of the branch. The highest such version of each branch, with the pre-notice that named it.
+     * release of the branch. The highest such version of each branch, with the pre-notice that named it. Given the
+     * incident's pre-notices, it reads them instead of loading them again.
      *
+     * @param  Collection<int, Advisory>|null  $notices
      * @return array<string, array{version: string, notice: Advisory}>
      */
-    public function confirmedPatches(): array
+    public function confirmedPatches(?Collection $notices = null): array
     {
-        $notices = $this->notices()->where('is_dismissed', false)->whereNotNull('patch_versions')->orderBy('id')->get();
+        $notices = ($notices ?? $this->notices()->get())
+            ->filter(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->patch_versions !== null)
+            ->sortBy('id')
+            ->values();
         $stated = $notices->flatMap(fn (Advisory $notice): array => $notice->patch_versions ?? [])->unique()->values();
 
         if ($stated->isEmpty()) {

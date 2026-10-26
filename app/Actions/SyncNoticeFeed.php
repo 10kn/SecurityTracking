@@ -7,6 +7,8 @@ use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Models\Advisory;
+use App\Models\Incident;
+use App\Models\IncidentTeamNotice;
 use App\Models\SourceHeartbeat;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeClassifier;
@@ -141,16 +143,18 @@ class SyncNoticeFeed
 
     /**
      * Entries are classified once, and again when the vendor edits them, along with the recent incidents of the
-     * technology the entry may be about. Entries older than `psm.notices.relevant_days` are not: they no longer alert
-     * anything. A classifier error is reported and the entry is tried again on the next
+     * technology the entry may be about. Entries older than `psm.notices.relevant_days` are not, unless they belong to
+     * an incident a team was sent a card about, when they are new, edited or were never classified (e.g. the
+     * classifier was down until they aged out): a newly confirmed branch or exploitation still reaches that team (see
+     * SendPreNoticeAlerts). A classifier error is reported and the entry is tried again on the next
      * poll; `classification_failed_at` keeps when the errors started, for psm:check-sources. A dismissal was made on
      * the earlier text, so it no longer holds for the new one.
      */
     private function classification(Technology $technology, NoticeEntry $entry, Advisory $advisory): ?NoticeClassification
     {
         if (! $this->classifier->isEnabled()
-            || ! $this->isFresh($entry)
-            || $advisory->content_hash === $this->contentHash($entry)) {
+            || $advisory->content_hash === $this->contentHash($entry)
+            || (! $this->isFresh($entry) && ! $this->isOfToldIncident($advisory))) {
             return null;
         }
 
@@ -228,6 +232,7 @@ class SyncNoticeFeed
             'links' => $entry->links,
             'patch_versions' => $entry->patchVersions() ?: null,
             'published_at' => $entry->publishedAt,
+            ...$this->exploitation($entry, $advisory, $classification),
         ]);
 
         $isOngoingCritical = $severity === Severity::Critical && $this->isFresh($entry);
@@ -248,7 +253,41 @@ class SyncNoticeFeed
     }
 
     /**
-     * Published within `psm.notices.relevant_days`: older news no longer alerts anything.
+     * Whether the entry says its vulnerability is exploited: its own words (see NoticeEntry::exploitationEvidence()),
+     * or the classifier with a sentence it quoted from the entry, checked against the entry with the same filter. A
+     * classifier that says no, or fails, never outweighs the words. Without a new classification, the sentence the
+     * classifier quoted before still counts while the entry still says it.
+     *
+     * @return array{is_exploited: bool, exploited_basis: array{method: string, excerpt: string, content_hash: string}|null}
+     */
+    private function exploitation(NoticeEntry $entry, Advisory $advisory, ?NoticeClassification $classification): array
+    {
+        $keyword = $entry->exploitationEvidence();
+        $quoted = $classification === null
+            ? (($advisory->exploited_basis['method'] ?? null) === 'classifier' ? $advisory->exploited_basis['excerpt'] : null)
+            : ($classification->activelyExploited === true ? $classification->exploitedEvidence : null);
+
+        $basis = match (true) {
+            $keyword !== null => ['method' => 'keyword', 'excerpt' => $keyword],
+            $quoted !== null && $entry->confirmsExploitation($quoted) => ['method' => 'classifier', 'excerpt' => $quoted],
+            default => null,
+        };
+
+        return ['is_exploited' => $basis !== null, 'exploited_basis' => $basis === null ? null : [...$basis, 'content_hash' => $this->contentHash($entry)]];
+    }
+
+    /**
+     * A pre-notice of a current incident some team was sent a card about.
+     */
+    private function isOfToldIncident(Advisory $advisory): bool
+    {
+        return $advisory->incident_id !== null
+            && Incident::current()->whereKey($advisory->incident_id)->exists()
+            && IncidentTeamNotice::wasSentToAnyTeam(Advisory::where('incident_id', $advisory->incident_id)->pluck('id')->all());
+    }
+
+    /**
+     * Published within `psm.notices.relevant_days`: older news no longer alerts anything new.
      */
     private function isFresh(NoticeEntry $entry): bool
     {

@@ -53,15 +53,20 @@ class CheckSourceHeartbeats extends Command
     /**
      * Messages still waiting after `psm.alerts.stuck_after_minutes` mean the queue worker is down, so this alert does
      * not use the queue. It is sent once per stuck message that is the oldest one waiting, and tried again on every
-     * check until it is delivered, even once the queue works again. These alerts are not queued, so they never count
-     * as stuck themselves.
+     * check until it is delivered, even once the queue works again, also after it ran out of tries. These alerts are
+     * not queued, so they never count as stuck themselves.
      */
     private function checkStuckMessages(SendAdminAlert $sendAdminAlert): void
     {
         ChatNotification::whereLike('dedupe_key', 'admin:queue-stuck:%')
             ->whereNull('sent_at')
-            ->whereNull('failed_at')
-            ->each(fn (ChatNotification $notification) => Bus::dispatchNow(new SendChatNotification($notification)));
+            ->each(function (ChatNotification $notification): void {
+                if ($notification->failed_at !== null) {
+                    $notification->update(['failed_at' => null, 'attempts' => 0]);
+                }
+
+                Bus::dispatchNow(new SendChatNotification($notification));
+            });
 
         $stuck = ChatNotification::whereNull('sent_at')
             ->whereNull('failed_at')

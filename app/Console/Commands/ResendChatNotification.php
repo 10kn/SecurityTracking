@@ -16,7 +16,9 @@ class ResendChatNotification extends Command
     /**
      * A message that failed for good is never retried on its own, so it is not sent twice by mistake. A message that
      * was delivered is not sent again. Only one run takes a failed message back, and it is marked failed again when it
-     * cannot be queued.
+     * cannot be queued. A message of an incident thread chooses again whether it replies in the thread or opens it,
+     * as the thread may have been opened, or its opener failed, meanwhile; it keeps its request id, so Google Chat
+     * does not post it twice if the failed attempt did get through.
      */
     public function handle(): int
     {
@@ -26,7 +28,7 @@ class ResendChatNotification extends Command
         $isTaken = $failedAt !== null && ChatNotification::whereKey($notification->id)
             ->where('failed_at', $failedAt)
             ->whereNull('sent_at')
-            ->update(['failed_at' => null, 'attempts' => 0]) === 1;
+            ->update(['failed_at' => null, 'attempts' => 0, 'sent_as' => null]) === 1;
 
         if (! $isTaken) {
             $this->components->error(__('Không có tin gửi lỗi với id này.'));

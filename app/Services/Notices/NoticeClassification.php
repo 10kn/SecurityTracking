@@ -16,6 +16,9 @@ final readonly class NoticeClassification
      * @param  list<string>  $unaffectedBranches  Release branches the entry explicitly says are not affected.
      * @param  ?int  $relatedIncidentId  The incident, among those offered, the classifier thinks the entry is about.
      *                                   Only a suggestion for an admin.
+     * @param  ?bool  $activelyExploited  Whether the entry says the vulnerability is exploited; null when it does not say.
+     * @param  ?string  $exploitedEvidence  The sentence of the entry that says so, quoted. It only counts when it is in the
+     *                                      entry (see NoticeEntry::confirmsExploitation()).
      */
     public function __construct(
         public bool $isSecurityNews,
@@ -25,5 +28,7 @@ final readonly class NoticeClassification
         public ?string $summary = null,
         public array $unaffectedBranches = [],
         public ?int $relatedIncidentId = null,
+        public ?bool $activelyExploited = null,
+        public ?string $exploitedEvidence = null,
     ) {}
 }

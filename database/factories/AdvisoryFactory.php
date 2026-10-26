@@ -50,4 +50,15 @@ class AdvisoryFactory extends Factory
             'technology' => $technology,
         ]);
     }
+
+    /**
+     * A pre-notice whose text says its vulnerability is exploited.
+     */
+    public function exploited(string $excerpt = 'The vulnerability is being actively exploited in the wild.'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_exploited' => true,
+            'exploited_basis' => ['method' => 'keyword', 'excerpt' => $excerpt, 'content_hash' => hash('sha256', $excerpt)],
+        ]);
+    }
 }

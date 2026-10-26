@@ -38,6 +38,13 @@ return [
     | `stuck_after_minutes` (the queue worker is down). It pings `scheduler_heartbeat_url` after each successful run:
     | point it at an external dead man's switch (e.g. Healthchecks.io) so a stopped scheduler is noticed too.
     |
+    | Messages to one space are sent one at a time, at least `space_interval_seconds` apart (Google Chat accepts
+    | about one per second per space); a message that has to wait goes back to the queue. A message is tried up to
+    | `tries` times over `retry_hours`, with `backoff_seconds` between tries; waiting for its turn is not a try.
+    | Each incident has one thread per team: a reply waits up to `opener_wait_minutes` for the card that opens its
+    | thread, then opens the thread itself with a full card. Sending a thread message waits at most
+    | `incident_lock_wait_ms` for an alert run of the incident's technology, then goes back to the queue.
+    |
     */
 
     'alerts' => [
@@ -50,7 +57,11 @@ return [
         ],
         'immediate_dev_dependencies' => (bool) env('PSM_IMMEDIATE_DEV_DEPENDENCIES', false),
         'tries' => (int) env('PSM_ALERT_TRIES', 5),
+        'retry_hours' => (int) env('PSM_ALERT_RETRY_HOURS', 24),
         'backoff_seconds' => [60, 300, 900, 3600],
+        'space_interval_seconds' => 1,
+        'opener_wait_minutes' => 10,
+        'incident_lock_wait_ms' => (int) env('PSM_ALERT_INCIDENT_LOCK_WAIT_MS', 5000),
         'max_listed_items' => 20,
         'deadline_days' => [
             'critical' => (int) env('PSM_DEADLINE_CRITICAL_DAYS', 3),

@@ -2,11 +2,15 @@
 
 use App\Actions\SyncNoticeFeed;
 use App\Enums\AdvisoryKind;
+use App\Enums\ChatNotificationKind;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Models\Advisory;
+use App\Models\ChatNotification;
+use App\Models\IncidentTeamNotice;
 use App\Models\SourceHeartbeat;
+use App\Models\Team;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
@@ -330,3 +334,31 @@ it('does not call the classifier when no API key is configured', function () {
     expect(Advisory::whereNotNull('classified_by')->count())->toBe(0)
         ->and(Advisory::count())->toBe(3);
 });
+
+it('classifies an edited or never classified old pre-notice when a team was sent a card about its incident', function (bool $wasSent, ?string $contentHash, array $classified, ?array $branches) {
+    $this->travelTo('2026-11-30 10:00:00');
+    $feed = noticeFixture('php-feed.atom');
+    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+        return Http::response($feed);
+    }]);
+    $titles = classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical, affectedBranches: ['8.3']));
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+    $notice = Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole();
+    $notice->update(['content_hash' => $contentHash]);
+
+    if ($wasSent) {
+        $team = Team::factory()->create();
+        $card = ChatNotification::factory()->for($team)->sent()->create(['kind' => ChatNotificationKind::PreNotice]);
+        IncidentTeamNotice::create(['team_id' => $team->id, 'advisory_id' => $notice->id, 'severity' => Severity::Critical, 'reason' => 'new', 'chat_notification_id' => $card->id]);
+    }
+
+    $feed = str_replace('It addresses two critical vulnerabilities', 'It addresses two critical vulnerabilities of PHP 8.3', $feed);
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect($titles->getArrayCopy())->toBe($classified)
+        ->and($notice->refresh()->affected_branches)->toBe($branches);
+})->with([
+    'told, edited' => [true, 'classified when it was fresh', ['Upcoming Critical PHP Security Release'], ['8.3']],
+    'told, never classified' => [true, null, ['Upcoming Critical PHP Security Release'], ['8.3']],
+    'never told' => [false, 'classified when it was fresh', [], null],
+]);

@@ -94,6 +94,28 @@ class Team extends Model
     }
 
     /**
+     * The Google Chat space the team's webhook posts to, e.g. "AAAA1234". Null without a Google Chat webhook.
+     */
+    public function googleChatSpace(): ?string
+    {
+        return self::googleChatSpaceOf($this->google_chat_webhook_url);
+    }
+
+    /**
+     * The space of a Google Chat webhook URL, e.g. "AAAA1234" for "https://chat.googleapis.com/v1/spaces/AAAA1234/messages?…".
+     */
+    public static function googleChatSpaceOf(?string $webhookUrl): ?string
+    {
+        if (! is_string($webhookUrl) || ! str_starts_with($webhookUrl, self::GOOGLE_CHAT_WEBHOOK_PREFIX)) {
+            return null;
+        }
+
+        $space = Str::of($webhookUrl)->after(self::GOOGLE_CHAT_WEBHOOK_PREFIX)->before('/')->before('?')->toString();
+
+        return $space === '' ? null : $space;
+    }
+
+    /**
      * The webhook URL with the space id shortened and the key and token hidden, e.g. ".../spaces/AAAA…/messages?key=••••".
      */
     public function maskedGoogleChatWebhookUrl(): ?string

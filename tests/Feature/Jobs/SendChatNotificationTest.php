@@ -46,11 +46,12 @@ it('never sends a message twice', function () {
     expect(chatMessagesTo('COMMERCE'))->toHaveCount(1);
 });
 
-it('retries a transient error with backoff', function (int $attempt, int $delay) {
+it('retries a transient error with backoff, counting only the HTTP attempts', function (int $attempt, int $delay) {
     Http::fake([Team::GOOGLE_CHAT_WEBHOOK_PREFIX.'*' => Http::response('Unavailable', 503)]);
     $notification = teamNotification();
+    $notification->update(['attempts' => $attempt - 1]);
 
-    runJob($notification, $attempt)->assertReleased(delay: $delay);
+    runJob($notification, $attempt + 10)->assertReleased(delay: $delay);
 
     expect($notification->refresh())
         ->failed_at->toBeNull()
@@ -70,18 +71,19 @@ it('retries when google chat cannot be reached', function () {
 });
 
 it('gives up after the last attempt and tells the admin space', function () {
-    Http::fake([chatWebhook('COMMERCE') => Http::response('Unavailable', 503)]);
+    Http::fake([chatWebhook('COMMERCE').'*' => Http::response('Unavailable', 503)]);
     fakeGoogleChat();
     $notification = teamNotification();
+    $notification->update(['attempts' => config('psm.alerts.tries') - 1]);
 
-    runJob($notification, config('psm.alerts.tries'))->assertNotReleased();
+    runJob($notification)->assertNotReleased();
 
     expect($notification->refresh()->failed_at)->not->toBeNull()
         ->and(chatJson(chatMessagesTo('ADMIN')->sole()))->toContain('Commerce', 'HTTP 503', 'PHP 8.1 hết hỗ trợ')->not->toContain('demo-token');
 });
 
 it('does not retry when google chat rejects the webhook', function () {
-    Http::fake([chatWebhook('COMMERCE') => Http::response('Not found', 404)]);
+    Http::fake([chatWebhook('COMMERCE').'*' => Http::response('Not found', 404)]);
     fakeGoogleChat();
     $notification = teamNotification();
 

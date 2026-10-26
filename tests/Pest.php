@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 use function Pest\Laravel\actingAs;
@@ -116,14 +117,46 @@ function chatWebhook(string $space): string
 }
 
 /**
- * Fakes Google Chat: every space accepts messages, and the admin space is configured as "ADMIN".
+ * Fakes Google Chat: every space accepts messages and answers as Google does, with the message's name and its
+ * thread's, one thread per thread key (a message without one opens its own thread). The admin space is configured as
+ * "ADMIN".
  */
 function fakeGoogleChat(): void
 {
     config(['psm.alerts.admin_webhook' => chatWebhook('ADMIN')]);
 
     Http::preventStrayRequests();
-    Http::fake([Team::GOOGLE_CHAT_WEBHOOK_PREFIX.'*' => Http::response(['name' => 'spaces/DEMO/messages/1'])]);
+    Http::fake([Team::GOOGLE_CHAT_WEBHOOK_PREFIX.'*' => function (Request $request) {
+        static $sequence = 0;
+        $sequence++;
+        $space = Str::between($request->url(), Team::GOOGLE_CHAT_WEBHOOK_PREFIX, '/messages');
+        $threadKey = $request->data()['thread']['threadKey'] ?? null;
+
+        return Http::response([
+            'name' => "spaces/{$space}/messages/m{$sequence}",
+            'thread' => ['name' => "spaces/{$space}/threads/".($threadKey === null ? "t{$sequence}" : substr(md5($threadKey), 0, 12))],
+        ]);
+    }]);
+}
+
+/**
+ * A Google Chat webhook URL without the query parameters a message adds to it (`messageReplyOption`, `requestId`).
+ */
+function chatWebhookOf(Request $request): string
+{
+    return (string) preg_replace('/&(?:messageReplyOption|requestId)=[^&]*/', '', $request->url());
+}
+
+/**
+ * Requests posted to a Google Chat space, oldest first.
+ *
+ * @return Collection<int, Request>
+ */
+function chatRequestsTo(string $space): Collection
+{
+    return Http::recorded(fn (Request $request): bool => chatWebhookOf($request) === chatWebhook($space))
+        ->map(fn (array $pair): Request => $pair[0])
+        ->values();
 }
 
 /**
@@ -133,9 +166,7 @@ function fakeGoogleChat(): void
  */
 function chatMessagesTo(string $space): Collection
 {
-    return Http::recorded(fn (Request $request): bool => $request->url() === chatWebhook($space))
-        ->map(fn (array $pair): array => $pair[0]->data())
-        ->values();
+    return chatRequestsTo($space)->map(fn (Request $request): array => $request->data())->values();
 }
 
 /**

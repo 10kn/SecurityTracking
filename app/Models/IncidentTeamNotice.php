@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -53,6 +54,51 @@ class IncidentTeamNotice extends Model
             : self::severityOfTitle((string) ($notification->payload['text'] ?? '')));
 
         return $told->merge($legacy)->sortByDesc(fn (Severity $severity): int => $severity->rank())->first();
+    }
+
+    /**
+     * Whether the team was sent any of the pre-notices in a card, including a card from before incidents.
+     *
+     * @param  list<int>  $advisoryIds
+     */
+    public static function wasSentTo(int $teamId, array $advisoryIds): bool
+    {
+        return $advisoryIds !== [] && (
+            self::where('team_id', $teamId)->whereIn('advisory_id', $advisoryIds)->whereNotNull('chat_notification_id')->exists()
+            || self::legacyCards($teamId, $advisoryIds)->exists()
+        );
+    }
+
+    /**
+     * Whether any team was sent any of the pre-notices in a card, including a card from before incidents.
+     *
+     * @param  list<int>  $advisoryIds
+     */
+    public static function wasSentToAnyTeam(array $advisoryIds): bool
+    {
+        return $advisoryIds !== [] && (
+            self::whereIn('advisory_id', $advisoryIds)->whereNotNull('chat_notification_id')->exists()
+            || ChatNotification::where(function ($query) use ($advisoryIds): void {
+                foreach ($advisoryIds as $advisoryId) {
+                    $query->orWhere('dedupe_key', 'like', "pre_notice:{$advisoryId}:%");
+                }
+            })->whereNotLike('dedupe_key', 'pre_notice:incident:%')->exists()
+        );
+    }
+
+    /**
+     * The pre-notices any team was sent in a card, including cards from before incidents.
+     *
+     * @return Collection<int, int>
+     */
+    public static function toldNoticeIds(): Collection
+    {
+        $legacy = ChatNotification::whereLike('dedupe_key', 'pre_notice:%')
+            ->whereNotLike('dedupe_key', 'pre_notice:incident:%')
+            ->pluck('dedupe_key')
+            ->map(fn (string $key): int => (int) Str::betweenFirst($key, 'pre_notice:', ':'));
+
+        return self::whereNotNull('chat_notification_id')->distinct()->pluck('advisory_id')->merge($legacy)->unique()->values();
     }
 
     /**

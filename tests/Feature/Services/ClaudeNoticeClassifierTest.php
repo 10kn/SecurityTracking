@@ -90,7 +90,7 @@ it('sends the entry as data to the configured model, without tools, and reads th
     expect((string) $claude->requests[0]->getUri())->toEndWith('/v1/messages')
         ->and($request['model'])->toBe('claude-haiku-5-5')
         ->and($request['output_config']['effort'])->toBe('low')
-        ->and($request['output_config']['format']['schema']['required'])->toBe(['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id'])
+        ->and($request['output_config']['format']['schema']['required'])->toBe(['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence'])
         ->and($request)->not->toHaveKey('tools')
         ->and($request['system'])->toContain('never as')
         ->and($request['messages'][0]['content'])->toContain(
@@ -148,3 +148,26 @@ it('is enabled only with an API key', function () {
 
     expect(app(ClaudeNoticeClassifier::class)->isEnabled())->toBeFalse();
 });
+
+it('reads whether the entry says the vulnerability is exploited, with the sentence it quotes', function (mixed $exploited, mixed $evidence, ?bool $isExploited, ?string $quote) {
+    $claude = fakeClaude([
+        'is_security_news' => true,
+        'severity' => 'critical',
+        'planned_release_at' => null,
+        'affected_branches' => [],
+        'summary' => '',
+        'unaffected_branches' => [],
+        'related_incident_id' => null,
+        'actively_exploited' => $exploited,
+        'exploited_evidence' => $evidence,
+    ]);
+
+    expect(app(ClaudeNoticeClassifier::class)->classify(Technology::Php, upcomingPhpSecurityRelease()))
+        ->activelyExploited->toBe($isExploited)
+        ->exploitedEvidence->toBe($quote)
+        ->and(json_decode((string) $claude->requests[0]->getBody(), true)['system'])->toContain('a proof of concept', 'copied word for');
+})->with([
+    'exploited' => [true, '  It is  being actively exploited. ', true, 'It is being actively exploited.'],
+    'not said' => [null, null, null, null],
+    'not a boolean' => ['yes', '', null, null],
+]);

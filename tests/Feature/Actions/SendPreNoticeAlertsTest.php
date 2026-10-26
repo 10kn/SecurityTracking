@@ -230,9 +230,10 @@ it('sends no other card for news that only adds to an incident, and one when the
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1);
 
-    $card = chatMessagesTo('COMMERCE')->last();
-    expect($card['text'])->toBe('[Critical] PHP security advisory, now critical')
-        ->and(chatJson($card))->toContain('Mức độ tăng từ High lên Critical.', 'Tin khác của cùng sự kiện', '[High] Upcoming Critical PHP Security Release', '[High] PHP security advisory');
+    $reply = chatMessagesTo('COMMERCE')->last();
+    expect($reply['text'])->toBe('[Critical] PHP security advisory, now critical')
+        ->and($reply['thread']['threadKey'])->toBe(chatMessagesTo('COMMERCE')->first()['thread']['threadKey'])
+        ->and(chatJson($reply))->toContain('Cập nhật · Commerce', 'Mức độ tăng từ High lên Critical.', 'shop-api')->not->toContain('Tin khác của cùng sự kiện');
 });
 
 it('says for each service whether the vendor named its branch as affected', function () {
@@ -426,7 +427,7 @@ it('sends another card when the vendor revises the fixed version up in the same 
         ->and(IncidentTeamPatch::count())->toBe(2);
 });
 
-it('still sends the fix to a team told about the incident once its pre-notices are older than the configured days', function (bool $isLegacyCard) {
+it('still sends the fix to a team told about the incident once its pre-notices are older than the configured days, however long ago it began', function (bool $isLegacyCard) {
     runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
 
     if ($isLegacyCard) {
@@ -457,7 +458,9 @@ it('still sends the fix to a team told about the incident once its pre-notices a
     $this->preNotice->update(['patch_versions' => ['8.3.37']]);
     RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.37']);
 
-    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.37')
+        ->and(chatMessagesTo('BOOKING'))->toHaveCount(0);
 })->with([
     'told by an incident card' => false,
     'told by a card from before incidents' => true,

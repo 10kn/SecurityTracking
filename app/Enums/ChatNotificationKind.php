@@ -7,6 +7,7 @@ enum ChatNotificationKind: string
     case Test = 'test';
     case Immediate = 'immediate';
     case PreNotice = 'pre_notice';
+    case IncidentUpdate = 'incident_update';
     case Digest = 'digest';
     case AdminAlert = 'admin_alert';
 
@@ -16,6 +17,7 @@ enum ChatNotificationKind: string
             self::Test => __('Gửi thử'),
             self::Immediate => __('Gửi ngay'),
             self::PreNotice => __('Cảnh báo chuẩn bị'),
+            self::IncidentUpdate => __('Cập nhật sự kiện'),
             self::Digest => __('Bản tổng hợp'),
             self::AdminAlert => __('Cảnh báo admin'),
         };

@@ -7,6 +7,7 @@ use App\Enums\IncidentSuggestionStatus;
 use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\IncidentSuggestion;
+use App\Models\IncidentTeam;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -18,6 +19,9 @@ use InvalidArgumentException;
  *
  * Pending suggestions between the two are accepted; the others pointing at the merged incident now point at the one
  * it was merged into.
+ *
+ * Each team's Google Chat thread of the merged incident stays on its IncidentTeam row, which points at the row of the
+ * incident it went into (see mergeThreads()).
  */
 class MergeIncidents
 {
@@ -51,9 +55,42 @@ class MergeIncidents
             Incident::where('merged_into_id', $from->id)->update(['merged_into_id' => $into->id]);
 
             $this->moveSuggestions($from, $into, $user);
+            $this->mergeThreads($from, $into);
             $from->refreshFromNotices();
 
             return $into->refresh();
+        });
+    }
+
+    /**
+     * A team with a thread only on the merged incident keeps it: the row of the incident it went into takes it over,
+     * so updates go on in the thread the team knows. A team with a thread on both keeps the one of the incident it
+     * went into. What the team was told about either incident (confirmed branches, exploitation) counts for both.
+     * The rows are locked after the incidents, as SendPreNoticeAlerts locks them.
+     */
+    private function mergeThreads(Incident $from, Incident $into): void
+    {
+        $targets = IncidentTeam::where('incident_id', $into->id)->orderBy('id')->lockForUpdate()->get()->keyBy('team_id');
+
+        IncidentTeam::where('incident_id', $from->id)->orderBy('id')->lockForUpdate()->get()->each(function (IncidentTeam $row) use ($into, $targets): void {
+            $target = $targets->get($row->team_id) ?? new IncidentTeam([
+                'incident_id' => $into->id,
+                'team_id' => $row->team_id,
+                'generation' => 1,
+                'thread_key' => IncidentTeam::threadKeyFor($into->id, $row->team_id, 1),
+            ]);
+
+            if (! $target->hasThread() && $row->hasThread()) {
+                $target->takeOverThreadOf($row);
+            }
+
+            $target->told_confirmed_branches = collect([...($target->told_confirmed_branches ?? []), ...($row->told_confirmed_branches ?? [])])->unique()->sort(SORT_NATURAL)->values()->all();
+            $target->exploited_told_at = collect([$target->exploited_told_at, $row->exploited_told_at])->filter()->min();
+            $target->last_notification_id ??= $row->last_notification_id;
+            $target->save();
+
+            IncidentTeam::where('merged_into_id', $row->id)->update(['merged_into_id' => $target->id]);
+            $row->update(['merged_into_id' => $target->id]);
         });
     }
 

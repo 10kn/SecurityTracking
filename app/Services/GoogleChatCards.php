@@ -75,13 +75,14 @@ class GoogleChatCards
      * @param  Collection<int, Advisory>  $others  The incident's other pre-notices that count now.
      * @param  Collection<int, Runtime>  $runtimes  The team's runtimes of the technology, with `deployment.service.project`.
      * @param  Severity|null  $previousSeverity  The severity of the card the team got before, when it rose since.
+     * @param  list<string>  $changes  What changed since the team was told, when this card opens a thread for an update.
      * @return array<string, mixed>
      */
-    public function preNotice(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, ?Severity $previousSeverity = null): array
+    public function preNotice(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, ?Severity $previousSeverity = null, array $changes = []): array
     {
         $technology = $advisory->technology;
 
-        $widgets = $this->incidentWidgets($incident, $advisory, $previousSeverity, __('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->getLabel()]));
+        $widgets = $this->incidentWidgets($incident, $advisory, $previousSeverity, __('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->getLabel()]), $changes);
 
         $services = $runtimes
             ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
@@ -114,9 +115,10 @@ class GoogleChatCards
      * @param  array<string, string>  $patches  Branch => fixed version, for the branches the card is about.
      * @param  array<string, string>  $knownPatches  Branch => fixed version, for every branch the incident has a fix for,
      *                                               including those of earlier cards: their services are not waiting.
+     * @param  list<string>  $changes  What else changed since the team was told, when this card opens a thread for an update.
      * @return array<string, mixed>
      */
-    public function patchAvailable(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, array $patches, array $knownPatches, ?Severity $previousSeverity, ?CarbonInterface $deadline): array
+    public function patchAvailable(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, array $patches, array $knownPatches, ?Severity $previousSeverity, ?CarbonInterface $deadline, array $changes = []): array
     {
         $technology = $advisory->technology;
         $severity = $advisory->severity;
@@ -124,30 +126,18 @@ class GoogleChatCards
 
         $widgets = [
             ['textParagraph' => ['text' => '<b>'.e($advisory->title).'</b>']],
-            ...$this->incidentWidgets($incident, $advisory, $previousSeverity, __('Hãng đã xác nhận bản vá :versions. Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.', ['versions' => $versions])),
+            ...$this->incidentWidgets($incident, $advisory, $previousSeverity, __('Hãng đã xác nhận bản vá :versions. Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.', ['versions' => $versions]), $changes),
         ];
         $widgets[] = ['textParagraph' => ['text' => '<b>'.e(__('Hạn xử lý: :date.', ['date' => $this->date($deadline)])).'</b>']];
 
         $targets = array_replace($knownPatches, $patches);
-        [$patched, $waiting] = $runtimes
+        $waiting = $runtimes
             ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
-            ->partition(fn (Runtime $runtime): bool => isset($targets[$runtime->branch]));
-        [$toUpgrade, $atFix] = $patched->partition(fn (Runtime $runtime): bool => $runtime->version === null || Version::isNewer($targets[$runtime->branch], $runtime->version));
+            ->reject(fn (Runtime $runtime): bool => isset($targets[$runtime->branch]));
 
         $sections = [
             ['widgets' => $widgets],
-            [
-                'header' => __(':count service cần nâng cấp', ['count' => $toUpgrade->count()]),
-                'widgets' => [
-                    ...$toUpgrade
-                        ->take($this->maxListedItems())
-                        ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, __(':runtime → :version', ['runtime' => $runtime->displayName(), 'version' => $targets[$runtime->branch]])))
-                        ->values()
-                        ->all(),
-                    ...$this->moreWidget($toUpgrade->count()),
-                    ...($atFix->isEmpty() ? [] : [['textParagraph' => ['text' => e(__(':count service đã ở bản vá hoặc mới hơn.', ['count' => $atFix->count()]))]]]),
-                ],
-            ],
+            $this->upgradeSection($runtimes, $targets),
         ];
 
         if ($waiting->isNotEmpty()) {
@@ -176,12 +166,102 @@ class GoogleChatCards
     }
 
     /**
+     * A reply in the incident's thread when something the team must act on changed: what changed, the team's services
+     * of the technology (with their target when a fix is due), what to do and the source. A fix keeps its target
+     * versions and deadline. An admin's update leads with the admin's words.
+     *
+     * @param  list<string>  $changes  What changed, most important first.
+     * @param  Collection<int, Runtime>  $runtimes  The team's runtimes of the technology, with `deployment.service.project`.
+     * @param  array<string, string>  $patches  Branch => fixed version, for the fixes this reply announces.
+     * @param  array<string, string>  $knownPatches  Branch => fixed version, for every fix of the incident.
+     * @return array<string, mixed>
+     */
+    public function incidentUpdate(Team $team, Incident $incident, Advisory $advisory, array $changes, Collection $runtimes, string $action, array $patches = [], array $knownPatches = [], ?CarbonInterface $deadline = null, ?string $adminMessage = null): array
+    {
+        $technology = $advisory->technology;
+
+        $widgets = [
+            ['textParagraph' => ['text' => '<b>'.e($incident->title).'</b>']],
+            ...array_map(fn (string $change): array => ['textParagraph' => ['text' => '<b>'.e($change).'</b>']], $changes),
+            ...(blank($adminMessage) ? [] : [['textParagraph' => ['text' => e($adminMessage)]]]),
+            ['textParagraph' => ['text' => e($action)]],
+            ...($patches === [] ? [] : [['textParagraph' => ['text' => '<b>'.e(__('Hạn xử lý: :date.', ['date' => $this->date($deadline)])).'</b>']]]),
+        ];
+
+        $services = $patches !== []
+            ? $this->upgradeSection($runtimes, array_replace($knownPatches, $patches))
+            : [
+                'header' => __(':count service đang chạy :technology', ['count' => $runtimes->count(), 'technology' => $technology->getLabel()]),
+                'widgets' => [
+                    ...$runtimes
+                        ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
+                        ->take($this->maxListedItems())
+                        ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, $runtime->displayName().' · '.__('Phạm vi: :scope', ['scope' => $incident->scopeFor($runtime)->getLabel()])))
+                        ->values()
+                        ->all(),
+                    ...$this->moreWidget($runtimes->count()),
+                ],
+            ];
+
+        $sections = [['widgets' => $widgets]];
+
+        if ($runtimes->isNotEmpty()) {
+            $sections[] = $services;
+        }
+
+        $links = array_filter([
+            __('Mở nguồn tin') => $advisory->url,
+            __('Xem finding') => $patches === [] ? null : $this->findingsUrl(['team' => $team->id]),
+        ], filled(...));
+
+        if ($links !== []) {
+            $sections[] = ['widgets' => [$this->buttons($links)]];
+        }
+
+        $title = $patches === []
+            ? $this->severityTitle($advisory->severity, $advisory->title)
+            : $this->severityTitle($advisory->severity, __('Đã có bản vá, nâng lên :versions', ['versions' => implode(', ', array_values($patches))]));
+
+        return $this->card("incident-{$incident->id}", $title, __('Cập nhật · :team', ['team' => $team->name]), $sections);
+    }
+
+    /**
+     * The services to upgrade with their target (those below the fixed version of their branch, or whose version is
+     * not known), and how many are already at it or later.
+     *
+     * @param  Collection<int, Runtime>  $runtimes
+     * @param  array<string, string>  $targets  Branch => fixed version.
+     * @return array<string, mixed>
+     */
+    private function upgradeSection(Collection $runtimes, array $targets): array
+    {
+        [$toUpgrade, $atFix] = $runtimes
+            ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
+            ->filter(fn (Runtime $runtime): bool => isset($targets[$runtime->branch]))
+            ->partition(fn (Runtime $runtime): bool => $runtime->version === null || Version::isNewer($targets[$runtime->branch], $runtime->version));
+
+        return [
+            'header' => __(':count service cần nâng cấp', ['count' => $toUpgrade->count()]),
+            'widgets' => [
+                ...$toUpgrade
+                    ->take($this->maxListedItems())
+                    ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, __(':runtime → :version', ['runtime' => $runtime->displayName(), 'version' => $targets[$runtime->branch]])))
+                    ->values()
+                    ->all(),
+                ...$this->moreWidget($toUpgrade->count()),
+                ...($atFix->isEmpty() ? [] : [['textParagraph' => ['text' => e(__(':count service đã ở bản vá hoặc mới hơn.', ['count' => $atFix->count()]))]]]),
+            ],
+        ];
+    }
+
+    /**
      * What a card says about an incident: a rise in severity, the opening line, why the severity is unknown, the
      * summary, the planned release and affected branches, and the facts of the leading pre-notice.
      *
+     * @param  list<string>  $changes  Shown in bold first, e.g. that the incident is exploited.
      * @return list<array<string, mixed>>
      */
-    private function incidentWidgets(Incident $incident, Advisory $advisory, ?Severity $previousSeverity, string $opening): array
+    private function incidentWidgets(Incident $incident, Advisory $advisory, ?Severity $previousSeverity, string $opening, array $changes = []): array
     {
         $plannedReleaseAt = $incident->planned_release_at ?? $advisory->planned_release_at;
 
@@ -205,6 +285,7 @@ class GoogleChatCards
         };
 
         return [
+            ...array_map(fn (string $change): array => ['textParagraph' => ['text' => '<b>'.e($change).'</b>']], $changes),
             ...($previousSeverity === null ? [] : [['textParagraph' => ['text' => '<b>'.e(__('Mức độ tăng từ :from lên :to.', ['from' => $previousSeverity->getLabel(), 'to' => $advisory->severity->getLabel()])).'</b>']]]),
             ['textParagraph' => ['text' => e($opening)]],
             ...($unknownSeverity === null ? [] : [['textParagraph' => ['text' => e($unknownSeverity)]]]),
@@ -490,11 +571,16 @@ class GoogleChatCards
     }
 
     /**
+     * Sections without widgets are left out: Google Chat rejects a card with an empty section, e.g. the services of a
+     * team that runs none of the technology.
+     *
      * @param  list<array<string, mixed>>  $sections
      * @return array<string, mixed>
      */
     private function card(string $cardId, string $title, string $subtitle, array $sections): array
     {
+        $sections = array_values(array_filter($sections, fn (array $section): bool => ($section['widgets'] ?? []) !== []));
+
         return [
             'text' => $title,
             'cardsV2' => [[

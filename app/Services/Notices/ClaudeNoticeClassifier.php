@@ -34,6 +34,11 @@ class ClaudeNoticeClassifier implements NoticeClassifier
           says so in words; a list of fixed versions does not say which branches are unaffected.
         - related_incident_id: the id of the listed incident this entry is about (the same vulnerabilities or the same
           security release), or null when none clearly is. Only ids from <incidents>.
+        - actively_exploited: true only when the entry states that the vulnerability is being exploited in real attacks.
+          False when it says it is not, or only that it could be, would be or may become exploited; a proof of concept
+          or a demonstrated exploit is not exploitation. Null when the entry does not say.
+        - exploited_evidence: when actively_exploited is true, the sentence of the entry that says so, copied word for
+          word. Null otherwise.
         - summary: two or three plain sentences for the team, in the requested language: what is affected, how
           serious it is, and when fixes come.
 
@@ -123,15 +128,18 @@ class ClaudeNoticeClassifier implements NoticeClassifier
                 'summary' => ['type' => 'string'],
                 'unaffected_branches' => ['type' => 'array', 'items' => ['type' => 'string']],
                 'related_incident_id' => ['anyOf' => [['type' => 'integer'], ['type' => 'null']]],
+                'actively_exploited' => ['anyOf' => [['type' => 'boolean'], ['type' => 'null']]],
+                'exploited_evidence' => ['anyOf' => [['type' => 'string'], ['type' => 'null']]],
             ],
-            'required' => ['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id'],
+            'required' => ['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence'],
             'additionalProperties' => false,
         ];
     }
 
     /**
      * Branches that are not version numbers, times that are not ISO 8601 and incidents that were not offered are
-     * dropped rather than trusted.
+     * dropped rather than trusted. Evidence of exploitation is kept as quoted: SyncNoticeFeed checks it against the
+     * entry.
      *
      * @param  list<int>  $incidentIds  The incidents offered.
      */
@@ -145,6 +153,7 @@ class ClaudeNoticeClassifier implements NoticeClassifier
 
         $summary = Str::squish((string) ($answer['summary'] ?? ''));
         $relatedIncidentId = $answer['related_incident_id'] ?? null;
+        $evidence = is_string($answer['exploited_evidence'] ?? null) ? Str::limit(Str::squish($answer['exploited_evidence']), 500) : null;
 
         return new NoticeClassification(
             isSecurityNews: $answer['is_security_news'],
@@ -154,6 +163,8 @@ class ClaudeNoticeClassifier implements NoticeClassifier
             summary: $summary === '' ? null : Str::limit($summary, config('psm.notices.summary_length')),
             unaffectedBranches: $this->branches($answer['unaffected_branches'] ?? []),
             relatedIncidentId: is_int($relatedIncidentId) && in_array($relatedIncidentId, $incidentIds, true) ? $relatedIncidentId : null,
+            activelyExploited: is_bool($answer['actively_exploited'] ?? null) ? $answer['actively_exploited'] : null,
+            exploitedEvidence: $evidence === '' ? null : $evidence,
         );
     }
 

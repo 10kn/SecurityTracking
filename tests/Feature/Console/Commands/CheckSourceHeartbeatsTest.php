@@ -83,7 +83,7 @@ it('tells the admin once per outage about a pre-notice the classifier keeps fail
 it('tries the alert about stuck messages again on the next check when Google Chat failed, even once the queue works again', function () {
     $adminDown = true;
     Http::swap(new Factory);
-    Http::fake([chatWebhook('ADMIN') => function () use (&$adminDown) {
+    Http::fake([chatWebhook('ADMIN').'*' => function () use (&$adminDown) {
         return $adminDown ? Http::response('Service Unavailable', 503) : Http::response(['name' => 'spaces/ADMIN/messages/1']);
     }]);
     ChatNotification::factory()->create(['created_at' => now()->subMinutes(45)]);
@@ -98,7 +98,7 @@ it('tries the alert about stuck messages again on the next check when Google Cha
     expect(ChatNotification::where('kind', ChatNotificationKind::AdminAlert)->sole())
         ->sent_at->not->toBeNull()
         ->attempts->toBe(2)
-        ->and(Http::recorded(fn ($request): bool => $request->url() === chatWebhook('ADMIN')))->toHaveCount(2);
+        ->and(chatRequestsTo('ADMIN'))->toHaveCount(2);
 });
 
 it('does not check the classifier when none is configured', function () {
@@ -107,4 +107,23 @@ it('does not check the classifier when none is configured', function () {
     artisan('psm:check-sources')->assertSuccessful();
 
     expect(chatMessagesTo('ADMIN'))->toHaveCount(0);
+});
+
+it('tries the alert about stuck messages again on a later check after it ran out of tries', function () {
+    $adminDown = true;
+    Http::swap(new Factory);
+    Http::fake([chatWebhook('ADMIN').'*' => function () use (&$adminDown) {
+        return $adminDown ? Http::response('Service Unavailable', 503) : Http::response(['name' => 'spaces/ADMIN/messages/1']);
+    }]);
+    ChatNotification::factory()->create(['created_at' => now()->subMinutes(45)]);
+
+    artisan('psm:check-sources')->assertSuccessful();
+    ChatNotification::where('kind', ChatNotificationKind::AdminAlert)->update(['attempts' => config('psm.alerts.tries'), 'failed_at' => now()]);
+    $adminDown = false;
+    $this->travel(15)->minutes();
+    artisan('psm:check-sources')->assertSuccessful();
+
+    expect(ChatNotification::where('kind', ChatNotificationKind::AdminAlert)->sole())
+        ->sent_at->not->toBeNull()
+        ->failed_at->toBeNull();
 });

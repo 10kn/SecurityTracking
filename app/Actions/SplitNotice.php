@@ -11,7 +11,8 @@ use InvalidArgumentException;
 
 /**
  * An admin takes a pre-notice out of its incident into a new one. It counts as placed by the admin, so no rule puts it
- * back. A team that never had the pre-notice in a card gets the new incident as news.
+ * back. A team that never had the pre-notice in a card gets the new incident as news. The new incident starts with no
+ * Google Chat thread: a team told about the pre-notice hears about its next update in a new thread, with a full card.
  */
 class SplitNotice
 {
