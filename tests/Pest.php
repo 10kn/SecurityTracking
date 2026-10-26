@@ -8,6 +8,9 @@ use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Notices\NodejsNoticeFeed;
+use App\Services\Notices\NoticeClassification;
+use App\Services\Notices\NoticeClassifier;
+use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
 use App\Services\Notices\RubyLangNoticeFeed;
 use Carbon\CarbonImmutable;
@@ -417,4 +420,38 @@ function gitHubRequests(string $path = ''): Collection
     return Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.github.com/'.$path))
         ->map(fn (array $pair): Request => $pair[0])
         ->values();
+}
+
+/**
+ * Classifies every entry with `$answer`, which may throw, and keeps the titles of the entries it was given.
+ *
+ * @param  Closure(NoticeEntry): NoticeClassification  $answer
+ */
+function classifyNoticesWith(Closure $answer): ArrayObject
+{
+    $titles = new ArrayObject;
+
+    app()->instance(NoticeClassifier::class, new class($answer, $titles) implements NoticeClassifier
+    {
+        public function __construct(private Closure $answer, private ArrayObject $titles) {}
+
+        public function isEnabled(): bool
+        {
+            return true;
+        }
+
+        public function name(): string
+        {
+            return 'claude-haiku-5-5';
+        }
+
+        public function classify(Technology $technology, NoticeEntry $entry): NoticeClassification
+        {
+            $this->titles[] = $entry->title;
+
+            return ($this->answer)($entry);
+        }
+    });
+
+    return $titles;
 }

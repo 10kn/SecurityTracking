@@ -9,6 +9,7 @@ use App\Models\Finding;
 use App\Models\FindingEvent;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
+use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\PhpNetNoticeFeed;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
@@ -50,7 +51,7 @@ it('keeps polling the other feeds when one fails, records the failure and alerts
     expect(chatJson(chatMessagesTo('ADMIN')->sole()))->toContain('Nguồn Tin bảo mật php.net lỗi quá ngưỡng', 'RequestException');
 });
 
-it('escalates a runtime missing a security fix to critical after a critical pre-notice and alerts the team again', function () {
+it('warns the team about a critical pre-notice without raising the severity of its runtime findings', function () {
     $php = syncedTechnology(Technology::Php);
     fakeNoticeFeeds();
     $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
@@ -64,34 +65,47 @@ it('escalates a runtime missing a security fix to critical after a critical pre-
     artisan('psm:watch-notices')->assertSuccessful();
 
     $messages = chatMessagesTo('COMMERCE');
-    expect($finding->refresh()->severity)->toBe(Severity::Critical)
-        ->and(FindingEvent::where('finding_id', $finding->id)->where('type', FindingEventType::Escalated)->sole()->data)->toEqual(['from' => 'high', 'to' => 'critical'])
-        ->and($messages)->toHaveCount(4)
-        ->and($messages->pluck('text')->slice(1, 2)->sort()->values()->all())->toBe([
+    expect($finding->refresh()->severity)->toBe(Severity::High)
+        ->and(FindingEvent::where('type', FindingEventType::Escalated)->count())->toBe(0)
+        ->and($messages->pluck('text')->slice(1)->sort()->values()->all())->toBe([
             '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
             '[Critical] Upcoming Critical PHP Security Release',
-        ])
-        ->and($messages->last()['text'])->toBe('[Critical] PHP 8.3 thiếu bản vá bảo mật, cần nâng lên 8.3.36')
-        ->and(chatJson($messages->last()))->toContain('Mở tin cảnh báo của hãng');
+        ]);
 
     artisan('psm:watch-notices')->assertSuccessful();
     artisan('psm:evaluate-runtimes')->assertSuccessful();
 
-    expect(chatMessagesTo('COMMERCE'))->toHaveCount(4);
+    expect(chatMessagesTo('COMMERCE'))->toHaveCount(3);
 });
 
-it('stops escalating once the critical pre-notice is older than the configured days', function () {
-    $php = syncedTechnology(Technology::Php);
+it('does not replay the history of a feed on its first poll', function () {
     fakeNoticeFeeds();
-    runtimeAt(Team::factory()->create(), 'shop-api', $php, '8.3.35');
+    $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
+    runtimeAt($commerce, 'events', Technology::Nodejs, '22.20.0');
+    runtimeAt($commerce, 'storefront', Technology::Ruby, '3.3.12');
+
     artisan('psm:watch-notices')->assertSuccessful();
-    artisan('psm:evaluate-runtimes')->assertSuccessful();
-    expect(Finding::sole()->severity)->toBe(Severity::Critical);
 
-    $this->travelTo('2026-11-05 00:00:00');
-    artisan('psm:sync-runtimes')->assertSuccessful();
+    expect(chatMessagesTo('COMMERCE'))->toHaveCount(0);
+});
 
-    expect(Finding::sole()->severity)->toBe(Severity::High);
+it('sends a critical pre-notice before the classifier reads anything', function () {
+    $this->travelTo('2026-10-20 20:45:00');
+    fakeNoticeFeeds();
+    $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
+    runtimeAt($commerce, 'shop-api', Technology::Php, '8.3.35');
+    $sentWhenClassifying = [];
+    classifyNoticesWith(function () use (&$sentWhenClassifying): NoticeClassification {
+        $sentWhenClassifying[] = chatMessagesTo('COMMERCE')->count();
+
+        return new NoticeClassification(isSecurityNews: true, severity: Severity::Critical);
+    });
+
+    artisan('psm:watch-notices')->assertSuccessful();
+
+    expect($sentWhenClassifying)->not->toBeEmpty()
+        ->and($sentWhenClassifying[0])->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release');
 });
 
 it('is scheduled every 15 minutes', function () {
@@ -101,14 +115,4 @@ it('is scheduled every 15 minutes', function () {
     expect($event)
         ->expression->toBe('*/15 * * * *')
         ->withoutOverlapping->toBeTrue();
-});
-
-it('does not escalate on a critical pre-notice the classifier dismissed', function () {
-    $php = syncedTechnology(Technology::Php);
-    runtimeAt(Team::factory()->create(), 'shop-api', $php, '8.3.35');
-    Advisory::factory()->preNotice($php)->create(['published_at' => now()->subDay(), 'is_dismissed' => true]);
-
-    artisan('psm:evaluate-runtimes')->assertSuccessful();
-
-    expect(Finding::sole()->severity)->toBe(Severity::High);
 });

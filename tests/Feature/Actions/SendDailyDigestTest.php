@@ -6,6 +6,7 @@ use App\Enums\FindingEventType;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
+use App\Models\Advisory;
 use App\Models\Deployment;
 use App\Models\Finding;
 use App\Models\Lockfile;
@@ -30,7 +31,7 @@ function digestFinding(Deployment $deployment, string $title, array $attributes 
     return $finding;
 }
 
-it('sends each team one card with new, still open and closed findings', function () {
+it('lists new findings and counts the other open ones in the daily digest', function () {
     digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ');
     digestFinding($this->deployment, 'DEMO-GHSA-0001 trong guzzlehttp/guzzle', ['severity' => Severity::Medium], '2026-10-01 10:00:00');
     digestFinding($this->deployment, 'Node.js 20 hết hỗ trợ', ['state' => 'resolved', 'resolved_at' => '2026-10-23 12:00:00']);
@@ -39,8 +40,142 @@ it('sends each team one card with new, still open and closed findings', function
     expect(app(SendDailyDigest::class)->handle())->toBe(1);
 
     $card = chatJson(chatMessagesTo('COMMERCE')->sole());
-    expect($card)->toContain('Bản tổng hợp bảo mật 24/10/2026', 'Mới: 1 · Đang mở: 2 · Đã tự đóng: 1', 'PHP 8.1 hết hỗ trợ', '[Medium] DEMO-GHSA-0001', 'Node.js 20 hết hỗ trợ')
-        ->not->toContain('Ruby 3.1');
+    expect($card)->toContain(
+        'Bản tổng hợp bảo mật 24/10/2026', 'Mới: 1 · Đang mở: 2 · Đã tự đóng: 1', 'Finding mới', 'PHP 8.1 hết hỗ trợ',
+        'Còn 1 finding mức thấp hơn đang mở, liệt kê trong bản tổng kết tuần.', 'Node.js 20 hết hỗ trợ',
+    )->not->toContain('DEMO-GHSA-0001', 'Ruby 3.1');
+});
+
+it('sends no daily digest only for older findings below the immediate severities or for findings closed automatically', function () {
+    digestFinding($this->deployment, 'DEMO-GHSA-0001 trong guzzlehttp/guzzle', ['severity' => Severity::Medium], '2026-10-01 10:00:00');
+    digestFinding($this->deployment, 'Node.js 20 hết hỗ trợ', ['state' => 'resolved', 'resolved_at' => '2026-10-23 12:00:00']);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('reminds the team every day of its open critical and high findings', function () {
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', [], '2026-10-01 10:00:00');
+
+    app(SendDailyDigest::class)->handle();
+    $this->travelTo('2026-10-25 01:00:00');
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatMessagesTo('COMMERCE'))->toHaveCount(2)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Cần xử lý, vẫn đang mở', '[High] PHP 8.1 hết hỗ trợ')->not->toContain('Finding mới');
+});
+
+it('counts from the last digest that was delivered, so a digest that failed loses nothing', function () {
+    $this->team->chatNotifications()->create(['dedupe_key' => 'digest:old', 'kind' => ChatNotificationKind::Digest, 'payload' => [], 'sent_at' => '2026-10-22 01:00:00'])
+        ->forceFill(['created_at' => '2026-10-22 01:00:00'])->save();
+    $this->team->chatNotifications()->create(['dedupe_key' => 'digest:failed', 'kind' => ChatNotificationKind::Digest, 'payload' => [], 'failed_at' => '2026-10-23 02:00:00'])
+        ->forceFill(['created_at' => '2026-10-23 01:00:00'])->save();
+    digestFinding($this->deployment, 'DEMO-GHSA-0001 trong guzzlehttp/guzzle', ['severity' => Severity::Medium], '2026-10-22 18:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Finding mới', 'DEMO-GHSA-0001');
+});
+
+it('still reports what came before a run of digests that all failed', function () {
+    runtimeAt($this->team, 'shop-api', Technology::Php, '8.3.35');
+    $this->team->chatNotifications()->create(['dedupe_key' => 'digest:failed-1', 'kind' => ChatNotificationKind::Digest, 'payload' => [], 'covers_until' => '2026-10-21 01:00:00', 'failed_at' => '2026-10-21 02:00:00']);
+    $this->team->chatNotifications()->create(['dedupe_key' => 'digest:failed-2', 'kind' => ChatNotificationKind::Digest, 'payload' => [], 'covers_until' => '2026-10-23 01:00:00', 'failed_at' => '2026-10-23 02:00:00']);
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP security notice', 'severity' => Severity::Medium, 'published_at' => '2026-10-20 12:00:00', 'created_at' => '2026-10-20 12:00:00']);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('PHP security notice')
+        ->and($this->team->chatNotifications()->latest('id')->first()->covers_until->toDateTimeString())->toBe('2026-10-24 01:00:00');
+});
+
+it('does not report the same unreadable lockfile again when only its commit changes', function () {
+    $lockfile = Lockfile::factory()->for($this->deployment)->withContent('composer.lock', '{"packages": [')->create(['parsed_hash' => hash('sha256', '{"packages": ['), 'parse_error' => 'Not valid JSON: Syntax error.', 'uploaded_at' => '2026-10-23 12:00:00']);
+    expect(app(SendDailyDigest::class)->handle())->toBe(1);
+
+    $this->travelTo('2026-10-25 01:00:00');
+    $lockfile->update(['commit_sha' => str_repeat('a', 40)]);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('says how many pre-notices it could not list', function () {
+    config(['psm.alerts.max_listed_items' => 2]);
+    runtimeAt($this->team, 'shop-api', Technology::Php, '8.3.35');
+    Advisory::factory()->count(3)->preNotice(Technology::Php)->create(['severity' => Severity::Low]);
+
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('… và 1 mục khác');
+});
+
+it('counts end-of-life days in the digest timezone', function () {
+    $php = syncedTechnology(Technology::Php);
+    Runtime::factory()->for($this->deployment)->create(['technology' => $php, 'raw_version' => '8.4.26', 'branch' => '8.4', 'status' => RuntimeStatus::Ok, 'created_at' => '2026-09-01 00:00:00']);
+    RuntimeBranch::where('technology', $php)->where('branch', '8.4')->update(['security_support_until' => '2026-11-27']);
+    $this->team->chatNotifications()->create(['dedupe_key' => 'digest:previous', 'kind' => ChatNotificationKind::Digest, 'payload' => [], 'covers_until' => '2026-10-26 19:00:00', 'sent_at' => '2026-10-26 19:00:00']);
+
+    $this->travelTo('2026-10-27 19:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('PHP 8.4.26 hết hỗ trợ từ 27/11/2026');
+});
+
+it('lists medium and low pre-notices of a technology the team runs', function () {
+    runtimeAt($this->team, 'shop-api', Technology::Php, '8.3.35');
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP security notice', 'severity' => Severity::Medium, 'url' => 'https://www.php.net/archive/2026.php#notice']);
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'Upcoming Critical PHP Security Release']);
+    Advisory::factory()->preNotice(Technology::Ruby)->create(['title' => 'Ruby security notice', 'severity' => Severity::Low]);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Tin bảo mật từ hãng', '[Medium] PHP security notice', 'https://www.php.net/archive/2026.php#notice')
+        ->not->toContain('Upcoming Critical', 'Ruby security notice');
+});
+
+it('lists a pre-notice the classifier rated medium only after the previous digest', function () {
+    runtimeAt($this->team, 'shop-api', Technology::Php, '8.3.35');
+    $preNotice = Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP security notice', 'severity' => Severity::Unknown, 'created_at' => '2026-10-23 00:59:00']);
+    $this->team->chatNotifications()->create(['dedupe_key' => 'digest:previous', 'kind' => ChatNotificationKind::Digest, 'payload' => [], 'covers_until' => '2026-10-23 01:00:00', 'sent_at' => '2026-10-23 01:00:00']);
+    $this->travelTo('2026-10-23 01:01:00');
+    $preNotice->update(['severity' => Severity::Medium, 'classified_by' => 'claude-haiku-5-5']);
+
+    $this->travelTo('2026-10-24 01:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('[Medium] PHP security notice');
+});
+
+it('reminds of an end of life 30, 7 and 1 days before, and once more when a reminder day was missed', function () {
+    $php = syncedTechnology(Technology::Php);
+    Runtime::factory()->for($this->deployment)->create(['technology' => $php, 'raw_version' => '8.4.26', 'branch' => '8.4', 'status' => RuntimeStatus::Ok, 'created_at' => '2026-09-01 00:00:00']);
+    RuntimeBranch::where('technology', $php)->where('branch', '8.4')->update(['security_support_until' => '2026-11-27']);
+    $digestOn = function (string $date): int {
+        $this->travelTo("{$date} 01:00:00");
+
+        return app(SendDailyDigest::class)->handle();
+    };
+
+    expect($digestOn('2026-10-27'))->toBe(0)
+        ->and($digestOn('2026-10-28'))->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Sắp hết hỗ trợ', 'PHP 8.4.26 hết hỗ trợ từ 27/11/2026')
+        ->and($digestOn('2026-10-29'))->toBe(0)
+        ->and($digestOn('2026-11-20'))->toBe(1)
+        ->and($digestOn('2026-11-26'))->toBe(1);
+});
+
+it('sends the weekly summary on Monday instead of the daily digest, with everything still open', function () {
+    $this->travelTo('2026-10-26 01:00:00');
+    digestFinding($this->deployment, 'DEMO-GHSA-0001 trong guzzlehttp/guzzle', ['severity' => Severity::Medium], '2026-10-01 10:00:00');
+    digestFinding($this->deployment, 'Node.js 20 hết hỗ trợ', ['state' => 'resolved', 'resolved_at' => '2026-10-21 12:00:00']);
+    digestFinding($this->deployment, 'Ruby 3.1 hết hỗ trợ', ['state' => 'resolved', 'resolved_at' => '2026-10-18 12:00:00']);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Tổng kết tuần bảo mật 26/10/2026', 'Vẫn đang mở', '[Medium] DEMO-GHSA-0001', 'Node.js 20 hết hỗ trợ')
+        ->not->toContain('Ruby 3.1', 'liệt kê trong bản tổng kết tuần')
+        ->and($this->team->chatNotifications()->sole()->dedupe_key)->toBe("digest-weekly:{$this->team->id}:2026-W44");
+});
+
+it('sends no weekly summary to a team with nothing at all', function () {
+    $this->travelTo('2026-10-26 01:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
 });
 
 it('counts runtimes with missing data or a newer release, and lists those reaching end of life soon', function () {

@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * Named chat_notifications so it does not clash with Laravel's database `notifications` table.
  */
-#[Fillable(['team_id', 'dedupe_key', 'kind', 'payload', 'attempts', 'sent_at', 'failed_at', 'last_error'])]
+#[Fillable(['team_id', 'dedupe_key', 'kind', 'payload', 'covers_until', 'attempts', 'sent_at', 'failed_at', 'last_error'])]
 class ChatNotification extends Model
 {
     /** @use HasFactory<ChatNotificationFactory> */
@@ -30,6 +30,7 @@ class ChatNotification extends Model
         return [
             'kind' => ChatNotificationKind::class,
             'payload' => 'array',
+            'covers_until' => 'datetime',
             'attempts' => 'integer',
             'sent_at' => 'datetime',
             'failed_at' => 'datetime',

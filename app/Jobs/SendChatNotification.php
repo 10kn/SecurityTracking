@@ -15,7 +15,8 @@ use Throwable;
 
 /**
  * Delivers one Google Chat message (handover 5.5). Transient errors are retried with backoff; a message that cannot be
- * delivered, including one for a team without a webhook, is marked failed and reported to the admin space.
+ * delivered, including one for a team without a webhook, is marked failed and reported to the admin space, which can
+ * send it again with psm:resend-notification.
  *
  * Errors never contain the webhook URL, because the URL holds the space's key and token.
  */
@@ -123,12 +124,13 @@ class SendChatNotification implements ShouldQueue
         $notification->loadMissing('team');
 
         $sendAdminAlert->handle(
-            "undelivered:{$notification->id}",
+            "undelivered:{$notification->id}:{$notification->failed_at->getTimestamp()}",
             __('Không gửi được tin tới team :team', ['team' => $notification->team->name]),
             [
                 __('Lỗi: :error', ['error' => $error]),
                 __('Loại tin: :kind', ['kind' => $notification->kind->getLabel()]),
                 __('Nội dung: :text', ['text' => $notification->payload['text'] ?? '—']),
+                __('Sửa lỗi rồi gửi lại: php artisan psm:resend-notification :id', ['id' => $notification->id]),
             ],
         );
     }

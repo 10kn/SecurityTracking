@@ -50,10 +50,7 @@ class GoogleChatCards
             array_unshift($sections, ['widgets' => [['textParagraph' => ['text' => e($first->context['advisory_title'])]]]]);
         }
 
-        $links = array_filter([
-            __('Mở nguồn tin') => $first->context['source_url'] ?? null,
-            __('Mở tin cảnh báo của hãng') => $first->context['pre_notice_url'] ?? null,
-        ], filled(...));
+        $links = array_filter([__('Mở nguồn tin') => $first->context['source_url'] ?? null], filled(...));
 
         if ($links !== []) {
             $sections[] = ['widgets' => [$this->buttons($links)]];
@@ -66,9 +63,10 @@ class GoogleChatCards
      * "Cảnh báo chuẩn bị": a vendor's security news for one team, listing the team's services that run the technology.
      *
      * @param  Collection<int, Runtime>  $runtimes  The team's runtimes of the technology, with `deployment.service.project`.
+     * @param  Severity|null  $previousSeverity  The severity of the card the team got before, when it rose since.
      * @return array<string, mixed>
      */
-    public function preNotice(Team $team, Advisory $advisory, Collection $runtimes): array
+    public function preNotice(Team $team, Advisory $advisory, Collection $runtimes, ?Severity $previousSeverity = null): array
     {
         $technology = $advisory->technology;
         $title = $advisory->severity === Severity::Unknown ? $advisory->title : "[{$advisory->severity->getLabel()}] {$advisory->title}";
@@ -77,6 +75,7 @@ class GoogleChatCards
             __('Nguồn: :source', ['source' => $technology->releaseSourceLabel()]),
             $advisory->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $advisory->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
             $advisory->cvss_score === null ? null : "CVSS {$advisory->cvss_score}",
+            $advisory->severity_basis?->getLabel(),
         ]);
 
         $plan = array_filter([
@@ -85,8 +84,16 @@ class GoogleChatCards
         ]);
         $summary = $advisory->localized_summary ?? $advisory->summary;
 
+        $unknownSeverity = match (true) {
+            $advisory->severity !== Severity::Unknown => null,
+            $advisory->classified_by === null => __('Chưa phân loại được mức độ. Đọc tin gốc để đánh giá.'),
+            default => __('Hãng chưa nêu mức độ.'),
+        };
+
         $widgets = [
+            ...($previousSeverity === null ? [] : [['textParagraph' => ['text' => '<b>'.e(__('Mức độ tăng từ :from lên :to.', ['from' => $previousSeverity->getLabel(), 'to' => $advisory->severity->getLabel()])).'</b>']]]),
             ['textParagraph' => ['text' => e(__('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->getLabel()]))]],
+            ...($unknownSeverity === null ? [] : [['textParagraph' => ['text' => e($unknownSeverity)]]]),
             ...(filled($summary) ? [['textParagraph' => ['text' => e($summary)]]] : []),
             ...($plan === [] ? [] : [['textParagraph' => ['text' => e(implode(' · ', $plan))]]]),
             ['textParagraph' => ['text' => e(implode(' · ', $facts))]],
@@ -112,7 +119,10 @@ class GoogleChatCards
     }
 
     /**
-     * @param  array{new: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, unknown: int, outdated: int, ending: Collection<int, array{runtime: Runtime, date: string}>, missing_lockfiles: int, unreadable_lockfiles: int}  $digest
+     * The daily digest, or the weekly summary when `weekly` is set: only the weekly one lists every open finding below
+     * the immediate severities, the daily one counts them.
+     *
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
      * @return array<string, mixed>
      */
     public function digest(Team $team, array $digest, string $date): array
@@ -120,7 +130,7 @@ class GoogleChatCards
         $sections = [];
         $summary = collect([
             'Mới: :count' => $digest['new']->count(),
-            'Đang mở: :count' => $digest['new']->count() + $digest['open']->count(),
+            'Đang mở: :count' => $digest['new']->count() + $digest['reminders']->count() + $digest['open']->count(),
             'Đã tự đóng: :count' => $digest['resolved']->count(),
             'Runtime thiếu dữ liệu: :count' => $digest['unknown'],
             'Runtime có bản mới hơn: :count' => $digest['outdated'],
@@ -135,26 +145,35 @@ class GoogleChatCards
             $sections[] = ['widgets' => [['textParagraph' => ['text' => e($summary)]]]];
         }
 
-        foreach ([
+        $findingSections = [
             __('Finding mới') => $digest['new'],
-            __('Vẫn đang mở') => $digest['open'],
-            __('Đã tự đóng') => $digest['resolved'],
-        ] as $header => $findings) {
-            if ($findings->isEmpty()) {
-                continue;
-            }
+            __('Cần xử lý, vẫn đang mở') => $digest['reminders'],
+            ...($digest['weekly'] ? [__('Vẫn đang mở') => $digest['open']] : []),
+        ];
 
+        foreach ($findingSections as $header => $findings) {
+            $sections = [...$sections, ...$this->findingSection($header, $findings)];
+        }
+
+        if (! $digest['weekly'] && $digest['open']->isNotEmpty()) {
+            $sections[] = ['widgets' => [['textParagraph' => ['text' => e(__('Còn :count finding mức thấp hơn đang mở, liệt kê trong bản tổng kết tuần.', ['count' => $digest['open']->count()]))]]]];
+        }
+
+        if ($digest['pre_notices']->isNotEmpty()) {
             $sections[] = [
-                'header' => $header,
-                'collapsible' => $findings->count() > 5,
-                'uncollapsibleWidgetsCount' => 5,
+                'header' => __('Tin bảo mật từ hãng'),
                 'widgets' => [
-                    ...$findings
+                    ...$digest['pre_notices']
                         ->take($this->maxListedItems())
-                        ->map(fn (Finding $finding): array => $this->serviceWidget($finding->deployment->service, "[{$finding->severity->getLabel()}] {$finding->title}"))
+                        ->map(fn (Advisory $advisory): array => ['decoratedText' => array_filter([
+                            'topLabel' => $advisory->technology->getLabel(),
+                            'text' => e("[{$advisory->severity->getLabel()}] {$advisory->title}"),
+                            'wrapText' => true,
+                            'button' => filled($advisory->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $advisory->url]]] : null,
+                        ])])
                         ->values()
                         ->all(),
-                    ...$this->moreWidget($findings->count()),
+                    ...$this->moreWidget($digest['pre_notices']->count()),
                 ],
             ];
         }
@@ -170,7 +189,11 @@ class GoogleChatCards
             ];
         }
 
-        return $this->card("digest-{$team->id}", __('Bản tổng hợp bảo mật :date', ['date' => $date]), $team->name, $sections);
+        $sections = [...$sections, ...$this->findingSection(__('Đã tự đóng'), $digest['resolved'])];
+
+        $title = $digest['weekly'] ? __('Tổng kết tuần bảo mật :date', ['date' => $date]) : __('Bản tổng hợp bảo mật :date', ['date' => $date]);
+
+        return $this->card("digest-{$team->id}", $title, $team->name, $sections);
     }
 
     /**
@@ -192,6 +215,31 @@ class GoogleChatCards
     public function serviceUrl(Service $service): string
     {
         return route('admin.services.edit', $service);
+    }
+
+    /**
+     * @param  Collection<int, Finding>  $findings
+     * @return list<array<string, mixed>> No section when there are no findings.
+     */
+    private function findingSection(string $header, Collection $findings): array
+    {
+        if ($findings->isEmpty()) {
+            return [];
+        }
+
+        return [[
+            'header' => $header,
+            'collapsible' => $findings->count() > 5,
+            'uncollapsibleWidgetsCount' => 5,
+            'widgets' => [
+                ...$findings
+                    ->take($this->maxListedItems())
+                    ->map(fn (Finding $finding): array => $this->serviceWidget($finding->deployment->service, "[{$finding->severity->getLabel()}] {$finding->title}"))
+                    ->values()
+                    ->all(),
+                ...$this->moreWidget($findings->count()),
+            ],
+        ]];
     }
 
     /**

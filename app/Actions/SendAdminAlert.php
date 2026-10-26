@@ -20,11 +20,12 @@ class SendAdminAlert
      * @param  string  $dedupeKey  The same key never alerts twice, e.g. one key per outage of a source.
      * @param  list<string>  $lines
      * @param  array<string, string>  $links  Button text => URL.
+     * @param  bool  $sendNow  Delivers it without the queue worker (see QueueChatNotification).
      */
-    public function handle(string $dedupeKey, string $title, array $lines, array $links = []): ?ChatNotification
+    public function handle(string $dedupeKey, string $title, array $lines, array $links = [], bool $sendNow = false): ?ChatNotification
     {
         $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->adminAlert($title, $lines, $links));
 
-        return $this->queueChatNotification->handle(null, ChatNotificationKind::AdminAlert, "admin:{$dedupeKey}", $payload);
+        return $this->queueChatNotification->handle(null, ChatNotificationKind::AdminAlert, "admin:{$dedupeKey}", $payload, $sendNow);
     }
 }

@@ -87,7 +87,7 @@ it('sends one alert to the owning team when a security release comes out, and no
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(0);
 });
 
-it('closes the old finding and opens an end-of-life one when the version moves to an end-of-life branch, then reports the fix in the next digest', function () {
+it('closes the old finding and opens an end-of-life one when the version moves to an end-of-life branch, then reports the fix in the weekly summary', function () {
     $this->travelTo('2026-10-23 10:00:00');
     syncedTechnology(Technology::Php);
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
@@ -111,8 +111,13 @@ it('closes the old finding and opens an end-of-life one when the version moves t
     $this->travelTo('2026-10-24 01:00:00');
     artisan('psm:send-digest')->assertSuccessful();
 
+    expect(chatMessagesTo('COMMERCE'))->toHaveCount(2);
+
+    $this->travelTo('2026-10-26 01:00:00');
+    artisan('psm:send-digest')->assertSuccessful();
+
     $digest = chatMessagesTo('COMMERCE')->last();
-    expect(chatJson($digest))->toContain('Bản tổng hợp', 'Đã tự đóng: 2', 'PHP 8.1 hết hỗ trợ');
+    expect(chatJson($digest))->toContain('Tổng kết tuần', 'Đã tự đóng: 2', 'PHP 8.1 hết hỗ trợ');
 });
 
 it('lists every affected service of a team in one alert', function () {

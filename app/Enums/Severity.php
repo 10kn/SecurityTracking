@@ -22,6 +22,21 @@ enum Severity: string
     }
 
     /**
+     * The qualitative rating of a CVSS score (FIRST): 9.0+ Critical, 7.0+ High, 4.0+ Medium, above 0 Low. A score of
+     * 0 rates no severity.
+     */
+    public static function fromCvss(float $score): self
+    {
+        return match (true) {
+            $score >= 9.0 => self::Critical,
+            $score >= 7.0 => self::High,
+            $score >= 4.0 => self::Medium,
+            $score > 0 => self::Low,
+            default => self::Unknown,
+        };
+    }
+
+    /**
      * Higher numbers sort first.
      */
     public function rank(): int

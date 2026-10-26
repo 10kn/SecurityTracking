@@ -54,8 +54,6 @@ class EvaluateRuntimes
      */
     public function syncRuntimeFindings(array $deploymentIds): void
     {
-        $this->runtimeFindings->forgetPreNotices();
-
         Deployment::with(['service.project', 'runtimes'])
             ->whereKey($deploymentIds)
             ->each(function (Deployment $deployment): void {

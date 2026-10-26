@@ -4,6 +4,7 @@ namespace App\Actions;
 
 use App\Enums\AdvisoryKind;
 use App\Enums\Severity;
+use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\SourceHeartbeat;
@@ -19,12 +20,17 @@ use Throwable;
  * Polls the security news feed of a technology and stores the entries that matter as pre-notice
  * advisories, keyed by feed and entry id so polling again changes nothing. Every attempt is recorded on the feed's
  * source heartbeat. When the notice classifier is configured, it reads each fresh entry (see `psm.notices`).
+ *
+ * Storing and classifying are two steps, so a caller can send what the vendor's words and the CVSS score already
+ * make Critical or High before waiting for the classifier (see WatchVendorNotices).
  */
 class SyncNoticeFeed
 {
     public function __construct(private NoticeClassifier $classifier) {}
 
     /**
+     * Polls and classifies in one go.
+     *
      * @return list<Advisory> The pre-notices the feed lists now. `wasRecentlyCreated` and `wasChanged()` tell which
      *                        ones are new or were edited by the vendor.
      *
@@ -32,12 +38,26 @@ class SyncNoticeFeed
      */
     public function handle(Technology $technology): array
     {
+        return $this->classify($technology, $this->poll($technology));
+    }
+
+    /**
+     * Stores the entries the feed lists now with what can be read from them without the classifier, keeping the
+     * previous classification.
+     *
+     * @return array<string, array{entry: NoticeEntry, advisory: Advisory}> Keyed by external id.
+     *
+     * @throws Throwable The source error, after it was recorded on the heartbeat.
+     */
+    public function poll(Technology $technology): array
+    {
         $feed = $this->feed($technology);
 
         $heartbeat = SourceHeartbeat::updateOrCreate(['source' => $technology->noticeSourceKey()], [
             'name' => __('Tin bảo mật :source', ['source' => $technology->releaseSourceLabel()]),
             'threshold_minutes' => config('psm.notices.stale_after_minutes'),
         ]);
+        $isFirstPoll = $heartbeat->last_success_at === null;
 
         try {
             $entries = $feed->entries();
@@ -56,16 +76,35 @@ class SyncNoticeFeed
             ->keyBy(fn (NoticeEntry $entry): string => $this->externalId($entry));
 
         $stored = Advisory::where('source', $technology->noticeSourceKey())->whereIn('external_id', $relevant->keys())->get()->keyBy('external_id');
-        $classifications = $relevant->map(fn (NoticeEntry $entry, string $externalId): ?NoticeClassification => $this->classify($technology, $entry, $stored->get($externalId)));
 
-        $advisories = DB::transaction(fn (): array => $relevant
-            ->map(fn (NoticeEntry $entry, string $externalId): Advisory => $this->store($technology, $entry, $stored->get($externalId), $classifications->get($externalId)))
-            ->values()
+        $polled = DB::transaction(fn (): array => $relevant
+            ->map(fn (NoticeEntry $entry, string $externalId): array => [
+                'entry' => $entry,
+                'advisory' => $this->store($technology, $entry, $stored->get($externalId), null, $isFirstPoll),
+            ])
             ->all());
 
         $heartbeat->update(['last_success_at' => now(), 'last_error' => null]);
 
-        return $advisories;
+        return $polled;
+    }
+
+    /**
+     * Has the classifier read the polled entries that need it, and stores what it read.
+     *
+     * @param  array<string, array{entry: NoticeEntry, advisory: Advisory}>  $polled  What poll() returned.
+     * @return list<Advisory>
+     */
+    public function classify(Technology $technology, array $polled): array
+    {
+        return collect($polled)
+            ->map(function (array $item) use ($technology): Advisory {
+                $classification = $this->classification($technology, $item['entry'], $item['advisory']);
+
+                return $classification === null ? $item['advisory'] : $this->store($technology, $item['entry'], $item['advisory'], $classification, false);
+            })
+            ->values()
+            ->all();
     }
 
     private function feed(Technology $technology): NoticeFeed
@@ -89,16 +128,16 @@ class SyncNoticeFeed
     }
 
     /**
-     * Entries are classified once, and again when the vendor edits them. Entries older than the escalation window
-     * are not: they no longer alert or escalate anything. A classifier error is reported and the entry is tried
-     * again on the next poll.
+     * Entries are classified once, and again when the vendor edits them. Entries older than `psm.notices.relevant_days`
+     * are not: they no longer alert anything. A classifier error is reported and the entry is tried again on the next
+     * poll; `classification_failed_at` keeps when the errors started, for psm:check-sources. A dismissal was made on
+     * the earlier text, so it no longer holds for the new one.
      */
-    private function classify(Technology $technology, NoticeEntry $entry, ?Advisory $stored): ?NoticeClassification
+    private function classification(Technology $technology, NoticeEntry $entry, Advisory $advisory): ?NoticeClassification
     {
         if (! $this->classifier->isEnabled()
-            || $entry->publishedAt === null
-            || $entry->publishedAt->isBefore(now()->subDays(config('psm.notices.escalation_days')))
-            || $stored?->content_hash === $this->contentHash($entry)) {
+            || ! $this->isFresh($entry)
+            || $advisory->content_hash === $this->contentHash($entry)) {
             return null;
         }
 
@@ -107,27 +146,37 @@ class SyncNoticeFeed
         } catch (Throwable $exception) {
             report($exception);
 
+            $advisory->update([
+                'classification_failed_at' => $advisory->classification_failed_at ?? now(),
+                'is_dismissed' => false,
+            ]);
+
             return null;
         }
     }
 
     /**
-     * The classifier can only raise the keyword severity, and can only dismiss an entry the keywords found no
-     * severity in. Without a new classification, the previous one is kept.
+     * The severity is the highest of the vendor's words, the CVSS score the entry gives and the classifier, which can
+     * dismiss an entry as not security news only when neither of the others found a severity in it. Without a new
+     * classification, the previous one is kept.
+     *
+     * Entries a feed already lists on its first successful poll are history and are never sent, except a critical one
+     * that is still fresh: a new install must not miss an ongoing critical issue. An entry of the history that turns
+     * critical later, e.g. once classified, is sent too.
      */
-    private function store(Technology $technology, NoticeEntry $entry, ?Advisory $stored, ?NoticeClassification $classification): Advisory
+    private function store(Technology $technology, NoticeEntry $entry, ?Advisory $stored, ?NoticeClassification $classification, bool $isFirstPoll): Advisory
     {
         $advisory = $stored ?? new Advisory([
             'source' => $technology->noticeSourceKey(),
             'external_id' => $this->externalId($entry),
         ]);
-        $keywordSeverity = $entry->severity();
 
         if ($classification !== null) {
             $advisory->fill([
                 'content_hash' => $this->contentHash($entry),
                 'classified_by' => $this->classifier->name(),
                 'classified_severity' => $classification->severity,
+                'classification_failed_at' => null,
                 'is_dismissed' => ! $classification->isSecurityNews,
                 'planned_release_at' => $classification->plannedReleaseAt,
                 'affected_branches' => $classification->affectedBranches,
@@ -135,22 +184,52 @@ class SyncNoticeFeed
             ]);
         }
 
-        $classifiedSeverity = $advisory->classified_severity ?? Severity::Unknown;
+        $cvssScore = $entry->cvssScore();
+        $ratings = [
+            SeverityBasis::Vendor->value => $entry->severity(),
+            SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
+            SeverityBasis::Classifier->value => $advisory->classified_severity ?? Severity::Unknown,
+        ];
+        $basis = collect($ratings)
+            ->reject(fn (Severity $severity): bool => $severity === Severity::Unknown)
+            ->sortByDesc(fn (Severity $severity): int => $severity->rank())
+            ->keys()
+            ->first();
+        $severity = $basis === null ? Severity::Unknown : $ratings[$basis];
 
         $advisory->fill([
             'kind' => AdvisoryKind::PreNotice,
             'aliases' => $entry->cveIds(),
             'title' => Str::limit($entry->title, 250),
             'summary' => $entry->summary(config('psm.notices.summary_length')),
-            'severity' => $classifiedSeverity->rank() > $keywordSeverity->rank() ? $classifiedSeverity : $keywordSeverity,
-            'is_dismissed' => $advisory->is_dismissed && $keywordSeverity === Severity::Unknown,
-            'cvss_score' => $entry->cvssScore(),
+            'severity' => $severity,
+            'severity_basis' => $basis,
+            'is_dismissed' => $advisory->is_dismissed && $ratings[SeverityBasis::Vendor->value] === Severity::Unknown && $ratings[SeverityBasis::Cvss->value] === Severity::Unknown,
+            'cvss_score' => $cvssScore,
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,
             'published_at' => $entry->publishedAt,
-        ])->save();
+        ]);
+
+        $isOngoingCritical = $severity === Severity::Critical && $this->isFresh($entry);
+
+        if (! $advisory->exists) {
+            $advisory->is_backfill = $isFirstPoll && ! $isOngoingCritical;
+        } elseif ($isOngoingCritical) {
+            $advisory->is_backfill = false;
+        }
+
+        $advisory->save();
 
         return $advisory;
+    }
+
+    /**
+     * Published within `psm.notices.relevant_days`: older news no longer alerts anything.
+     */
+    private function isFresh(NoticeEntry $entry): bool
+    {
+        return $entry->publishedAt !== null && ! $entry->publishedAt->isBefore(now()->subDays(config('psm.notices.relevant_days')));
     }
 
     private function contentHash(NoticeEntry $entry): string

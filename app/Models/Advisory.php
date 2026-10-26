@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AdvisoryKind;
 use App\Enums\Ecosystem;
 use App\Enums\Severity;
+use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Services\Packages\PackagistVulnerabilityMatcher;
 use App\Services\Packages\RubySecVulnerabilityMatcher;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'aliases', 'title', 'summary', 'severity', 'cvss_score', 'technology', 'url', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'is_dismissed', 'planned_release_at', 'affected_branches', 'localized_summary'])]
+#[Fillable(['source', 'external_id', 'kind', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -31,6 +32,7 @@ class Advisory extends Model
             'kind' => AdvisoryKind::class,
             'aliases' => 'array',
             'severity' => Severity::class,
+            'severity_basis' => SeverityBasis::class,
             'cvss_score' => 'decimal:1',
             'technology' => Technology::class,
             'published_at' => 'datetime',
@@ -38,7 +40,9 @@ class Advisory extends Model
             'withdrawn_at' => 'datetime',
             'fixed_versions' => 'array',
             'classified_severity' => Severity::class,
+            'classification_failed_at' => 'datetime',
             'is_dismissed' => 'boolean',
+            'is_backfill' => 'boolean',
             'planned_release_at' => 'datetime',
             'affected_branches' => 'array',
         ];
