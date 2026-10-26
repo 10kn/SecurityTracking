@@ -9,6 +9,7 @@ use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Advisory;
+use App\Models\ChatNotification;
 use App\Models\Deployment;
 use App\Models\Finding;
 use App\Models\IncidentTeamNotice;
@@ -16,6 +17,7 @@ use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\RuntimeBranch;
+use App\Models\RuntimeRelease;
 use App\Models\Service;
 use App\Models\Team;
 
@@ -285,3 +287,72 @@ it('lists an incident by its most severe pre-notice, and not one sent right away
     expect($card)->toContain('[Medium] PHP medium notice')
         ->not->toContain('PHP low notice', 'part of a critical issue', 'Upcoming Critical', 'had in a card');
 });
+
+/**
+ * A critical php incident the team got a card about on 2026-10-23, with a service on 8.3.
+ */
+function incidentAwaitingPatch(Team $team, Deployment $deployment): Advisory
+{
+    Runtime::factory()->for($deployment)->create(['technology' => Technology::Php, 'raw_version' => '8.3.35', 'version' => '8.3.35', 'branch' => '8.3', 'status' => RuntimeStatus::Ok]);
+    $notice = Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'Upcoming Critical PHP Security Release', 'published_at' => '2026-10-20 20:32:00']);
+    app(AssignNoticeToIncident::class)->handle($notice);
+    IncidentTeamNotice::create(['team_id' => $team->id, 'advisory_id' => $notice->id, 'severity' => Severity::Critical, 'reason' => IncidentAlertReason::New])
+        ->forceFill(['created_at' => '2026-10-23 10:00:00'])->save();
+
+    return $notice->refresh();
+}
+
+it('lists the incidents waiting for a fix with the security releases that may be it, and sends no digest for that list alone', function () {
+    incidentAwaitingPatch($this->team, $this->deployment);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36', 'released_at' => '2026-10-21', 'created_at' => '2026-10-23 15:00:00']);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Đang chờ bản vá', '[Critical] Upcoming Critical PHP Security Release', 'Nhánh 8.3 · có thể là bản vá: 8.3.36 (hãng chưa xác nhận)');
+
+    $this->travelTo('2026-10-25 01:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('asks for a review once, when an incident is still waiting for a fix after the configured days', function () {
+    incidentAwaitingPatch($this->team, $this->deployment);
+    app(SendDailyDigest::class)->handle();
+
+    $this->travelTo('2026-11-04 01:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('cần rà soát: quá 14 ngày chưa có bản vá');
+
+    $this->travelTo('2026-11-05 01:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('no longer lists an incident once the vendor confirmed the fix for the branch', function () {
+    $notice = incidentAwaitingPatch($this->team, $this->deployment);
+    $notice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36', 'released_at' => '2026-10-21']);
+
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')))->not->toContain('Đang chờ bản vá');
+});
+
+it('counts a card from before incidents as telling the team, from when it was queued', function (string $queuedAt, int $digests) {
+    Runtime::factory()->for($this->deployment)->create(['technology' => Technology::Php, 'raw_version' => '8.3.35', 'version' => '8.3.35', 'branch' => '8.3', 'status' => RuntimeStatus::Ok]);
+    $notice = Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'Upcoming Critical PHP Security Release', 'published_at' => '2026-10-20 20:32:00']);
+    app(AssignNoticeToIncident::class)->handle($notice);
+    ChatNotification::factory()->for($this->team)->sent()->create(['kind' => ChatNotificationKind::PreNotice, 'dedupe_key' => "pre_notice:{$notice->id}:{$this->team->id}:critical"])
+        ->forceFill(['created_at' => $queuedAt])->save();
+
+    expect(app(SendDailyDigest::class)->handle())->toBe($digests);
+
+    $this->travelTo('2026-10-26 01:00:00');
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', [], '2026-10-25 10:00:00');
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Đang chờ bản vá', '[Critical] Upcoming Critical PHP Security Release');
+})->with([
+    'queued since the previous digest' => ['2026-10-23 10:00:00', 1],
+    'queued before it' => ['2026-10-21 10:00:00', 0],
+]);

@@ -42,7 +42,9 @@ it('stores the security news of php.net as pre-notices and leaves release announ
         ->url->toBe('https://www.php.net/archive/2026.php#2026-10-20-1')
         ->published_at->toIso8601String()->toBe('2026-10-20T20:32:00+00:00')
         ->summary->toContain('advance notice of an upcoming security release', '21 October 2026 at 14:00 UTC')
+        ->patch_versions->toBeNull()
         ->and(Advisory::where('title', 'like', 'Security advisory%')->sole())
+        ->patch_versions->toBe(['8.5.12', '8.4.27', '8.3.36', '8.2.35'])
         ->aliases->toBe(['CVE-2026-109618', 'CVE-2026-109619', 'GHSA-w8hw-w9fx-j79w', 'GHSA-6wmf-4rv5-p3rp'])
         ->links->toContain('https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w', 'https://www.php.net/downloads.php?source=Y')
         ->summary->toHaveLength(503);

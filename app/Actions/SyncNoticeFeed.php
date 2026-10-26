@@ -226,6 +226,7 @@ class SyncNoticeFeed
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,
             'links' => $entry->links,
+            'patch_versions' => $entry->patchVersions() ?: null,
             'published_at' => $entry->publishedAt,
         ]);
 

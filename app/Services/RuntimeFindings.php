@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\FindingRule;
 use App\Enums\RuntimeStatus;
+use App\Models\IncidentTeamPatch;
 use App\Models\Runtime;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -14,7 +15,9 @@ use Illuminate\Support\Carbon;
  *
  * A vendor pre-notice does not raise their severity: it rarely says which branches are affected, so the team hears
  * about it from its own card (see SendPreNoticeAlerts) instead of every older finding of the technology turning
- * Critical.
+ * Critical. Once the team got a "Đã có bản vá" card for the branch, its "thiếu bản vá" finding asking for that
+ * version or an earlier one takes the incident's severity and counts as sent by that card (see CoverPatchedFindings);
+ * one asking for a later release is a finding of its own.
  */
 class RuntimeFindings
 {
@@ -63,13 +66,16 @@ class RuntimeFindings
             );
         }
 
+        $patch = is_string($latest) ? IncidentTeamPatch::covering($runtime->deployment->service->project->team_id, $technology, $runtime->branch, $latest) : null;
+        $severity = $this->policy->severityFor($rule);
+
         return new FindingData(
             fingerprint: FindingData::fingerprint($rule, $runtime->deployment_id, "technology:{$technology->value}", $runtime->branch),
             rule: $rule,
-            severity: $this->policy->severityFor($rule),
+            severity: $patch !== null && $patch->severity->rank() > $severity->rank() ? $patch->severity : $severity,
             title: __(':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest', ['technology' => $technology->getLabel(), 'branch' => $runtime->branch, 'latest' => (string) $latest], $locale),
             groupKey: "{$rule->value}:{$technology->value}:{$latest}",
-            context: [...$context, 'source_url' => $technology->releaseUrl((string) $latest)],
+            context: [...$context, 'source_url' => $technology->releaseUrl((string) $latest), ...($patch === null ? [] : ['covered_by_patch_id' => $patch->id])],
             runtimeId: $runtime->id,
         );
     }

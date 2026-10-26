@@ -114,9 +114,20 @@ return [
     | published from `release_window_hours.before` hours before to `release_window_hours.after` hours after the release
     | another incident planned is only suggested to the admin, as is the incident the classifier relates it to.
     |
+    | Once a pre-notice of the incident names the version to update to and the catalog lists it as a security release,
+    | each team with a service on that branch gets one "Đã có bản vá" card, which also stands for the team's
+    | "thiếu bản vá" findings of the branch: they take the incident's severity and deadline and send no card of their
+    | own. While a team waits for the fix of an incident of the technology, a new "thiếu bản vá" finding holds its card
+    | for `patch_hold_hours`, so the vendor can confirm the version first. The digest lists the incidents still
+    | waiting under "Đang chờ bản vá" for `awaiting_patch_days`, with security releases that may be the fix, and asks
+    | for a review once `review_after_days` pass without one.
+    |
     */
 
     'incidents' => [
+        'patch_hold_hours' => (int) env('PSM_INCIDENT_PATCH_HOLD_HOURS', 6),
+        'review_after_days' => (int) env('PSM_INCIDENT_REVIEW_AFTER_DAYS', 14),
+        'awaiting_patch_days' => (int) env('PSM_INCIDENT_AWAITING_PATCH_DAYS', 60),
         'release_window_hours' => [
             'before' => (int) env('PSM_INCIDENT_WINDOW_BEFORE_HOURS', 24),
             'after' => (int) env('PSM_INCIDENT_WINDOW_AFTER_HOURS', 48),

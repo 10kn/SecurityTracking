@@ -93,6 +93,32 @@ final readonly class NoticeEntry
         return [...$this->cveIds(), ...$this->ghsaIds()];
     }
 
+    /**
+     * The versions the entry tells to update to, e.g. ["8.5.12", "8.4.27", "8.3.36", "8.2.35"] from "Update to PHP
+     * 8.5.12, 8.4.27, 8.3.36 or 8.2.35." Only versions right after "update/upgrade … to", "fixed in" or "patched in"
+     * count, up to the end of the sentence (a dot followed by a space or the end of the text, so "Node.js 22.20.1" and
+     * "ruby-lang.org" do not end it), a clause naming other versions ("if you run …", "for …", "from …") or one
+     * setting versions apart ("but not …", "however …", "although …", "excluding …"): "fixed in PHP 8.3.36 but not PHP
+     * 8.4.26" gives only 8.3.36. A negated phrase ("not fixed in") and pre-releases ("8.3.36-rc1") do not count, nor do
+     * other versions in the text.
+     *
+     * @return list<string>
+     */
+    public function patchVersions(): array
+    {
+        $text = "{$this->title}. {$this->text}";
+
+        preg_match_all('/\b(?:(?:update|upgrade|updating|upgrading)(?:\s+[\w.-]+){0,3}?\s+to|(?:fixed|patched)\s+in)\b((?:[^.;:!?]|\.(?!\s|$)){0,200})/i', $text, $sentences, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+
+        return collect($sentences)
+            ->reject(fn (array $match): bool => preg_match('/\b(?:not|never|no longer|cannot|won\'t|isn\'t|aren\'t)\s+(?:\w+\s+){0,2}$/i', substr($text, max(0, $match[0][1] - 30), min(30, $match[0][1]))) === 1)
+            ->map(fn (array $match): string => preg_split('/\b(?:if|when|while|unless|for|from|on|running|affected|except|excluding|but|not|however|although|though|whereas|yet)\b/i', $match[1][0])[0])
+            ->flatMap(fn (string $sentence): array => preg_match_all('/(?<![\d.])v?(\d+\.\d+\.\d+)(?![\d.]*\d|-|\w)/i', $sentence, $versions) > 0 ? $versions[1] : [])
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     public function summary(int $length): ?string
     {
         return $this->text === '' ? null : Str::limit($this->text, $length);

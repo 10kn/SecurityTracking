@@ -11,6 +11,7 @@ use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\IncidentSuggestion;
 use App\Services\Notices\NoticeUrl;
+use App\Support\IncidentLock;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -109,11 +110,12 @@ class AssignNoticeToIncident
     }
 
     /**
-     * Serializes the assignment, merges and splits of the incidents of a technology until the transaction ends.
+     * Serializes the assignment, merges and splits of the incidents of a technology until the transaction ends (see
+     * IncidentLock).
      */
     public function lock(Technology $technology): void
     {
-        DB::select('select pg_advisory_xact_lock(?)', [crc32("incidents:{$technology->value}")]);
+        IncidentLock::take([$technology]);
     }
 
     /**

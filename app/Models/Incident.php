@@ -6,6 +6,7 @@ use App\Enums\IncidentScope;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
+use App\Support\Version;
 use Database\Factories\IncidentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -144,6 +145,65 @@ class Incident extends Model
 
             $this->save();
         });
+    }
+
+    /**
+     * The branches the vendor has a fix for: a pre-notice of the incident that was not dismissed names the version in
+     * an "Update to …" sentence (see NoticeEntry::patchVersions()), and the catalog lists that version as a security
+     * release of the branch. The highest such version of each branch, with the pre-notice that named it.
+     *
+     * @return array<string, array{version: string, notice: Advisory}>
+     */
+    public function confirmedPatches(): array
+    {
+        $notices = $this->notices()->where('is_dismissed', false)->whereNotNull('patch_versions')->orderBy('id')->get();
+        $stated = $notices->flatMap(fn (Advisory $notice): array => $notice->patch_versions ?? [])->unique()->values();
+
+        if ($stated->isEmpty()) {
+            return [];
+        }
+
+        $securityReleases = RuntimeRelease::where('technology', $this->technology)
+            ->where('is_security_release', true)
+            ->whereIn('version', $stated)
+            ->pluck('branch', 'version');
+
+        $patches = [];
+
+        foreach ($notices as $notice) {
+            foreach ($notice->patch_versions ?? [] as $version) {
+                $branch = $securityReleases->get($version);
+
+                if ($branch !== null && (! isset($patches[$branch]) || Version::isNewer($version, $patches[$branch]['version']))) {
+                    $patches[$branch] = ['version' => $version, 'notice' => $notice];
+                }
+            }
+        }
+
+        return $patches;
+    }
+
+    /**
+     * Security releases of the branches that came out since the incident began, the latest of each branch: they may be
+     * the fix, but no pre-notice says so yet.
+     *
+     * @param  list<string>  $branches
+     * @return array<string, RuntimeRelease>
+     */
+    public function candidatePatches(array $branches): array
+    {
+        if ($branches === [] || $this->first_published_at === null) {
+            return [];
+        }
+
+        return RuntimeRelease::where('technology', $this->technology)
+            ->whereIn('branch', $branches)
+            ->where('is_security_release', true)
+            ->whereDate('released_at', '>=', $this->first_published_at->copy()->subDay()->toDateString())
+            ->get()
+            ->groupBy('branch')
+            ->map(fn (Collection $releases): RuntimeRelease => $releases->sort(fn (RuntimeRelease $a, RuntimeRelease $b): int => version_compare($b->version, $a->version))->first())
+            ->all();
     }
 
     /**

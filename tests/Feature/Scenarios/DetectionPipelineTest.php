@@ -4,6 +4,7 @@ use App\Actions\UpdateProductionInventory;
 use App\Enums\FindingRule;
 use App\Enums\FindingState;
 use App\Enums\RuntimeStatus;
+use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Finding;
 use App\Models\Project;
@@ -208,6 +209,55 @@ it('warns each team running php once when php.net pre-announces a critical secur
     ])
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(2)
         ->and(chatMessagesTo('ANALYTICS'))->toHaveCount(0);
+});
+
+it('tells each team once that the fix is out when the vendor names the version and the catalog lists it, standing for the "thiếu bản vá" finding', function () {
+    $this->travelTo('2026-10-20 20:45:00');
+    $released = false;
+    fakePhpCatalogBefore8336($released);
+    fakeCatalogSources();
+    fakeNoticeFeeds();
+    artisan('psm:sync-runtimes')->assertSuccessful();
+    $inventory = app(UpdateProductionInventory::class);
+    $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
+    $booking = teamWithChatSpace('Booking', 'BOOKING');
+    $inventory->handle(serviceOfTeam($commerce, 'shop-api'), ['php' => '8.3.35']);
+    $inventory->handle(serviceOfTeam($booking, 'booking-api'), ['php' => '8.4.27']);
+
+    artisan('psm:watch-notices')->assertSuccessful();
+
+    $this->travelTo('2026-10-21 01:00:00');
+    artisan('psm:watch-notices')->assertSuccessful();
+
+    expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
+        '[Critical] Upcoming Critical PHP Security Release',
+        '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+    ]);
+
+    $this->travelTo('2026-10-21 15:00:00');
+    $released = true;
+    artisan('psm:sync-runtimes')->assertSuccessful();
+
+    expect(chatMessagesTo('COMMERCE'))->toHaveCount(2);
+
+    $this->travel(15)->minutes();
+    artisan('psm:watch-notices')->assertSuccessful();
+    $this->travel(1)->hour();
+    artisan('psm:sync-runtimes')->assertSuccessful();
+    artisan('psm:watch-notices')->assertSuccessful();
+
+    $finding = Finding::where('rule', FindingRule::RuntimeOutdatedSecurity)->sole();
+    expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
+        '[Critical] Upcoming Critical PHP Security Release',
+        '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+        '[Critical] Đã có bản vá, nâng lên 8.3.36',
+    ])
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('shop-api', 'PHP 8.3.35 → 8.3.36', 'Hạn xử lý: 24/10/2026.')
+        ->and(chatMessagesTo('BOOKING')->pluck('text')->all())->toBe([
+            '[Critical] Upcoming Critical PHP Security Release',
+            '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+        ])
+        ->and($finding)->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical);
 });
 
 it('alerts the owning team right after a lockfile with a vulnerable package is uploaded', function () {

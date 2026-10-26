@@ -2,10 +2,15 @@
 
 use App\Actions\SendFindingAlerts;
 use App\Enums\ChatNotificationKind;
+use App\Enums\FindingRule;
+use App\Enums\IncidentAlertReason;
 use App\Enums\Severity;
+use App\Enums\Technology;
+use App\Models\Advisory;
 use App\Models\ChatNotification;
 use App\Models\Deployment;
 use App\Models\Finding;
+use App\Models\IncidentTeamNotice;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\Team;
@@ -123,4 +128,80 @@ it('links to the findings of the card to mark them as read, and gives the deadli
         'Đánh dấu đã đọc',
         "/admin/findings?team={$this->team->id}&ids={$first->id}%2C{$second->id}",
     );
+});
+
+/**
+ * A "thiếu bản vá" finding of a php runtime on 8.3.
+ */
+function outdatedSecurityFinding(Team $team, array $attributes = []): Finding
+{
+    $runtime = runtimeAt($team, 'shop-api', Technology::Php, '8.3.35');
+    $runtime->update(['version' => '8.3.35', 'branch' => '8.3']);
+
+    return Finding::factory()->for($runtime->deployment)->create([
+        'rule' => FindingRule::RuntimeOutdatedSecurity,
+        'runtime_id' => $runtime->id,
+        'group_key' => 'runtime_outdated_security:php:8.3.36',
+        'context' => ['latest' => '8.3.36'],
+        ...$attributes,
+    ]);
+}
+
+it('holds a new "thiếu bản vá" finding for a few hours while the team waits for the fix of an incident it was warned of', function () {
+    $this->travelTo('2026-10-21 15:00:00');
+    $notice = Advisory::factory()->preNotice(Technology::Php)->create(['published_at' => now()->subDay()]);
+    IncidentTeamNotice::create(['team_id' => $this->team->id, 'advisory_id' => $notice->id, 'severity' => Severity::Critical, 'reason' => IncidentAlertReason::New]);
+    outdatedSecurityFinding($this->team);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(0);
+
+    $this->travel(361)->minutes();
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(1);
+});
+
+it('holds the finding as well when the team was warned by a card from before incidents', function () {
+    $this->travelTo('2026-10-21 15:00:00');
+    $notice = Advisory::factory()->preNotice(Technology::Php)->create(['published_at' => now()->subDay()]);
+    ChatNotification::factory()->for($this->team)->sent()->create(['kind' => ChatNotificationKind::PreNotice, 'dedupe_key' => "pre_notice:{$notice->id}:{$this->team->id}:critical"]);
+    outdatedSecurityFinding($this->team);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(0);
+
+    $this->travel(361)->minutes();
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(1);
+});
+
+it('does not hold the finding of a team that was not warned of an incident of the technology', function () {
+    Advisory::factory()->preNotice(Technology::Php)->create();
+    outdatedSecurityFinding($this->team);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(1);
+});
+
+it('counts a finding a "Đã có bản vá" card stands for as sent, without a card of its own', function () {
+    $finding = outdatedSecurityFinding($this->team, ['severity' => Severity::Critical, 'context' => ['latest' => '8.3.36', 'covered_by_patch_id' => 1]]);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(0)
+        ->and(chatMessagesTo('COMMERCE'))->toHaveCount(0)
+        ->and($finding->refresh()->notified_severity)->toBe(Severity::Critical);
+});
+
+it('does not mark as sent a covered finding that lost its card after it was read', function () {
+    $finding = outdatedSecurityFinding($this->team, ['severity' => Severity::Critical, 'context' => ['latest' => '8.3.36', 'covered_by_patch_id' => 1]]);
+    $isChanged = false;
+
+    Finding::retrieved(function (Finding $read) use (&$isChanged): void {
+        if (! $isChanged) {
+            $isChanged = true;
+            Finding::whereKey($read->id)->update(['severity' => Severity::High, 'context' => ['latest' => '8.3.40'], 'notified_severity' => null, 'notified_at' => null]);
+        }
+    });
+
+    app(SendFindingAlerts::class)->handle();
+    Finding::flushEventListeners();
+
+    expect($finding->refresh()->notified_severity)->toBeNull()
+        ->and($finding->severity)->toBe(Severity::High);
 });

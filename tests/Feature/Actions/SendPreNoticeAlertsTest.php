@@ -1,7 +1,13 @@
 <?php
 
+use App\Actions\AssignNoticeToIncident;
+use App\Actions\EvaluateRuntimes;
+use App\Actions\SendFindingAlerts;
 use App\Actions\SendPreNoticeAlerts;
+use App\Actions\SyncFindings;
 use App\Enums\ChatNotificationKind;
+use App\Enums\FindingRule;
+use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
@@ -10,7 +16,12 @@ use App\Models\ChatNotification;
 use App\Models\Finding;
 use App\Models\Incident;
 use App\Models\IncidentTeamNotice;
+use App\Models\IncidentTeamPatch;
+use App\Models\Runtime;
+use App\Models\RuntimeRelease;
 use App\Models\Team;
+use App\Services\RuntimeFindings;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->travelTo('2026-10-20 21:00:00');
@@ -261,4 +272,330 @@ it('records as told only the pre-notices the card shows', function () {
     app(SendPreNoticeAlerts::class)->handle();
 
     expect(IncidentTeamNotice::pluck('advisory_id')->all())->toEqualCanonicalizing([$this->preNotice->id, $shown->id]);
+});
+
+/**
+ * A runtime of the team's service on a known branch.
+ */
+function runtimeOnBranch(Team $team, string $service, string $version): Runtime
+{
+    $runtime = runtimeAt($team, $service, Technology::Php, $version);
+    $runtime->update(['version' => $version, 'branch' => implode('.', array_slice(explode('.', $version), 0, 2))]);
+
+    return $runtime;
+}
+
+it('sends one "Đã có bản vá" card once the vendor names the version and the catalog lists it as a security release', function () {
+    $this->travelTo('2026-10-21 15:00:00');
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    runtimeOnBranch($this->commerce, 'shop-legacy', '8.1.31');
+    runtimeOnBranch($this->booking, 'booking-api', '8.3.36');
+    $this->preNotice->update(['patch_versions' => ['8.5.12', '8.4.27', '8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(2);
+
+    $card = chatMessagesTo('COMMERCE')->sole();
+    expect($card['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+        ->and(chatJson($card))->toContain(
+            'Hãng đã xác nhận bản vá 8.3.36. Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.',
+            'Hạn xử lý: 24/10/2026.',
+            '1 service cần nâng cấp', 'PHP 8.3.35 → 8.3.36',
+            '1 service ở nhánh chưa có bản vá', 'PHP 8.1.31 · Phạm vi: chưa xác định',
+            'Upcoming Critical PHP Security Release',
+        )
+        ->and(chatMessagesTo('BOOKING')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+        ->and(IncidentTeamPatch::sole())->team_id->toBe($this->commerce->id)->branch->toBe('8.3')->version->toBe('8.3.36')->severity->toBe(Severity::Critical);
+
+    $this->travel(15)->minutes();
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+});
+
+it('does not confirm a fix the catalog does not list as a security release yet, nor a release no pre-notice names', function (?bool $isSecurityRelease, array $patchVersions) {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $this->preNotice->update(['patch_versions' => $patchVersions]);
+
+    if ($isSecurityRelease !== null) {
+        RuntimeRelease::factory()->create(['branch' => '8.3', 'version' => '8.3.36', 'is_security_release' => $isSecurityRelease]);
+    }
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+        ->and(IncidentTeamPatch::count())->toBe(0);
+})->with([
+    'not in the catalog yet' => [null, ['8.3.36']],
+    'not tagged security' => [false, ['8.3.36']],
+    'named by no pre-notice' => [true, []],
+]);
+
+it('sends the fix after the first card once the catalog lists it, and then the team\'s "thiếu bản vá" finding sends no card of its own', function () {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $this->travel(2)->hours();
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    $finding = Finding::factory()->for(Runtime::sole()->deployment)->create([
+        'rule' => FindingRule::RuntimeOutdatedSecurity,
+        'runtime_id' => Runtime::sole()->id,
+        'severity' => Severity::High,
+        'group_key' => 'runtime_outdated_security:php:8.3.36',
+        'context' => ['latest' => '8.3.36'],
+        'sla_due_at' => now()->addDays(14),
+    ]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['[Critical] Upcoming Critical PHP Security Release', '[Critical] Đã có bản vá, nâng lên 8.3.36'])
+        ->and($finding->refresh())
+        ->severity->toBe(Severity::Critical)
+        ->notified_severity->toBe(Severity::Critical)
+        ->sla_due_at->toDateTimeString()->toBe(now()->addDays(3)->toDateTimeString())
+        ->and($finding->context['covered_by_patch_id'])->toBe(IncidentTeamPatch::sole()->id)
+        ->and(app(SendFindingAlerts::class)->handle())->toBe(0);
+});
+
+/**
+ * An open "thiếu bản vá" finding of the runtime asking for `$latest`.
+ */
+function patchableFinding(Runtime $runtime, string $latest, array $attributes = []): Finding
+{
+    return Finding::factory()->for($runtime->deployment)->create([
+        'rule' => FindingRule::RuntimeOutdatedSecurity,
+        'runtime_id' => $runtime->id,
+        'severity' => Severity::High,
+        'group_key' => "runtime_outdated_security:php:{$latest}",
+        'context' => ['latest' => $latest],
+        'sla_due_at' => now()->addDays(14),
+        ...$attributes,
+    ]);
+}
+
+it('leaves a finding asking for a later release than the card\'s alone, so it sends its own card', function () {
+    $runtime = runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    $finding = patchableFinding($runtime, '8.3.40');
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect($finding->refresh())->severity->toBe(Severity::High)->notified_severity->toBeNull()
+        ->and($finding->context)->not->toHaveKey('covered_by_patch_id');
+});
+
+it('does not cover the finding once the catalog has a later security release than the card\'s', function () {
+    $runtime = runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $this->travel(1)->day();
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.40']);
+    $runtime->update(['status' => RuntimeStatus::OutdatedSecurity, 'status_context' => ['latest' => '8.3.40']]);
+    app(EvaluateRuntimes::class)->syncRuntimeFindings([$runtime->deployment_id]);
+
+    $finding = Finding::sole();
+    expect($finding)->severity->toBe(Severity::High)
+        ->and($finding->context)->not->toHaveKey('covered_by_patch_id');
+
+    $this->travel(7)->hours();
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('PHP 8.3 thiếu bản vá bảo mật, cần nâng lên 8.3.40');
+});
+
+it('sends another card when the vendor revises the fixed version up in the same pre-notice, but not when it revises it down', function () {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.37']);
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $this->travel(1)->hour();
+    $this->preNotice->update(['patch_versions' => ['8.3.37']]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['[Critical] Đã có bản vá, nâng lên 8.3.36', '[Critical] Đã có bản vá, nâng lên 8.3.37'])
+        ->and(IncidentTeamPatch::orderBy('id')->pluck('version')->all())->toBe(['8.3.36', '8.3.37']);
+
+    $this->travel(1)->hour();
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0)
+        ->and(IncidentTeamPatch::count())->toBe(2);
+});
+
+it('still sends the fix to a team told about the incident once its pre-notices are older than the configured days', function (bool $isLegacyCard) {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+
+    if ($isLegacyCard) {
+        ChatNotification::factory()->for($this->commerce)->sent()->create([
+            'kind' => ChatNotificationKind::PreNotice,
+            'dedupe_key' => "pre_notice:{$this->preNotice->id}:{$this->commerce->id}:critical",
+            'payload' => ['text' => '[Critical] Upcoming Critical PHP Security Release'],
+        ]);
+    } else {
+        app(SendPreNoticeAlerts::class)->handle();
+    }
+
+    $this->travelTo('2026-11-09 21:00:00');
+    runtimeOnBranch($this->booking, 'booking-api', '8.3.35');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->not->toContain('Mức độ tăng')
+        ->and(chatMessagesTo('BOOKING'))->toHaveCount(0);
+
+    $this->travel(15)->minutes();
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+
+    $this->travelTo('2026-12-20 00:00:00');
+    $this->preNotice->update(['patch_versions' => ['8.3.37']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.37']);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+})->with([
+    'told by an incident card' => false,
+    'told by a card from before incidents' => true,
+]);
+
+it('sends no "Đã có bản vá" card for an incident only the digest tells about', function () {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $this->preNotice->update(['severity' => Severity::Medium, 'patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    IncidentTeamNotice::create(['team_id' => $this->commerce->id, 'advisory_id' => $this->preNotice->id, 'severity' => Severity::Unknown, 'reason' => 'new']);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+
+    $this->travelTo('2026-11-09 21:00:00');
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0)
+        ->and(IncidentTeamPatch::count())->toBe(0);
+});
+
+it('gives the card and the findings it stands for one deadline, never later than one a finding already had', function () {
+    $this->travelTo('2026-10-21 15:00:00');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    $later = patchableFinding(runtimeOnBranch($this->commerce, 'shop-api', '8.3.35'), '8.3.36');
+    $earlier = patchableFinding(runtimeOnBranch($this->commerce, 'shop-web', '8.3.34'), '8.3.36', ['sla_due_at' => now()->addDay()]);
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Hạn xử lý: 22/10/2026.')
+        ->and($earlier->refresh()->sla_due_at->toDateTimeString())->toBe(now()->addDay()->toDateTimeString())
+        ->and($later->refresh()->sla_due_at->toDateTimeString())->toBe(now()->addDays(3)->toDateTimeString());
+});
+
+it('keeps the finding the card stands for when an evaluation read before the card is stored after it', function () {
+    $runtime = runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $runtime->update(['status' => RuntimeStatus::OutdatedSecurity, 'status_context' => ['latest' => '8.3.36']]);
+    app(EvaluateRuntimes::class)->syncRuntimeFindings([$runtime->deployment_id]);
+    $stale = app(RuntimeFindings::class)->for($runtime->refresh());
+
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    app(SendPreNoticeAlerts::class)->handle();
+    app(SyncFindings::class)->handle($runtime->deployment, RuntimeFindings::RULES, [$stale]);
+
+    $finding = Finding::sole();
+    expect($stale->severity)->toBe(Severity::High)
+        ->and($finding)->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical)
+        ->and($finding->context['covered_by_patch_id'])->toBe(IncidentTeamPatch::sole()->id)
+        ->and(app(SendFindingAlerts::class)->handle())->toBe(0);
+});
+
+it('lists only the services below the fixed version as needing the upgrade', function () {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    runtimeOnBranch($this->commerce, 'shop-web', '8.3.37');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))
+        ->toContain('1 service cần nâng cấp', 'PHP 8.3.35 → 8.3.36', '1 service đã ở bản vá hoặc mới hơn.')
+        ->not->toContain('PHP 8.3.37 → 8.3.36', 'shop-web', 'nhánh chưa có bản vá');
+});
+
+it('shows a branch whose fix an earlier card announced as having one, not as waiting', function () {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    runtimeOnBranch($this->commerce, 'shop-web', '8.3.36');
+    runtimeOnBranch($this->commerce, 'shop-admin', '8.4.26');
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $this->travel(1)->hour();
+    $this->preNotice->update(['patch_versions' => ['8.3.36', '8.4.27']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.4', 'version' => '8.4.27']);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1);
+
+    $card = chatMessagesTo('COMMERCE')->last();
+    expect($card['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.4.27')
+        ->and(chatJson($card))->toContain('Hãng đã xác nhận bản vá 8.4.27.', '2 service cần nâng cấp', 'PHP 8.3.35 → 8.3.36', 'PHP 8.4.26 → 8.4.27', '1 service đã ở bản vá hoặc mới hơn.')
+        ->not->toContain('nhánh chưa có bản vá', 'Phạm vi:');
+});
+
+it('sends the card of a covered finding once it asks for a later release than the card\'s', function () {
+    $runtime = runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    $runtime->update(['status' => RuntimeStatus::OutdatedSecurity, 'status_context' => ['latest' => '8.3.36']]);
+    app(EvaluateRuntimes::class)->syncRuntimeFindings([$runtime->deployment_id]);
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    app(SendPreNoticeAlerts::class)->handle();
+    $deadline = Finding::sole()->sla_due_at;
+
+    expect(Finding::sole())->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical);
+
+    $this->travel(1)->day();
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.40']);
+    $runtime->update(['status_context' => ['latest' => '8.3.40']]);
+    app(EvaluateRuntimes::class)->syncRuntimeFindings([$runtime->deployment_id]);
+
+    $finding = Finding::sole();
+    expect($finding)->severity->toBe(Severity::High)->notified_severity->toBeNull()
+        ->and($finding->sla_due_at->toDateTimeString())->toBe($deadline->toDateTimeString())
+        ->and($finding->context)->not->toHaveKey('covered_by_patch_id');
+
+    $this->travel(7)->hours();
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('PHP 8.3 thiếu bản vá bảo mật, cần nâng lên 8.3.40')
+        ->and(app(SendFindingAlerts::class)->handle())->toBe(0);
+});
+
+it('groups the services of numbered branches such as those of Node.js by their fix', function () {
+    $notice = Advisory::factory()->preNotice(Technology::Nodejs)->create(['title' => 'Node.js security releases', 'published_at' => now()->subHour(), 'patch_versions' => ['22.20.1', '24.9.2']]);
+    runtimeAt($this->commerce, 'events', Technology::Nodejs, '22.20.0')->update(['version' => '22.20.0', 'branch' => '22']);
+    runtimeAt($this->commerce, 'notifier', Technology::Nodejs, '24.9.0')->update(['version' => '24.9.0', 'branch' => '24']);
+    RuntimeRelease::factory()->security()->create(['technology' => Technology::Nodejs, 'branch' => '22', 'version' => '22.20.1']);
+    RuntimeRelease::factory()->security()->create(['technology' => Technology::Nodejs, 'branch' => '24', 'version' => '24.9.2']);
+    $this->preNotice->delete();
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))
+        ->toContain('Đã có bản vá, nâng lên', '2 service cần nâng cấp', '22.20.0 → 22.20.1', '24.9.0 → 24.9.2')
+        ->not->toContain('nhánh chưa có bản vá')
+        ->and(IncidentTeamPatch::orderBy('branch')->pluck('branch')->all())->toBe(['22', '24'])
+        ->and($notice->refresh()->incident_id)->not->toBeNull();
+});
+
+it('takes the lock of the technology\'s incidents before locking any row', function () {
+    runtimeOnBranch($this->commerce, 'shop-api', '8.3.35');
+    app(AssignNoticeToIncident::class)->assignUnassigned();
+    DB::enableQueryLog();
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $queries = collect(DB::getQueryLog());
+    $lock = $queries->search(fn (array $query): bool => str_contains($query['query'], 'pg_advisory_xact_lock') && $query['bindings'] === [crc32('incidents:php')]);
+    expect($lock)->toBeInt()
+        ->and($lock)->toBeLessThan($queries->search(fn (array $query): bool => str_contains($query['query'], 'for update')));
 });

@@ -10,6 +10,7 @@ use App\Models\Incident;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
+use App\Support\Version;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
@@ -79,11 +80,113 @@ class GoogleChatCards
     public function preNotice(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, ?Severity $previousSeverity = null): array
     {
         $technology = $advisory->technology;
-        $title = $advisory->severity === Severity::Unknown ? $advisory->title : "[{$advisory->severity->getLabel()}] {$advisory->title}";
+
+        $widgets = $this->incidentWidgets($incident, $advisory, $previousSeverity, __('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->getLabel()]));
+
+        $services = $runtimes
+            ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
+            ->take($this->maxListedItems())
+            ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, $runtime->displayName().' · '.__('Phạm vi: :scope', ['scope' => $incident->scopeFor($runtime)->getLabel()])))
+            ->values()
+            ->all();
+
+        $sections = [
+            ['widgets' => $widgets],
+            ['header' => __(':count service đang chạy :technology', ['count' => $runtimes->count(), 'technology' => $technology->getLabel()]), 'widgets' => [...$services, ...$this->moreWidget($runtimes->count())]],
+            ...$this->otherNoticesSection($others),
+        ];
+
+        if (filled($advisory->url)) {
+            $sections[] = ['widgets' => [$this->buttons([__('Mở nguồn tin') => $advisory->url])]];
+        }
+
+        return $this->card("incident-{$incident->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections);
+    }
+
+    /**
+     * "Đã có bản vá": the vendor confirmed the fixed version of branches the team runs. It also warns of the incident
+     * itself, for a team that had not heard of it, and lists the services to upgrade with their target (those below
+     * the fixed version, or whose version is not known), counts those already at it or later, then lists those of
+     * branches still waiting for a fix. A branch whose fix an earlier card announced counts as having one. Having a fix does not make a service safe until it is upgraded.
+     *
+     * @param  Collection<int, Advisory>  $others  The incident's other pre-notices that count now.
+     * @param  Collection<int, Runtime>  $runtimes  The team's runtimes of the technology, with `deployment.service.project`.
+     * @param  array<string, string>  $patches  Branch => fixed version, for the branches the card is about.
+     * @param  array<string, string>  $knownPatches  Branch => fixed version, for every branch the incident has a fix for,
+     *                                               including those of earlier cards: their services are not waiting.
+     * @return array<string, mixed>
+     */
+    public function patchAvailable(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, array $patches, array $knownPatches, ?Severity $previousSeverity, ?CarbonInterface $deadline): array
+    {
+        $technology = $advisory->technology;
+        $severity = $advisory->severity;
+        $versions = implode(', ', array_values($patches));
+
+        $widgets = [
+            ['textParagraph' => ['text' => '<b>'.e($advisory->title).'</b>']],
+            ...$this->incidentWidgets($incident, $advisory, $previousSeverity, __('Hãng đã xác nhận bản vá :versions. Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.', ['versions' => $versions])),
+        ];
+        $widgets[] = ['textParagraph' => ['text' => '<b>'.e(__('Hạn xử lý: :date.', ['date' => $this->date($deadline)])).'</b>']];
+
+        $targets = array_replace($knownPatches, $patches);
+        [$patched, $waiting] = $runtimes
+            ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
+            ->partition(fn (Runtime $runtime): bool => isset($targets[$runtime->branch]));
+        [$toUpgrade, $atFix] = $patched->partition(fn (Runtime $runtime): bool => $runtime->version === null || Version::isNewer($targets[$runtime->branch], $runtime->version));
+
+        $sections = [
+            ['widgets' => $widgets],
+            [
+                'header' => __(':count service cần nâng cấp', ['count' => $toUpgrade->count()]),
+                'widgets' => [
+                    ...$toUpgrade
+                        ->take($this->maxListedItems())
+                        ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, __(':runtime → :version', ['runtime' => $runtime->displayName(), 'version' => $targets[$runtime->branch]])))
+                        ->values()
+                        ->all(),
+                    ...$this->moreWidget($toUpgrade->count()),
+                    ...($atFix->isEmpty() ? [] : [['textParagraph' => ['text' => e(__(':count service đã ở bản vá hoặc mới hơn.', ['count' => $atFix->count()]))]]]),
+                ],
+            ],
+        ];
+
+        if ($waiting->isNotEmpty()) {
+            $sections[] = [
+                'header' => __(':count service ở nhánh chưa có bản vá', ['count' => $waiting->count()]),
+                'widgets' => [
+                    ...$waiting
+                        ->take($this->maxListedItems())
+                        ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, $runtime->displayName().' · '.__('Phạm vi: :scope', ['scope' => $incident->scopeFor($runtime)->getLabel()])))
+                        ->values()
+                        ->all(),
+                    ...$this->moreWidget($waiting->count()),
+                ],
+            ];
+        }
+
+        $sections = [...$sections, ...$this->otherNoticesSection($others)];
+        $sections[] = ['widgets' => [$this->buttons(array_filter([
+            __('Mở nguồn tin') => $advisory->url,
+            __('Xem finding') => $this->findingsUrl(['team' => $team->id]),
+        ], filled(...)))]];
+
+        $title = $this->severityTitle($severity, __('Đã có bản vá, nâng lên :versions', ['versions' => $versions]));
+
+        return $this->card("incident-{$incident->id}", $title, __(':technology · :team', ['technology' => $technology->getLabel(), 'team' => $team->name]), $sections);
+    }
+
+    /**
+     * What a card says about an incident: a rise in severity, the opening line, why the severity is unknown, the
+     * summary, the planned release and affected branches, and the facts of the leading pre-notice.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function incidentWidgets(Incident $incident, Advisory $advisory, ?Severity $previousSeverity, string $opening): array
+    {
         $plannedReleaseAt = $incident->planned_release_at ?? $advisory->planned_release_at;
 
         $facts = array_filter([
-            __('Nguồn: :source', ['source' => $technology->releaseSourceLabel()]),
+            __('Nguồn: :source', ['source' => $advisory->technology->releaseSourceLabel()]),
             $advisory->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $advisory->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
             $advisory->cvss_score === null ? null : "CVSS {$advisory->cvss_score}",
             $advisory->severity_basis?->getLabel(),
@@ -101,55 +204,54 @@ class GoogleChatCards
             default => __('Hãng chưa nêu mức độ.'),
         };
 
-        $widgets = [
+        return [
             ...($previousSeverity === null ? [] : [['textParagraph' => ['text' => '<b>'.e(__('Mức độ tăng từ :from lên :to.', ['from' => $previousSeverity->getLabel(), 'to' => $advisory->severity->getLabel()])).'</b>']]]),
-            ['textParagraph' => ['text' => e(__('Hãng vừa đăng tin bảo mật về :technology. Kiểm tra và chuẩn bị nâng cấp các service dưới đây.', ['technology' => $technology->getLabel()]))]],
+            ['textParagraph' => ['text' => e($opening)]],
             ...($unknownSeverity === null ? [] : [['textParagraph' => ['text' => e($unknownSeverity)]]]),
             ...(filled($summary) ? [['textParagraph' => ['text' => e($summary)]]] : []),
             ...($plan === [] ? [] : [['textParagraph' => ['text' => e(implode(' · ', $plan))]]]),
             ['textParagraph' => ['text' => e(implode(' · ', $facts))]],
         ];
+    }
 
-        $services = $runtimes
-            ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
-            ->take($this->maxListedItems())
-            ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, $runtime->displayName().' · '.__('Phạm vi: :scope', ['scope' => $incident->scopeFor($runtime)->getLabel()])))
-            ->values()
-            ->all();
-
-        $sections = [
-            ['widgets' => $widgets],
-            ['header' => __(':count service đang chạy :technology', ['count' => $runtimes->count(), 'technology' => $technology->getLabel()]), 'widgets' => [...$services, ...$this->moreWidget($runtimes->count())]],
-        ];
-
-        if ($others->isNotEmpty()) {
-            $sections[] = [
-                'header' => __('Tin khác của cùng sự kiện'),
-                'widgets' => $others
-                    ->take($this->maxListedItems())
-                    ->map(fn (Advisory $other): array => ['decoratedText' => array_filter([
-                        'text' => e($other->severity === Severity::Unknown ? $other->title : "[{$other->severity->getLabel()}] {$other->title}"),
-                        'bottomLabel' => $other->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $other->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
-                        'wrapText' => true,
-                        'button' => filled($other->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $other->url]]] : null,
-                    ])])
-                    ->values()
-                    ->all(),
-            ];
+    /**
+     * @param  Collection<int, Advisory>  $others
+     * @return list<array<string, mixed>> No section when there are none.
+     */
+    private function otherNoticesSection(Collection $others): array
+    {
+        if ($others->isEmpty()) {
+            return [];
         }
 
-        if (filled($advisory->url)) {
-            $sections[] = ['widgets' => [$this->buttons([__('Mở nguồn tin') => $advisory->url])]];
-        }
+        return [[
+            'header' => __('Tin khác của cùng sự kiện'),
+            'widgets' => $others
+                ->take($this->maxListedItems())
+                ->map(fn (Advisory $other): array => ['decoratedText' => array_filter([
+                    'text' => e($this->severityTitle($other->severity, $other->title)),
+                    'bottomLabel' => $other->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $other->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
+                    'wrapText' => true,
+                    'button' => filled($other->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $other->url]]] : null,
+                ])])
+                ->values()
+                ->all(),
+        ]];
+    }
 
-        return $this->card("incident-{$incident->id}", $title, __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections);
+    /**
+     * E.g. "[Critical] Upcoming PHP Security Release"; no tag when the severity is unknown.
+     */
+    private function severityTitle(Severity $severity, string $title): string
+    {
+        return $severity === Severity::Unknown ? $title : "[{$severity->getLabel()}] {$title}";
     }
 
     /**
      * The daily digest, or the weekly summary when `weekly` is set: only the weekly one lists every open finding below
      * the immediate severities, the daily one counts them.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool}  $digest
      * @return array<string, mixed>
      */
     public function digest(Team $team, array $digest, string $date): array
@@ -202,6 +304,30 @@ class GoogleChatCards
                         ->values()
                         ->all(),
                     ...$this->moreWidget($digest['pre_notices']->count()),
+                ],
+            ];
+        }
+
+        if ($digest['awaiting_patch']->isNotEmpty()) {
+            $sections[] = [
+                'header' => __('Đang chờ bản vá'),
+                'widgets' => [
+                    ...$digest['awaiting_patch']
+                        ->take($this->maxListedItems())
+                        ->map(fn (array $item): array => ['decoratedText' => array_filter([
+                            'topLabel' => $item['incident']->technology->getLabel(),
+                            'text' => e($this->severityTitle($item['notice']->severity, $item['incident']->title)),
+                            'bottomLabel' => implode(' · ', array_filter([
+                                __('Nhánh :branches', ['branches' => implode(', ', $item['branches'])]),
+                                $item['candidates'] === [] ? null : __('có thể là bản vá: :versions (hãng chưa xác nhận)', ['versions' => implode(', ', $item['candidates'])]),
+                                $item['needs_review'] ? __('cần rà soát: quá :days ngày chưa có bản vá', ['days' => config('psm.incidents.review_after_days')]) : null,
+                            ])),
+                            'wrapText' => true,
+                            'button' => filled($item['notice']->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $item['notice']->url]]] : null,
+                        ])])
+                        ->values()
+                        ->all(),
+                    ...$this->moreWidget($digest['awaiting_patch']->count()),
                 ],
             ];
         }

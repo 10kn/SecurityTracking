@@ -5,8 +5,10 @@ namespace App\Models;
 use App\Enums\IncidentAlertReason;
 use App\Enums\Severity;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -46,15 +48,45 @@ class IncidentTeamNotice extends Model
 
         $told = self::where('team_id', $teamId)->whereIn('advisory_id', $advisoryIds)->pluck('severity');
 
-        $legacy = ChatNotification::where(function ($query) use ($advisoryIds, $teamId): void {
-            foreach ($advisoryIds as $advisoryId) {
-                $query->orWhere('dedupe_key', "pre_notice:{$advisoryId}:{$teamId}")->orWhere('dedupe_key', 'like', "pre_notice:{$advisoryId}:{$teamId}:%");
-            }
-        })->get()->map(fn (ChatNotification $notification): Severity => substr_count($notification->dedupe_key, ':') === 3
+        $legacy = self::legacyCards($teamId, $advisoryIds)->get()->map(fn (ChatNotification $notification): Severity => substr_count($notification->dedupe_key, ':') === 3
             ? Severity::tryFrom(Str::afterLast($notification->dedupe_key, ':')) ?? Severity::Unknown
             : self::severityOfTitle((string) ($notification->payload['text'] ?? '')));
 
         return $told->merge($legacy)->sortByDesc(fn (Severity $severity): int => $severity->rank())->first();
+    }
+
+    /**
+     * When a team was first sent any of the pre-notices, or null when it was sent none. A card from before incidents
+     * counts from when it was queued.
+     *
+     * @param  list<int>  $advisoryIds
+     */
+    public static function firstToldAt(int $teamId, array $advisoryIds): ?Carbon
+    {
+        if ($advisoryIds === []) {
+            return null;
+        }
+
+        return collect([
+            self::where('team_id', $teamId)->whereIn('advisory_id', $advisoryIds)->min('created_at'),
+            self::legacyCards($teamId, $advisoryIds)->min('created_at'),
+        ])->filter()->map(fn (string $time): Carbon => Carbon::parse($time))->min();
+    }
+
+    /**
+     * Cards from before incidents, one per pre-notice and team: `pre_notice:{advisory}:{team}`, followed by the
+     * severity once it was part of the key.
+     *
+     * @param  non-empty-list<int>  $advisoryIds
+     * @return Builder<ChatNotification>
+     */
+    private static function legacyCards(int $teamId, array $advisoryIds): Builder
+    {
+        return ChatNotification::where(function ($query) use ($advisoryIds, $teamId): void {
+            foreach ($advisoryIds as $advisoryId) {
+                $query->orWhere('dedupe_key', "pre_notice:{$advisoryId}:{$teamId}")->orWhere('dedupe_key', 'like', "pre_notice:{$advisoryId}:{$teamId}:%");
+            }
+        });
     }
 
     private static function severityOfTitle(string $title): Severity

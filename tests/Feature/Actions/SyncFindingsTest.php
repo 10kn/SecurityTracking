@@ -5,11 +5,15 @@ use App\Enums\FindingEventType;
 use App\Enums\FindingRule;
 use App\Enums\FindingState;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Deployment;
 use App\Models\Finding;
+use App\Models\Runtime;
 use App\Models\User;
 use App\Services\FindingData;
+use App\Services\RuntimeFindings;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 function eolFindingData(Deployment $deployment, string $branch = '8.1', Severity $severity = Severity::High): FindingData
 {
@@ -154,4 +158,38 @@ it('gives a finding its own deadline when it has one, e.g. the end-of-life date'
     syncEol($deployment, [new FindingData($data->fingerprint, $data->rule, $data->severity, $data->title, $data->groupKey, deadline: Carbon::parse('2026-01-01', 'Asia/Ho_Chi_Minh'))]);
 
     expect(Finding::sole()->sla_due_at->toDateTimeString())->toBe('2025-12-31 17:00:00');
+});
+
+it('takes the lock of the technology\'s incidents before locking any row when it stores a "thiếu bản vá" finding, and not otherwise', function () {
+    $deployment = Deployment::factory()->create();
+    $runtime = Runtime::factory()->for($deployment)->create(['technology' => Technology::Nodejs, 'raw_version' => '22.20.0', 'version' => '22.20.0', 'branch' => '22']);
+    $outdated = new FindingData(
+        fingerprint: FindingData::fingerprint(FindingRule::RuntimeOutdatedSecurity, $deployment->id, 'technology:nodejs', '22'),
+        rule: FindingRule::RuntimeOutdatedSecurity,
+        severity: Severity::High,
+        title: 'Node.js 22 thiếu bản vá bảo mật, cần nâng lên 22.20.1',
+        groupKey: 'runtime_outdated_security:nodejs:22.20.1',
+        context: ['branch' => '22', 'latest' => '22.20.1'],
+        runtimeId: $runtime->id,
+    );
+    $locks = fn (array $queries): array => collect($queries)->keys()->filter(fn (int $index): bool => str_contains($queries[$index]['query'], 'pg_advisory_xact_lock') && $queries[$index]['bindings'] === [crc32('incidents:nodejs')])->values()->all();
+    DB::enableQueryLog();
+
+    syncEol($deployment, [eolFindingData($deployment)]);
+
+    expect($locks(DB::getQueryLog()))->toBe([]);
+
+    DB::flushQueryLog();
+    app(SyncFindings::class)->handle($deployment, RuntimeFindings::RULES, [$outdated]);
+
+    $queries = DB::getQueryLog();
+    $rowLock = collect($queries)->search(fn (array $query): bool => str_contains($query['query'], 'for update'));
+    expect($locks($queries))->toHaveCount(1)
+        ->and($locks($queries)[0])->toBeLessThan($rowLock);
+
+    DB::flushQueryLog();
+    app(SyncFindings::class)->handle($deployment, RuntimeFindings::RULES, []);
+
+    expect($locks(DB::getQueryLog()))->toHaveCount(1)
+        ->and(Finding::where('rule', FindingRule::RuntimeOutdatedSecurity)->sole()->state)->toBe(FindingState::Resolved);
 });

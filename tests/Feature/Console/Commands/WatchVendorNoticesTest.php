@@ -51,7 +51,8 @@ it('keeps polling the other feeds when one fails, records the failure and alerts
     expect(chatJson(chatMessagesTo('ADMIN')->sole()))->toContain('Nguồn Tin bảo mật php.net lỗi quá ngưỡng', 'RequestException');
 });
 
-it('warns the team about a critical pre-notice without raising the severity of its runtime findings', function () {
+it('warns the team about a critical pre-notice without raising the severity of its runtime findings, until the vendor confirms the fix', function () {
+    $this->travelTo('2026-10-20 22:00:00');
     $php = syncedTechnology(Technology::Php);
     fakeNoticeFeeds();
     $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
@@ -64,18 +65,22 @@ it('warns the team about a critical pre-notice without raising the severity of i
 
     artisan('psm:watch-notices')->assertSuccessful();
 
-    $messages = chatMessagesTo('COMMERCE');
     expect($finding->refresh()->severity)->toBe(Severity::High)
         ->and(FindingEvent::where('type', FindingEventType::Escalated)->count())->toBe(0)
-        ->and($messages->pluck('text')->slice(1)->sort()->values()->all())->toBe([
-            '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
-            '[Critical] Upcoming Critical PHP Security Release',
-        ]);
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release');
+
+    $this->travelTo('2026-10-21 00:40:00');
+    artisan('psm:watch-notices')->assertSuccessful();
+
+    expect(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+        ->and($finding->refresh())->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical)
+        ->and(FindingEvent::where('type', FindingEventType::Escalated)->count())->toBe(1);
 
     artisan('psm:watch-notices')->assertSuccessful();
     artisan('psm:evaluate-runtimes')->assertSuccessful();
 
-    expect(chatMessagesTo('COMMERCE'))->toHaveCount(3);
+    expect(chatMessagesTo('COMMERCE'))->toHaveCount(3)
+        ->and($finding->refresh()->severity)->toBe(Severity::Critical);
 });
 
 it('does not replay the history of a feed on its first poll', function () {

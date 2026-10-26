@@ -9,4 +9,5 @@ enum IncidentAlertReason: string
 {
     case New = 'new';
     case SeverityRise = 'severity_rise';
+    case PatchConfirmed = 'patch_confirmed';
 }

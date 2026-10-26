@@ -5,12 +5,17 @@ namespace App\Actions;
 use App\Enums\FindingEventType;
 use App\Enums\FindingRule;
 use App\Enums\FindingState;
+use App\Enums\Technology;
 use App\Models\Deployment;
 use App\Models\Finding;
+use App\Models\IncidentTeamPatch;
+use App\Models\Runtime;
 use App\Services\AlertPolicy;
 use App\Services\FindingData;
+use App\Support\IncidentLock;
 use Carbon\CarbonInterface;
 use Closure;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,7 +28,8 @@ use Illuminate\Support\Facades\DB;
  *
  * Each occurrence gets the handling deadline of its severity, or its own (see FindingData). A rise in severity can
  * only bring the deadline forward, and it clears "Đã đọc", so the team is reminded again; a reopened finding starts
- * over.
+ * over. A "thiếu bản vá" finding its "Đã có bản vá" card no longer stands for (it now asks for a later release than
+ * the card's) counts as not sent again, so it gets a card of its own at its severity; its deadline stays.
  */
 class SyncFindings
 {
@@ -39,7 +45,11 @@ class SyncFindings
     {
         $teamId = $deployment->service->project->team_id;
 
-        DB::transaction(function () use ($deployment, $rules, $findings, $keepOpen, $teamId): void {
+        $patchable = $this->patchableTechnologies($deployment, $rules, $findings);
+
+        DB::transaction(function () use ($deployment, $rules, $findings, $keepOpen, $teamId, $patchable): void {
+            IncidentLock::take($patchable);
+
             $wanted = collect($findings)->keyBy('fingerprint');
 
             $deployment->findings()
@@ -57,9 +67,61 @@ class SyncFindings
             $existing = Finding::whereIn('fingerprint', $wanted->keys())->lockForUpdate()->get()->keyBy('fingerprint');
 
             foreach ($wanted as $fingerprint => $data) {
-                $this->store($deployment, $teamId, $data, $existing->get($fingerprint));
+                $this->store($deployment, $teamId, $this->withCoveringPatch($teamId, $data), $existing->get($fingerprint));
             }
         });
+    }
+
+    /**
+     * The technologies of the "thiếu bản vá" findings the evaluation stores or may resolve: their IncidentLock is taken
+     * before any row, so a "Đã có bản vá" card being queued and this evaluation each see what the other wrote.
+     *
+     * @param  list<FindingRule>  $rules
+     * @param  list<FindingData>  $findings
+     * @return Collection<int, Technology>
+     */
+    private function patchableTechnologies(Deployment $deployment, array $rules, array $findings): Collection
+    {
+        $runtimeIds = collect($findings)
+            ->filter(fn (FindingData $data): bool => $data->rule === FindingRule::RuntimeOutdatedSecurity && $data->runtimeId !== null)
+            ->pluck('runtimeId');
+
+        if (in_array(FindingRule::RuntimeOutdatedSecurity, $rules, true)) {
+            $runtimeIds = $runtimeIds->merge($deployment->findings()->open()->where('rule', FindingRule::RuntimeOutdatedSecurity)->whereNotNull('runtime_id')->pluck('runtime_id'));
+        }
+
+        return $runtimeIds->isEmpty() ? collect() : Runtime::whereKey($runtimeIds->unique()->all())->get()->pluck('technology');
+    }
+
+    /**
+     * A "thiếu bản vá" finding takes the "Đã có bản vá" card covering it as of now, not as of when the evaluation read
+     * it (see IncidentTeamPatch::covering()): a card queued meanwhile already raised the finding and counted it as sent
+     * (see CoverPatchedFindings), and the older result must not undo that. Cards are never withdrawn, so only a cover
+     * the data lacks is added.
+     */
+    private function withCoveringPatch(int $teamId, FindingData $data): FindingData
+    {
+        $latest = $data->context['latest'] ?? null;
+        $branch = $data->context['branch'] ?? null;
+        $runtime = $data->rule === FindingRule::RuntimeOutdatedSecurity && is_string($latest) && is_string($branch) && $data->runtimeId !== null ? Runtime::find($data->runtimeId) : null;
+        $patch = $runtime === null ? null : IncidentTeamPatch::covering($teamId, $runtime->technology, $branch, $latest);
+
+        if ($patch === null) {
+            return $data;
+        }
+
+        return new FindingData(
+            fingerprint: $data->fingerprint,
+            rule: $data->rule,
+            severity: $patch->severity->rank() > $data->severity->rank() ? $patch->severity : $data->severity,
+            title: $data->title,
+            groupKey: $data->groupKey,
+            context: [...$data->context, 'covered_by_patch_id' => $patch->id],
+            runtimeId: $data->runtimeId,
+            componentId: $data->componentId,
+            advisoryId: $data->advisoryId,
+            deadline: $data->deadline,
+        );
     }
 
     /**
@@ -118,6 +180,11 @@ class SyncFindings
 
         $previousSeverity = $finding->severity;
         $isRaised = $data->severity->rank() > $previousSeverity->rank();
+        $coveredBy = $finding->context['covered_by_patch_id'] ?? null;
+
+        if ($coveredBy !== null && ($data->context['covered_by_patch_id'] ?? null) !== $coveredBy) {
+            $attributes = [...$attributes, 'notified_severity' => null, 'notified_at' => null];
+        }
 
         if ($isRaised) {
             $deadline = $this->deadline($data);

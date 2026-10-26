@@ -73,3 +73,27 @@ it('reads cvss scores but not vector strings', function () {
     expect((new NoticeEntry('id', 'Advisory', 'CVSS:3.1/AV:N/AC:L, CVSS score 7.5 and CVSS 9.8'))->cvssScore())->toBe(9.8)
         ->and((new NoticeEntry('id', 'Advisory', 'Vector CVSS:3.1/AV:N/AC:L'))->cvssScore())->toBeNull();
 });
+
+it('reads only the versions an entry tells to update to', function (string $text, array $versions) {
+    expect((new NoticeEntry('id', 'PHP security advisory', $text))->patchVersions())->toBe($versions);
+})->with([
+    'php.net advisory' => ['Update to PHP 8.5.12, 8.4.27, 8.3.36 or 8.2.35. Source downloads are on our downloads page.', ['8.5.12', '8.4.27', '8.3.36', '8.2.35']],
+    'upgrade wording' => ['Please upgrade to Ruby 3.4.7, 3.3.9 or 3.2.10.', ['3.4.7', '3.3.9', '3.2.10']],
+    'fixed in, then other versions' => ['This is fixed in v22.20.1 and v24.9.2; older lines such as 22.20.0 are affected.', ['22.20.1', '24.9.2']],
+    'upgrade from one version to another' => ['Upgrade from 8.3.35 to 8.3.36 now.', ['8.3.36']],
+    'a condition naming the running version' => ['Update to PHP 8.3.36 if you are running PHP 8.4.26.', ['8.3.36']],
+    'negated' => ['This issue is not fixed in PHP 8.3.36.', []],
+    'a pre-release' => ['Update to PHP 8.3.36-rc1 for testing.', []],
+    'versions outside such a sentence' => ['PHP 8.3.36 fixes two vulnerabilities. Version 8.2.30 is affected.', []],
+    'node.js' => ['Update to Node.js 22.20.1 or 24.9.2 as soon as possible.', ['22.20.1', '24.9.2']],
+    'a domain after the versions' => ['Please upgrade to Ruby 3.3.6 or see ruby-lang.org for details.', ['3.3.6']],
+    'ruby-lang.org advisory' => ['We recommend upgrading to Ruby 4.0.9, 3.4.12 or 3.3.13 or later. If you cannot upgrade, please avoid compiling regular expressions from untrusted input.', ['4.0.9', '3.4.12', '3.3.13']],
+    'but not' => ['This is fixed in PHP 8.3.36 but not PHP 8.4.26.', ['8.3.36']],
+    'not' => ['Update to PHP 8.3.36, not 8.3.35.', ['8.3.36']],
+    'however' => ['Update to PHP 8.3.36, however PHP 8.2.30 remains vulnerable.', ['8.3.36']],
+    'although' => ['Patched in Ruby 3.4.7, although 3.3.9 is still being worked on.', ['3.4.7']],
+    'though' => ['Fixed in v24.9.2, though v22.20.0 waits for the next release.', ['24.9.2']],
+    'whereas' => ['Fixed in v24.9.2 whereas v22.20.0 waits for the next release.', ['24.9.2']],
+    'yet' => ['Upgrade to PHP 8.4.27, yet 8.3.35 has no fix.', ['8.4.27']],
+    'excluding' => ['Update to Node.js 22.20.1 or 24.9.2, excluding 22.20.2 which has a regression.', ['22.20.1', '24.9.2']],
+]);
