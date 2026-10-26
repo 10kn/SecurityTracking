@@ -1,8 +1,9 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { CpuIcon, FolderIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import { CpuIcon, FolderIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, UsersIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
+import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { destroy as logout } from '@/actions/App/Http/Controllers/Admin/SessionController';
@@ -40,6 +41,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const groups: { label: string; items: NavigationItem[] }[] = [
+        {
+            label: t('Giám sát'),
+            items: [{ label: t('Findings'), href: findingsIndex.url(), icon: ShieldAlertIcon }],
+        },
         {
             label: t('Danh mục'),
             items: [

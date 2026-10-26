@@ -42,7 +42,7 @@ it('lists new findings and counts the other open ones in the daily digest', func
     $card = chatJson(chatMessagesTo('COMMERCE')->sole());
     expect($card)->toContain(
         'Bản tổng hợp bảo mật 24/10/2026', 'Mới: 1 · Đang mở: 2 · Đã tự đóng: 1', 'Finding mới', 'PHP 8.1 hết hỗ trợ',
-        'Còn 1 finding mức thấp hơn đang mở, liệt kê trong bản tổng kết tuần.', 'Node.js 20 hết hỗ trợ',
+        'Còn 1 finding khác đang mở (mức thấp hơn hoặc đã đọc), liệt kê trong bản tổng kết tuần.', 'Node.js 20 hết hỗ trợ',
     )->not->toContain('DEMO-GHSA-0001', 'Ruby 3.1');
 });
 
@@ -62,6 +62,37 @@ it('reminds the team every day of its open critical and high findings', function
 
     expect(chatMessagesTo('COMMERCE'))->toHaveCount(2)
         ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Cần xử lý, vẫn đang mở', '[High] PHP 8.1 hết hỗ trợ')->not->toContain('Finding mới');
+});
+
+it('stops reminding of a critical or high finding once an admin marked it as read', function () {
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', ['acknowledged_at' => '2026-10-20 10:00:00', 'sla_due_at' => '2026-11-01 10:00:00'], '2026-10-01 10:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('sends no daily digest only for a new finding an admin already read', function () {
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', ['acknowledged_at' => '2026-10-23 11:00:00', 'sla_due_at' => '2026-11-06 10:00:00']);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('reminds once when the deadline of a finding passes, read or not', function () {
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', ['acknowledged_at' => '2026-10-20 10:00:00', 'sla_due_at' => '2026-10-23 12:00:00'], '2026-10-01 10:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Quá hạn xử lý', '[High] PHP 8.1 hết hỗ trợ · quá hạn 23/10/2026 · đã đọc');
+
+    $this->travelTo('2026-10-25 01:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('links to the unread findings of the team', function () {
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', ['sla_due_at' => '2026-11-06 10:00:00']);
+
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Xem và đánh dấu đã đọc', "/admin/findings?team={$this->team->id}&status=unread", 'PHP 8.1 hết hỗ trợ · hạn 06/11/2026');
 });
 
 it('counts from the last digest that was delivered, so a digest that failed loses nothing', function () {
@@ -170,6 +201,14 @@ it('sends the weekly summary on Monday instead of the daily digest, with everyth
         ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Tổng kết tuần bảo mật 26/10/2026', 'Vẫn đang mở', '[Medium] DEMO-GHSA-0001', 'Node.js 20 hết hỗ trợ')
         ->not->toContain('Ruby 3.1', 'liệt kê trong bản tổng kết tuần')
         ->and($this->team->chatNotifications()->sole()->dedupe_key)->toBe("digest-weekly:{$this->team->id}:2026-W44");
+});
+
+it('sends the weekly summary to a team whose only open finding is new and already read', function () {
+    $this->travelTo('2026-10-26 01:00:00');
+    digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', ['acknowledged_at' => '2026-10-25 11:00:00', 'sla_due_at' => '2026-11-08 10:00:00'], '2026-10-25 10:00:00');
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Tổng kết tuần', 'PHP 8.1 hết hỗ trợ · hạn 08/11/2026 · đã đọc');
 });
 
 it('sends no weekly summary to a team with nothing at all', function () {

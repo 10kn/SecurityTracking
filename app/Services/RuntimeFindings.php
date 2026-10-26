@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Enums\FindingRule;
 use App\Enums\RuntimeStatus;
 use App\Models\Runtime;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 
 /**
  * Turns evaluated runtimes into findings: eol and outdated_security open one; outdated, ok and unknown do not
@@ -57,6 +59,7 @@ class RuntimeFindings
                 groupKey: "{$rule->value}:{$technology->value}:{$runtime->branch}",
                 context: [...$context, 'source_url' => $technology->endoflifeUrl()],
                 runtimeId: $runtime->id,
+                deadline: $this->endOfLifeDate($runtime),
             );
         }
 
@@ -69,5 +72,16 @@ class RuntimeFindings
             context: [...$context, 'source_url' => $technology->releaseUrl((string) $latest)],
             runtimeId: $runtime->id,
         );
+    }
+
+    /**
+     * The deadline of an end-of-life finding is the day support ended, in the digest timezone, so it is overdue as
+     * soon as it opens; when the catalog gives no date, the day it opens.
+     */
+    private function endOfLifeDate(Runtime $runtime): CarbonInterface
+    {
+        $date = $runtime->status_context['date'] ?? null;
+
+        return is_string($date) ? Carbon::parse($date, config('psm.digest.timezone')) : now();
     }
 }

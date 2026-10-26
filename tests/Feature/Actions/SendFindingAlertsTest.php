@@ -111,3 +111,16 @@ it('writes the alert in the alert language even when an admin using another lang
 
     expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Mở service')->not->toContain('サービスを開く');
 });
+
+it('links to the findings of the card to mark them as read, and gives the deadline', function () {
+    $first = findingAt($this->team, 'shop-api', ['sla_due_at' => '2026-11-06 10:00:00']);
+    $second = findingAt($this->team, 'shop-web', ['sla_due_at' => '2026-11-06 10:00:00']);
+
+    app(SendFindingAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain(
+        'Nhắc lại trong bản tổng hợp mỗi ngày cho tới khi admin đánh dấu đã đọc. Hạn xử lý: 06/11/2026.',
+        'Đánh dấu đã đọc',
+        "/admin/findings?team={$this->team->id}&ids={$first->id}%2C{$second->id}",
+    );
+});

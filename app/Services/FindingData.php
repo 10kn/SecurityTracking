@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Enums\FindingRule;
 use App\Enums\Severity;
+use Carbon\CarbonInterface;
 
 /**
  * A finding an evaluation says should be open. `groupKey` puts findings about the same issue into one Google Chat
- * card (handover 5.5); `context` holds what the cards need to describe the issue.
+ * card (handover 5.5); `context` holds what the cards need to describe the issue. `deadline` replaces the deadline of
+ * the severity when the issue has its own, e.g. the end-of-life date of a branch.
  */
 final readonly class FindingData
 {
@@ -24,6 +26,7 @@ final readonly class FindingData
         public ?int $runtimeId = null,
         public ?int $componentId = null,
         public ?int $advisoryId = null,
+        public ?CarbonInterface $deadline = null,
     ) {}
 
     /**

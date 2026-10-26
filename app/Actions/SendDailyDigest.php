@@ -25,10 +25,11 @@ use Illuminate\Support\Traits\Localizable;
  * The digest of handover 5.5, one card per team. It is sent only when there is something to read, so a team is not
  * reminded every day of what it already knows:
  *
- * - daily: findings opened since the previous digest, open findings at the immediate severities (reminded every day
- *   while open), Medium and Low pre-notices, runtimes crossing an end-of-life reminder (`psm.digest.eol_reminder_days`)
- *   and lockfiles that became unreadable. Findings closed automatically and the counts of the rest are shown when
- *   there is a digest anyway, but do not cause one.
+ * - daily: findings opened since the previous digest, open findings at the immediate severities no admin marked as
+ *   read (reminded every day until then), findings whose deadline passed since the previous digest (once, read or
+ *   not), Medium and Low pre-notices, runtimes crossing an end-of-life reminder (`psm.digest.eol_reminder_days`) and
+ *   lockfiles that became unreadable. Findings closed automatically and the counts of the rest are shown when there
+ *   is a digest anyway, but do not cause one.
  * - weekly, on `psm.digest.weekly_day` instead of the daily one: everything still open, findings closed in the last
  *   seven days, every runtime reaching end of life within `psm.digest.eol_warning_days`, and the counts. A team with
  *   nothing at all gets none.
@@ -71,7 +72,7 @@ class SendDailyDigest
     }
 
     /**
-     * @return array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}
+     * @return array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}
      */
     public function digestFor(Team $team, bool $isWeekly = false): array
     {
@@ -91,6 +92,8 @@ class SendDailyDigest
             ->pluck('id')
             ->all();
         $notNew = $open->whereNotIn('id', $newIds);
+        $reminders = $notNew->filter(fn (Finding $finding): bool => $this->policy->isImmediate($finding->severity) && ! $finding->isAcknowledged());
+        $overdue = $notNew->diffKeys($reminders)->filter(fn (Finding $finding): bool => $finding->sla_due_at !== null && $finding->sla_due_at->between($since, now()));
 
         $runtimes = Runtime::with('deployment.service.project')
             ->whereHas('deployment', fn ($query) => $query->where('is_current', true)->whereHas('service.project', fn ($query) => $query->where('team_id', $team->id)))
@@ -104,8 +107,9 @@ class SendDailyDigest
         return [
             'weekly' => $isWeekly,
             'new' => $open->whereIn('id', $newIds)->values(),
-            'reminders' => $notNew->filter(fn (Finding $finding): bool => $this->policy->isImmediate($finding->severity))->values(),
-            'open' => $notNew->reject(fn (Finding $finding): bool => $this->policy->isImmediate($finding->severity))->values(),
+            'reminders' => $reminders->values(),
+            'overdue' => $overdue->values(),
+            'open' => $notNew->diffKeys($reminders)->diffKeys($overdue)->values(),
             'resolved' => $findings->where('state', FindingState::Resolved)->values(),
             'pre_notices' => $this->preNotices($runtimes, $since),
             'ending' => $this->endingSoon($runtimes, $isWeekly ? null : $since),
@@ -216,14 +220,15 @@ class SendDailyDigest
     }
 
     /**
-     * Whether the daily digest has something to read. Findings closed automatically and counts that did not change
-     * wait for the weekly one.
+     * Whether the daily digest has something to read. Findings closed automatically, new findings an admin already
+     * read and counts that did not change wait for the weekly one.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
      */
     private function hasNews(array $digest): bool
     {
-        return $digest['new']->isNotEmpty() || $digest['reminders']->isNotEmpty() || $digest['pre_notices']->isNotEmpty()
+        return $digest['new']->contains(fn (Finding $finding): bool => ! $finding->isAcknowledged())
+            || $digest['reminders']->isNotEmpty() || $digest['overdue']->isNotEmpty() || $digest['pre_notices']->isNotEmpty()
             || $digest['ending']->isNotEmpty() || $digest['new_unreadable_lockfiles'] > 0;
     }
 
@@ -231,11 +236,11 @@ class SendDailyDigest
      * Services without a lockfile are counted when there is a digest anyway, but do not cause one on their own: some
      * services have no package manager the MVP reads.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
      */
     private function isEmpty(array $digest): bool
     {
-        return ! $this->hasNews($digest) && $digest['open']->isEmpty() && $digest['resolved']->isEmpty()
+        return ! $this->hasNews($digest) && $digest['new']->isEmpty() && $digest['open']->isEmpty() && $digest['resolved']->isEmpty()
             && $digest['unknown'] === 0 && $digest['outdated'] === 0 && $digest['unreadable_lockfiles'] === 0;
     }
 }

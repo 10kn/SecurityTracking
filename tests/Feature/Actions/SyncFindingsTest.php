@@ -7,7 +7,9 @@ use App\Enums\FindingState;
 use App\Enums\Severity;
 use App\Models\Deployment;
 use App\Models\Finding;
+use App\Models\User;
 use App\Services\FindingData;
+use Illuminate\Support\Carbon;
 
 function eolFindingData(Deployment $deployment, string $branch = '8.1', Severity $severity = Severity::High): FindingData
 {
@@ -96,4 +98,60 @@ it('leaves findings of other rules and other deployments alone', function () {
 
     expect($packageFinding->refresh()->state)->toBe(FindingState::Open)
         ->and($otherDeploymentFinding->refresh()->state)->toBe(FindingState::Open);
+});
+
+it('gives a new finding the deadline of its severity', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    $deployment = Deployment::factory()->create();
+
+    syncEol($deployment, [eolFindingData($deployment, severity: Severity::Critical), eolFindingData($deployment, '8.0')]);
+
+    expect(Finding::orderBy('id')->pluck('sla_due_at')->map->toDateTimeString()->all())->toBe(['2026-10-26 10:00:00', '2026-11-06 10:00:00']);
+});
+
+it('brings the deadline forward and asks for a new read when the severity rises, but never pushes it back', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    $deployment = Deployment::factory()->create();
+    syncEol($deployment, [eolFindingData($deployment, severity: Severity::Medium)]);
+    $finding = Finding::sole();
+    $finding->update(['acknowledged_at' => now(), 'acknowledged_by' => User::factory()->admin()->create()->id]);
+
+    $this->travelTo('2026-10-24 10:00:00');
+    syncEol($deployment, [eolFindingData($deployment, severity: Severity::Critical)]);
+
+    expect($finding->refresh())
+        ->sla_due_at->toDateTimeString()->toBe('2026-10-27 10:00:00')
+        ->acknowledged_at->toBeNull()
+        ->acknowledged_by->toBeNull();
+
+    $this->travelTo('2026-10-25 10:00:00');
+    syncEol($deployment, [eolFindingData($deployment, severity: Severity::Low)]);
+    syncEol($deployment, [eolFindingData($deployment, severity: Severity::High)]);
+
+    expect($finding->refresh()->sla_due_at->toDateTimeString())->toBe('2026-10-27 10:00:00');
+});
+
+it('starts over when a resolved finding opens again', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    $deployment = Deployment::factory()->create();
+    syncEol($deployment, [eolFindingData($deployment)]);
+    Finding::sole()->update(['acknowledged_at' => now()]);
+    syncEol($deployment, []);
+
+    $this->travelTo('2026-11-01 10:00:00');
+    syncEol($deployment, [eolFindingData($deployment)]);
+
+    expect(Finding::sole())
+        ->sla_due_at->toDateTimeString()->toBe('2026-11-15 10:00:00')
+        ->acknowledged_at->toBeNull();
+});
+
+it('gives a finding its own deadline when it has one, e.g. the end-of-life date', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    $deployment = Deployment::factory()->create();
+    $data = eolFindingData($deployment);
+
+    syncEol($deployment, [new FindingData($data->fingerprint, $data->rule, $data->severity, $data->title, $data->groupKey, deadline: Carbon::parse('2026-01-01', 'Asia/Ho_Chi_Minh'))]);
+
+    expect(Finding::sole()->sla_due_at->toDateTimeString())->toBe('2025-12-31 17:00:00');
 });

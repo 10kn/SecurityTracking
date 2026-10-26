@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Enums\FindingState;
 use App\Enums\Severity;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 /**
@@ -50,11 +52,15 @@ class GoogleChatCards
             array_unshift($sections, ['widgets' => [['textParagraph' => ['text' => e($first->context['advisory_title'])]]]]);
         }
 
-        $links = array_filter([__('Mở nguồn tin') => $first->context['source_url'] ?? null], filled(...));
+        $links = array_filter([
+            __('Mở nguồn tin') => $first->context['source_url'] ?? null,
+            __('Đánh dấu đã đọc') => $this->findingsUrl(['team' => $team->id, 'ids' => implode(',', $findings->sortBy('id')->modelKeys())]),
+        ], filled(...));
 
-        if ($links !== []) {
-            $sections[] = ['widgets' => [$this->buttons($links)]];
-        }
+        $sections[] = ['widgets' => [
+            ['textParagraph' => ['text' => e(__('Nhắc lại trong bản tổng hợp mỗi ngày cho tới khi admin đánh dấu đã đọc. Hạn xử lý: :date.', ['date' => $this->date($first->sla_due_at)]))]],
+            $this->buttons($links),
+        ]];
 
         return $this->card("finding-{$first->id}", "[{$severity}] {$first->title}", $team->name, $sections);
     }
@@ -122,7 +128,7 @@ class GoogleChatCards
      * The daily digest, or the weekly summary when `weekly` is set: only the weekly one lists every open finding below
      * the immediate severities, the daily one counts them.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int}  $digest
      * @return array<string, mixed>
      */
     public function digest(Team $team, array $digest, string $date): array
@@ -130,7 +136,7 @@ class GoogleChatCards
         $sections = [];
         $summary = collect([
             'Mới: :count' => $digest['new']->count(),
-            'Đang mở: :count' => $digest['new']->count() + $digest['reminders']->count() + $digest['open']->count(),
+            'Đang mở: :count' => $digest['new']->count() + $digest['reminders']->count() + $digest['overdue']->count() + $digest['open']->count(),
             'Đã tự đóng: :count' => $digest['resolved']->count(),
             'Runtime thiếu dữ liệu: :count' => $digest['unknown'],
             'Runtime có bản mới hơn: :count' => $digest['outdated'],
@@ -148,6 +154,7 @@ class GoogleChatCards
         $findingSections = [
             __('Finding mới') => $digest['new'],
             __('Cần xử lý, vẫn đang mở') => $digest['reminders'],
+            __('Quá hạn xử lý') => $digest['overdue'],
             ...($digest['weekly'] ? [__('Vẫn đang mở') => $digest['open']] : []),
         ];
 
@@ -156,7 +163,7 @@ class GoogleChatCards
         }
 
         if (! $digest['weekly'] && $digest['open']->isNotEmpty()) {
-            $sections[] = ['widgets' => [['textParagraph' => ['text' => e(__('Còn :count finding mức thấp hơn đang mở, liệt kê trong bản tổng kết tuần.', ['count' => $digest['open']->count()]))]]]];
+            $sections[] = ['widgets' => [['textParagraph' => ['text' => e(__('Còn :count finding khác đang mở (mức thấp hơn hoặc đã đọc), liệt kê trong bản tổng kết tuần.', ['count' => $digest['open']->count()]))]]]];
         }
 
         if ($digest['pre_notices']->isNotEmpty()) {
@@ -191,6 +198,10 @@ class GoogleChatCards
 
         $sections = [...$sections, ...$this->findingSection(__('Đã tự đóng'), $digest['resolved'])];
 
+        if ($digest['new']->isNotEmpty() || $digest['reminders']->isNotEmpty()) {
+            $sections[] = ['widgets' => [$this->buttons([__('Xem và đánh dấu đã đọc') => $this->findingsUrl(['team' => $team->id, 'status' => 'unread'])])]];
+        }
+
         $title = $digest['weekly'] ? __('Tổng kết tuần bảo mật :date', ['date' => $date]) : __('Bản tổng hợp bảo mật :date', ['date' => $date]);
 
         return $this->card("digest-{$team->id}", $title, $team->name, $sections);
@@ -218,6 +229,14 @@ class GoogleChatCards
     }
 
     /**
+     * @param  array<string, int|string>  $filters
+     */
+    public function findingsUrl(array $filters): string
+    {
+        return route('admin.findings.index', $filters);
+    }
+
+    /**
      * @param  Collection<int, Finding>  $findings
      * @return list<array<string, mixed>> No section when there are no findings.
      */
@@ -234,12 +253,41 @@ class GoogleChatCards
             'widgets' => [
                 ...$findings
                     ->take($this->maxListedItems())
-                    ->map(fn (Finding $finding): array => $this->serviceWidget($finding->deployment->service, "[{$finding->severity->getLabel()}] {$finding->title}"))
+                    ->map(fn (Finding $finding): array => $this->serviceWidget($finding->deployment->service, implode(' · ', ["[{$finding->severity->getLabel()}] {$finding->title}", ...$this->findingStatus($finding)])))
                     ->values()
                     ->all(),
                 ...$this->moreWidget($findings->count()),
             ],
         ]];
+    }
+
+    /**
+     * The deadline and "Đã đọc" of an open finding, e.g. ["quá hạn 23/10/2026", "đã đọc"].
+     *
+     * @return list<string>
+     */
+    private function findingStatus(Finding $finding): array
+    {
+        if ($finding->state !== FindingState::Open) {
+            return [];
+        }
+
+        return array_values(array_filter([
+            match (true) {
+                $finding->sla_due_at === null => null,
+                $finding->sla_due_at->isPast() => __('quá hạn :date', ['date' => $this->date($finding->sla_due_at)]),
+                default => __('hạn :date', ['date' => $this->date($finding->sla_due_at)]),
+            },
+            $finding->isAcknowledged() ? __('đã đọc') : null,
+        ]));
+    }
+
+    /**
+     * A date in the digest timezone, e.g. "23/10/2026"; "—" when there is none.
+     */
+    private function date(?CarbonInterface $time): string
+    {
+        return $time === null ? '—' : $time->copy()->setTimezone(config('psm.digest.timezone'))->translatedFormat(__('d/m/Y'));
     }
 
     /**

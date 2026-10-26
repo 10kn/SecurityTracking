@@ -30,6 +30,10 @@ return [
     | be delivered) go to the admin space at `admin_webhook`. Messages are written in `locale`, whatever language the
     | admin who triggered them uses.
     |
+    | Each finding has a handling deadline of `deadline_days` after it is first seen, by severity (calendar days). A
+    | rise in severity can only bring it forward. An admin marks a finding as read ("Đã đọc") to stop its daily
+    | reminder; it is reminded once more when the deadline passes.
+    |
     | psm:check-sources also tells the admin, without going through the queue, when a message has waited longer than
     | `stuck_after_minutes` (the queue worker is down). It pings `scheduler_heartbeat_url` after each successful run:
     | point it at an external dead man's switch (e.g. Healthchecks.io) so a stopped scheduler is noticed too.
@@ -48,6 +52,12 @@ return [
         'tries' => (int) env('PSM_ALERT_TRIES', 5),
         'backoff_seconds' => [60, 300, 900, 3600],
         'max_listed_items' => 20,
+        'deadline_days' => [
+            'critical' => (int) env('PSM_DEADLINE_CRITICAL_DAYS', 3),
+            'high' => (int) env('PSM_DEADLINE_HIGH_DAYS', 14),
+            'medium' => (int) env('PSM_DEADLINE_MEDIUM_DAYS', 30),
+            'low' => (int) env('PSM_DEADLINE_LOW_DAYS', 90),
+        ],
         'stuck_after_minutes' => (int) env('PSM_ALERT_STUCK_AFTER_MINUTES', 30),
         'scheduler_heartbeat_url' => env('PSM_SCHEDULER_HEARTBEAT_URL'),
     ],

@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['fingerprint', 'team_id', 'deployment_id', 'advisory_id', 'runtime_id', 'component_id', 'rule', 'severity', 'state', 'title', 'group_key', 'context', 'first_seen_at', 'last_seen_at', 'sla_due_at', 'resolved_at', 'accepted_until', 'notified_severity', 'notified_at'])]
+#[Fillable(['fingerprint', 'team_id', 'deployment_id', 'advisory_id', 'runtime_id', 'component_id', 'rule', 'severity', 'state', 'title', 'group_key', 'context', 'first_seen_at', 'last_seen_at', 'sla_due_at', 'resolved_at', 'accepted_until', 'notified_severity', 'notified_at', 'acknowledged_at', 'acknowledged_by'])]
 class Finding extends Model
 {
     /** @use HasFactory<FindingFactory> */
@@ -39,6 +39,7 @@ class Finding extends Model
             'accepted_until' => 'datetime',
             'notified_severity' => Severity::class,
             'notified_at' => 'datetime',
+            'acknowledged_at' => 'datetime',
         ];
     }
 
@@ -50,6 +51,22 @@ class Finding extends Model
     protected function open(Builder $query): Builder
     {
         return $query->where('state', FindingState::Open);
+    }
+
+    /**
+     * Whether an admin marked the finding as read since it opened or last rose in severity.
+     */
+    public function isAcknowledged(): bool
+    {
+        return $this->acknowledged_at !== null;
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function acknowledgedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'acknowledged_by');
     }
 
     /**

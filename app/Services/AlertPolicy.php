@@ -6,6 +6,7 @@ use App\Enums\FindingRule;
 use App\Enums\Severity;
 use App\Models\Advisory;
 use App\Models\Finding;
+use Carbon\CarbonInterface;
 
 /**
  * Which findings and pre-notices are sent right away and which only appear in the daily digest (handover 5.4), read from config/psm.php.
@@ -15,6 +16,16 @@ class AlertPolicy
     public function severityFor(FindingRule $rule): Severity
     {
         return Severity::tryFrom((string) config("psm.alerts.runtime_severity.{$rule->value}")) ?? Severity::High;
+    }
+
+    /**
+     * The handling deadline of a finding of `$severity` seen at `$from`, in calendar days. None for unknown severity.
+     */
+    public function deadlineFor(Severity $severity, CarbonInterface $from): ?CarbonInterface
+    {
+        $days = config("psm.alerts.deadline_days.{$severity->value}");
+
+        return $days === null ? null : $from->copy()->addDays((int) $days);
     }
 
     public function isImmediate(Severity $severity): bool

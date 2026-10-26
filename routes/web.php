@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\AccessibleRepositorySyncController;
+use App\Http\Controllers\Admin\FindingAcknowledgementController;
+use App\Http\Controllers\Admin\FindingController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
@@ -35,6 +37,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::put('preferences', [PreferenceController::class, 'update'])->name('preferences.update');
         Route::get('search', SearchController::class)->name('search');
+
+        Route::get('findings', [FindingController::class, 'index'])->name('findings.index');
+        Route::post('findings/acknowledgements', [FindingAcknowledgementController::class, 'store'])->name('findings.acknowledgements.store');
 
         Route::resource('projects', ProjectController::class);
         Route::resource('services', ServiceController::class)->except('show');
