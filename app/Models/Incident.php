@@ -169,12 +169,14 @@ class Incident extends Model
      * The branches the vendor has a fix for: a pre-notice of the incident that was not dismissed names the version in
      * an "Update to …" sentence (see NoticeEntry::patchVersions()), and the catalog lists that version as a security
      * release of the branch. The highest such version of each branch, with the pre-notice that named it. Given the
-     * incident's pre-notices, it reads them instead of loading them again.
+     * incident's pre-notices, it reads them instead of loading them again; given the security releases (version =>
+     * branch, e.g. read once for several incidents of the technology), it reads those too.
      *
      * @param  Collection<int, Advisory>|null  $notices
+     * @param  Collection<string, string>|null  $securityReleases  Version => branch of the technology's security releases, at least those the pre-notices name.
      * @return array<string, array{version: string, notice: Advisory}>
      */
-    public function confirmedPatches(?Collection $notices = null): array
+    public function confirmedPatches(?Collection $notices = null, ?Collection $securityReleases = null): array
     {
         $notices = ($notices ?? $this->notices()->get())
             ->filter(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->patch_versions !== null)
@@ -186,10 +188,7 @@ class Incident extends Model
             return [];
         }
 
-        $securityReleases = RuntimeRelease::where('technology', $this->technology)
-            ->where('is_security_release', true)
-            ->whereIn('version', $stated)
-            ->pluck('branch', 'version');
+        $securityReleases ??= self::securityReleases($this->technology, $stated->all());
 
         $patches = [];
 
@@ -204,6 +203,24 @@ class Incident extends Model
         }
 
         return $patches;
+    }
+
+    /**
+     * The security releases of the technology among the versions, version => branch.
+     *
+     * @param  list<string>  $versions
+     * @return Collection<string, string>
+     */
+    public static function securityReleases(Technology $technology, array $versions): Collection
+    {
+        if ($versions === []) {
+            return collect();
+        }
+
+        return RuntimeRelease::where('technology', $technology)
+            ->where('is_security_release', true)
+            ->whereIn('version', $versions)
+            ->pluck('branch', 'version');
     }
 
     /**

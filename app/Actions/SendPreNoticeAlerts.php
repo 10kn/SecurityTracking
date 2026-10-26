@@ -17,6 +17,7 @@ use App\Models\Runtime;
 use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
+use App\Services\IncidentTeamExposure;
 use App\Support\IncidentLock;
 use App\Support\Version;
 use Carbon\CarbonInterface;
@@ -124,6 +125,8 @@ class SendPreNoticeAlerts
      * The incident row is locked while its messages are queued, so an admin cannot merge or split it meanwhile, then
      * each team's thread row. The technology's IncidentLock comes first, so an evaluation storing a "thiếu bản vá"
      * finding waits for the "Đã có bản vá" card that stands for it, or the card waits for the finding (see SyncFindings).
+     * An admin's assessment of the incident for a team that no longer covers what the incident asks of the team now is
+     * reset there (see IncidentTeam::resetStaleAssessment()).
      *
      * A team sent a card about the incident gets its updates whatever the incident's severity now; a team never sent
      * one gets a first card only while the incident is fresh and urgent.
@@ -154,6 +157,7 @@ class SendPreNoticeAlerts
             $fresh = $notices->filter(fn (Advisory $notice): bool => $notice->published_at !== null && $notice->published_at->gte($since))->values();
             $isFresh = $this->isUrgent($fresh);
             $memberIds = $all->modelKeys();
+            $confirmedPatches = $patches;
             $patches = $notices->isEmpty() ? [] : $patches;
             $queued = 0;
 
@@ -167,10 +171,12 @@ class SendPreNoticeAlerts
                 $team = $runtimes->first()->deployment->service->project->team;
                 [$thread, $isNewThread] = IncidentTeam::lockFor($incident, $team);
                 $thread->moveTo($team->google_chat_webhook_url);
+                $exposure = IncidentTeamExposure::of($incident, $all, $runtimes, $confirmedPatches);
+                $thread->resetStaleAssessment($exposure);
                 $duePatches = $this->duePatches($teamId, $runtimes, $patches, $memberIds);
 
                 $queued += (int) ($wasTold
-                    ? $this->queueUpdate($team, $incident, $notices, $runtimes, $thread, $isNewThread, IncidentTeamNotice::severityToldTo($teamId, $memberIds) ?? Severity::Unknown, $duePatches, $patches)
+                    ? $this->queueUpdate($team, $incident, $notices, $runtimes, $thread, $isNewThread, IncidentTeamNotice::severityToldTo($teamId, $memberIds) ?? Severity::Unknown, $duePatches, $patches, $thread->isRuledOut($exposure))
                     : $this->queueFirstCard($team, $incident, $fresh, $runtimes, $thread, $duePatches, $patches));
             }
 
@@ -197,7 +203,7 @@ class SendPreNoticeAlerts
             $inputs,
             IncidentTeamNotice::whereIn('advisory_id', $memberIds)->max('id'),
             IncidentTeamPatch::whereIn('advisory_id', $memberIds)->max('id'),
-            IncidentTeam::where('incident_id', $incident->id)->orderBy('id')->get()->map(fn (IncidentTeam $thread): array => [$thread->team_id, $thread->told_confirmed_branches, $thread->exploited_told_at?->getTimestamp(), $thread->last_notification_id])->all(),
+            IncidentTeam::where('incident_id', $incident->id)->orderBy('id')->get()->map(fn (IncidentTeam $thread): array => [$thread->team_id, $thread->told_confirmed_branches, $thread->exploited_told_at?->getTimestamp(), $thread->last_notification_id, $thread->impact?->value, $thread->assessment_revision])->all(),
         ]));
     }
 
@@ -257,12 +263,18 @@ class SendPreNoticeAlerts
      * An update for a team told about the incident, when it has something new to act on (see the class). A thread row
      * made for a team told before threads takes what the team runs on confirmed branches as already told.
      *
+     * A team an admin validly assessed as not affected ("Không") gets no reply for a fix alone: it has nothing to
+     * upgrade for this incident, and its "thiếu bản vá" findings are not covered by a card it never got, so they alert
+     * on their own. Exploitation, a branch newly confirmed or a rise in severity grow its exposure, which ends the
+     * assessment, so those replies still go.
+     *
      * @param  Collection<int, Advisory>  $notices  The incident's pre-notices that count, oldest first.
      * @param  Collection<int, Runtime>  $runtimes
      * @param  array<string, array{version: string, notice: Advisory}>  $duePatches
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
+     * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
      */
-    private function queueUpdate(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, bool $isNewThread, Severity $toldSeverity, array $duePatches, array $patches): bool
+    private function queueUpdate(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, bool $isNewThread, Severity $toldSeverity, array $duePatches, array $patches, bool $isRuledOut): bool
     {
         $confirmed = $incident->confirmedBranches($runtimes);
         $told = $isNewThread ? $confirmed : array_values(array_intersect($thread->told_confirmed_branches ?? [], $confirmed));
@@ -279,7 +291,7 @@ class SendPreNoticeAlerts
             IncidentAlertReason::SeverityRise->value => $isRaised ? __('Mức độ tăng từ :from lên :to.', ['from' => $toldSeverity->getLabel(), 'to' => $severity->getLabel()]) : null,
         ]);
 
-        if ($changes === []) {
+        if ($changes === [] || ($isRuledOut && array_keys($changes) === [IncidentAlertReason::PatchConfirmed->value])) {
             if ($told !== ($thread->told_confirmed_branches ?? [])) {
                 $thread->update(['told_confirmed_branches' => $told]);
             }

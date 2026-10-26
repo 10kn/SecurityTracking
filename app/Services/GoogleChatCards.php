@@ -330,9 +330,10 @@ class GoogleChatCards
 
     /**
      * The daily digest, or the weekly summary when `weekly` is set: only the weekly one lists every open finding below
-     * the immediate severities, the daily one counts them.
+     * the immediate severities, the daily one counts them. Incidents no admin assessed for the team yet are listed
+     * apart from those waiting for a fix, with a link to assess them.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool, incident_reminders: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>}  $digest
      * @return array<string, mixed>
      */
     public function digest(Team $team, array $digest, string $date): array
@@ -389,28 +390,17 @@ class GoogleChatCards
             ];
         }
 
-        if ($digest['awaiting_patch']->isNotEmpty()) {
-            $sections[] = [
-                'header' => __('Đang chờ bản vá'),
-                'widgets' => [
-                    ...$digest['awaiting_patch']
-                        ->take($this->maxListedItems())
-                        ->map(fn (array $item): array => ['decoratedText' => array_filter([
-                            'topLabel' => $item['incident']->technology->getLabel(),
-                            'text' => e($this->severityTitle($item['notice']->severity, $item['incident']->title)),
-                            'bottomLabel' => implode(' · ', array_filter([
-                                __('Nhánh :branches', ['branches' => implode(', ', $item['branches'])]),
-                                $item['candidates'] === [] ? null : __('có thể là bản vá: :versions (hãng chưa xác nhận)', ['versions' => implode(', ', $item['candidates'])]),
-                                $item['needs_review'] ? __('cần rà soát: quá :days ngày chưa có bản vá', ['days' => config('psm.incidents.review_after_days')]) : null,
-                            ])),
-                            'wrapText' => true,
-                            'button' => filled($item['notice']->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $item['notice']->url]]] : null,
-                        ])])
-                        ->values()
-                        ->all(),
-                    ...$this->moreWidget($digest['awaiting_patch']->count()),
-                ],
-            ];
+        $sections = [
+            ...$sections,
+            ...$this->awaitingPatchSection(__('Sự kiện chờ admin đánh giá ảnh hưởng'), $digest['incident_reminders']),
+            ...$this->awaitingPatchSection(__('Đang chờ bản vá'), $digest['awaiting_patch']),
+        ];
+
+        if ($digest['incident_reminders']->isNotEmpty()) {
+            $sections[] = ['widgets' => [
+                ['textParagraph' => ['text' => e(__('Nhắc lại mỗi ngày cho tới khi admin đánh dấu đã đọc và đánh giá ảnh hưởng tới team.'))]],
+                $this->buttons([__('Đánh giá ảnh hưởng') => $this->incidentsUrl(['team' => $team->id, 'attention' => 1])]),
+            ]];
         }
 
         if ($digest['ending']->isNotEmpty()) {
@@ -462,6 +452,50 @@ class GoogleChatCards
     public function findingsUrl(array $filters): string
     {
         return route('admin.findings.index', $filters);
+    }
+
+    /**
+     * @param  array<string, int|string>  $filters
+     */
+    public function incidentsUrl(array $filters): string
+    {
+        return route('admin.incidents.index', $filters);
+    }
+
+    /**
+     * Incidents waiting for a fix for the team, each by its most severe pre-notice, with the branches still waiting and
+     * the security releases that may be the fix.
+     *
+     * @param  Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>  $items
+     * @return list<array<string, mixed>> No section when there are none.
+     */
+    private function awaitingPatchSection(string $header, Collection $items): array
+    {
+        if ($items->isEmpty()) {
+            return [];
+        }
+
+        return [[
+            'header' => $header,
+            'widgets' => [
+                ...$items
+                    ->take($this->maxListedItems())
+                    ->map(fn (array $item): array => ['decoratedText' => array_filter([
+                        'topLabel' => $item['incident']->technology->getLabel(),
+                        'text' => e($this->severityTitle($item['notice']->severity, $item['incident']->title)),
+                        'bottomLabel' => implode(' · ', array_filter([
+                            __('Nhánh :branches', ['branches' => implode(', ', $item['branches'])]),
+                            $item['candidates'] === [] ? null : __('có thể là bản vá: :versions (hãng chưa xác nhận)', ['versions' => implode(', ', $item['candidates'])]),
+                            $item['needs_review'] ? __('cần rà soát: quá :days ngày chưa có bản vá', ['days' => config('psm.incidents.review_after_days')]) : null,
+                        ])),
+                        'wrapText' => true,
+                        'button' => filled($item['notice']->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $item['notice']->url]]] : null,
+                    ])])
+                    ->values()
+                    ->all(),
+                ...$this->moreWidget($items->count()),
+            ],
+        ]];
     }
 
     /**

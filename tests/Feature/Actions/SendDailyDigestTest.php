@@ -289,7 +289,8 @@ it('lists an incident by its most severe pre-notice, and not one sent right away
 });
 
 /**
- * A critical php incident the team got a card about on 2026-10-23, with a service on 8.3.
+ * A critical php incident the team got a card about on 2026-10-23, with a service on 8.3, that an admin marked as read
+ * for the team as affecting it, so it is listed as waiting for a fix rather than reminded of.
  */
 function incidentAwaitingPatch(Team $team, Deployment $deployment): Advisory
 {
@@ -298,6 +299,7 @@ function incidentAwaitingPatch(Team $team, Deployment $deployment): Advisory
     app(AssignNoticeToIncident::class)->handle($notice);
     IncidentTeamNotice::create(['team_id' => $team->id, 'advisory_id' => $notice->id, 'severity' => Severity::Critical, 'reason' => IncidentAlertReason::New])
         ->forceFill(['created_at' => '2026-10-23 10:00:00'])->save();
+    assessIncident($notice->refresh()->incident, $team);
 
     return $notice->refresh();
 }
@@ -344,6 +346,7 @@ it('counts a card from before incidents as telling the team, from when it was qu
     app(AssignNoticeToIncident::class)->handle($notice);
     ChatNotification::factory()->for($this->team)->sent()->create(['kind' => ChatNotificationKind::PreNotice, 'dedupe_key' => "pre_notice:{$notice->id}:{$this->team->id}:critical"])
         ->forceFill(['created_at' => $queuedAt])->save();
+    assessIncident($notice->refresh()->incident, $this->team);
 
     expect(app(SendDailyDigest::class)->handle())->toBe($digests);
 

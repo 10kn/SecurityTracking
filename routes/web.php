@@ -3,6 +3,12 @@
 use App\Http\Controllers\Admin\AccessibleRepositorySyncController;
 use App\Http\Controllers\Admin\FindingAcknowledgementController;
 use App\Http\Controllers\Admin\FindingController;
+use App\Http\Controllers\Admin\IncidentAcknowledgementController;
+use App\Http\Controllers\Admin\IncidentController;
+use App\Http\Controllers\Admin\IncidentMergeController;
+use App\Http\Controllers\Admin\IncidentSuggestionDecisionController;
+use App\Http\Controllers\Admin\IncidentUpdateController;
+use App\Http\Controllers\Admin\NoticeSplitController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
@@ -40,6 +46,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('findings', [FindingController::class, 'index'])->name('findings.index');
         Route::post('findings/acknowledgements', [FindingAcknowledgementController::class, 'store'])->name('findings.acknowledgements.store');
+
+        Route::get('incidents', [IncidentController::class, 'index'])->name('incidents.index');
+        Route::get('incidents/{incident}', [IncidentController::class, 'show'])->name('incidents.show');
+        Route::post('incidents/{incident}/acknowledgements', [IncidentAcknowledgementController::class, 'store'])->name('incidents.acknowledgements.store');
+        Route::post('incidents/{incident}/merge', [IncidentMergeController::class, 'store'])->name('incidents.merge.store');
+        Route::post('incidents/{incident}/updates', [IncidentUpdateController::class, 'store'])->name('incidents.updates.store');
+        Route::post('incident-suggestions/{suggestion}/decision', [IncidentSuggestionDecisionController::class, 'store'])->name('incident-suggestions.decision.store');
+        Route::post('notices/{notice}/split', [NoticeSplitController::class, 'store'])->name('notices.split.store');
 
         Route::resource('projects', ProjectController::class);
         Route::resource('services', ServiceController::class)->except('show');

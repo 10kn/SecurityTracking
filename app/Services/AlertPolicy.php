@@ -43,6 +43,15 @@ class AlertPolicy
     }
 
     /**
+     * Whether a team told about an incident at `$toldSeverity` is reminded of it every day until an admin marks it as
+     * read: it was told at a severity that is sent right away, unknown included (see sendsPreNoticeRightAway()).
+     */
+    public function remindsOfIncident(?Severity $toldSeverity): bool
+    {
+        return $toldSeverity !== null && ($toldSeverity === Severity::Unknown || $this->isImmediate($toldSeverity));
+    }
+
+    /**
      * An open finding the team has not been told about yet, or whose severity rose since the last message. A
      * vulnerable package only installed for development waits for the digest unless
      * `psm.alerts.immediate_dev_dependencies` is on.

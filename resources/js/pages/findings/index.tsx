@@ -7,6 +7,7 @@ import { edit as editService } from '@/actions/App/Http/Controllers/Admin/Servic
 import { Card, CardHeader } from '@/components/admin/card';
 import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
+import { SeverityBadge } from '@/components/admin/severity-badge';
 import { StatusDot } from '@/components/admin/status-dot';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -175,19 +176,5 @@ export default function FindingsIndex({ findings, table, teams, statuses }: Prop
                 <TablePagination meta={findings.meta} table={table} onChange={query} />
             </Card>
         </>
-    );
-}
-
-/** A soft badge for Critical and High only; the other severities stay plain text. */
-function SeverityBadge({ severity }: { severity: FindingRow['severity'] }) {
-    const tone = {
-        critical: 'bg-danger-soft text-danger-text',
-        high: 'bg-orange-soft text-orange-text',
-    }[severity.value];
-
-    return tone ? (
-        <span className={cn('inline-flex h-6 items-center rounded-[5px] px-2 text-xs font-medium whitespace-nowrap', tone)}>{severity.label}</span>
-    ) : (
-        <span className="text-sm text-muted-foreground">{severity.label}</span>
     );
 }

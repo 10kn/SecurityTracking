@@ -3,10 +3,14 @@
 namespace App\Models;
 
 use App\Enums\ChatThreadRole;
+use App\Enums\IncidentImpact;
+use App\Enums\IncidentTeamEventType;
+use App\Services\IncidentTeamExposure;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * The Google Chat thread of an incident at one team, and what the team was told about the incident beyond the
@@ -17,9 +21,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Each generation is one thread with its own `thread_key`. A team whose webhook changed starts the next generation
  * (see moveTo()), as Google Chat scopes thread keys to the webhook's app: its next alert opens a new thread with a full
  * card. An incident merged into another hands its messages to the row it points at (see canonical()).
+ *
+ * It also holds an admin's assessment of the incident for the team ("Đã đọc", see AcknowledgeIncidentTeams),
+ * independent of the thread: the impact, a note and the exposure the admin saw. The assessment holds only while that
+ * exposure still covers the team's current one (see hasValidAssessment()); its history is in IncidentTeamEvent.
  */
 #[Table('incident_team')]
-#[Fillable(['incident_id', 'team_id', 'generation', 'thread_key', 'space', 'webhook_hash', 'thread_name', 'opening_notification_id', 'last_notification_id', 'merged_into_id', 'told_confirmed_branches', 'exploited_told_at'])]
+#[Fillable(['incident_id', 'team_id', 'generation', 'thread_key', 'space', 'webhook_hash', 'thread_name', 'opening_notification_id', 'last_notification_id', 'merged_into_id', 'told_confirmed_branches', 'exploited_told_at', 'acknowledged_at', 'acknowledged_by', 'impact', 'impact_note', 'acknowledged_exposure', 'acknowledged_exposure_hash', 'assessment_revision'])]
 class IncidentTeam extends Model
 {
     /**
@@ -33,6 +41,10 @@ class IncidentTeam extends Model
             'generation' => 'integer',
             'told_confirmed_branches' => 'array',
             'exploited_told_at' => 'datetime',
+            'acknowledged_at' => 'datetime',
+            'impact' => IncidentImpact::class,
+            'acknowledged_exposure' => 'array',
+            'assessment_revision' => 'integer',
         ];
     }
 
@@ -180,6 +192,112 @@ class IncidentTeam extends Model
     public function hasThread(): bool
     {
         return $this->opening_notification_id !== null || $this->thread_name !== null;
+    }
+
+    /**
+     * Whether an admin assessed the incident for the team and the assessment still holds: the exposure the admin saw
+     * covers the current one (see IncidentTeamExposure::isCoveredBy()).
+     */
+    public function hasValidAssessment(IncidentTeamExposure $exposure): bool
+    {
+        return $this->impact !== null && $exposure->isCoveredBy($this->acknowledged_exposure);
+    }
+
+    /**
+     * Whether an admin said the incident does not affect the team ("Không") and that still holds: the team hears no
+     * more of it until its exposure grows.
+     */
+    public function isRuledOut(IncidentTeamExposure $exposure): bool
+    {
+        return $this->impact === IncidentImpact::No && $this->hasValidAssessment($exposure);
+    }
+
+    /**
+     * Whether an admin said the incident does not affect the team and that still holds, read from the database.
+     */
+    public static function isRuledOutFor(Incident $incident, int $teamId): bool
+    {
+        $row = self::where('incident_id', $incident->id)->where('team_id', $teamId)->first();
+
+        return $row?->impact === IncidentImpact::No && $row->isRuledOut(IncidentTeamExposure::for($incident, $teamId));
+    }
+
+    /**
+     * Records the admin's assessment of the exposure shown, replacing any earlier one; the history keeps both, each with
+     * the full exposure it was made on.
+     */
+    public function acknowledge(User $user, IncidentImpact $impact, ?string $note, IncidentTeamExposure $exposure): void
+    {
+        $previous = $this->impact;
+
+        $this->fill([
+            'acknowledged_at' => now(),
+            'acknowledged_by' => $user->id,
+            'impact' => $impact,
+            'impact_note' => $note,
+            'acknowledged_exposure' => $exposure->toArray(),
+            'acknowledged_exposure_hash' => $exposure->hash(),
+            'assessment_revision' => $this->assessment_revision + 1,
+        ])->save();
+
+        $this->events()->create([
+            'type' => IncidentTeamEventType::Acknowledged,
+            'user_id' => $user->id,
+            'data' => ['impact' => $impact->value, 'note' => $note, 'previous_impact' => $previous?->value, 'exposure_hash' => $exposure->hash(), 'exposure' => $exposure->toArray(), 'user' => $user->name],
+        ]);
+    }
+
+    /**
+     * Clears an assessment that no longer holds for the exposure and records why, once, with the exposure it was made
+     * on and the one that ended it: a row with no assessment is left alone. Callers hold the row locked.
+     *
+     * @return bool Whether it was reset.
+     */
+    public function resetStaleAssessment(IncidentTeamExposure $exposure): bool
+    {
+        if ($this->impact === null || $this->hasValidAssessment($exposure)) {
+            return false;
+        }
+
+        $this->events()->create([
+            'type' => IncidentTeamEventType::ImpactReset,
+            'data' => [
+                'impact' => $this->impact->value,
+                'note' => $this->impact_note,
+                'acknowledged_exposure_hash' => $this->acknowledged_exposure_hash,
+                'acknowledged_exposure' => $this->acknowledged_exposure,
+                'exposure_hash' => $exposure->hash(),
+                'exposure' => $exposure->toArray(),
+            ],
+        ]);
+
+        $this->fill([
+            'acknowledged_at' => null,
+            'acknowledged_by' => null,
+            'impact' => null,
+            'impact_note' => null,
+            'acknowledged_exposure' => null,
+            'acknowledged_exposure_hash' => null,
+            'assessment_revision' => $this->assessment_revision + 1,
+        ])->save();
+
+        return true;
+    }
+
+    /**
+     * @return HasMany<IncidentTeamEvent, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(IncidentTeamEvent::class);
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function acknowledgedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'acknowledged_by');
     }
 
     /**

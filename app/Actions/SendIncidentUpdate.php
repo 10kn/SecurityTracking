@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Enums\ChatNotificationKind;
 use App\Enums\ChatThreadRole;
 use App\Enums\IncidentAlertReason;
+use App\Enums\IncidentTeamEventType;
 use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\IncidentTeam;
@@ -27,7 +28,9 @@ use InvalidArgumentException;
  *
  * Each request has its own id: a message is queued once per team and request, so running the same request again
  * (a retried form, a double click) sends nothing twice, while a new update is a new request. The message records who
- * asked for it (`user:{id}`, or `cli` for psm:incident-update).
+ * asked for it (`user:{id}`, or `cli` for psm:incident-update), and the team's history of the incident records that
+ * it was queued (see IncidentTeamEvent); whether it was delivered is the message's own state. An update never marks
+ * the incident as read for a team.
  */
 class SendIncidentUpdate
 {
@@ -125,6 +128,12 @@ class SendIncidentUpdate
         }
 
         $thread->recordQueued($notification);
+
+        $thread->events()->create([
+            'type' => IncidentTeamEventType::UpdateSent,
+            'user_id' => $actor?->id,
+            'data' => ['request_id' => $requestId, 'chat_notification_id' => $notification->id, 'message' => $message],
+        ]);
 
         return true;
     }

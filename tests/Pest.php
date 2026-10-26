@@ -1,12 +1,16 @@
 <?php
 
 use App\Actions\SyncTechnologyCatalog;
+use App\Enums\IncidentImpact;
 use App\Enums\Technology;
+use App\Models\Incident;
+use App\Models\IncidentTeam;
 use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\IncidentTeamExposure;
 use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeClassifier;
@@ -75,6 +79,17 @@ function actingAsAdmin(): User
     actingAs($admin);
 
     return $admin;
+}
+
+/**
+ * An admin's assessment of the incident for the team ("Đã đọc"), made on the team's exposure as it is now.
+ */
+function assessIncident(Incident $incident, Team $team, IncidentImpact $impact = IncidentImpact::Yes, ?User $admin = null, ?string $note = null): IncidentTeam
+{
+    [$row] = IncidentTeam::lockFor($incident, $team);
+    $row->acknowledge($admin ?? User::factory()->admin()->create(), $impact, $note, IncidentTeamExposure::for($incident, $team));
+
+    return $row->refresh();
 }
 
 /**

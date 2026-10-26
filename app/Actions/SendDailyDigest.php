@@ -10,6 +10,7 @@ use App\Enums\RuntimeStatus;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\Incident;
+use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\Lockfile;
 use App\Models\Runtime;
@@ -19,6 +20,7 @@ use App\Models\Service;
 use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
+use App\Services\IncidentTeamExposure;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -31,8 +33,9 @@ use Illuminate\Support\Traits\Localizable;
  * - daily: findings opened since the previous digest, open findings at the immediate severities no admin marked as
  *   read (reminded every day until then), findings whose deadline passed since the previous digest (once, read or
  *   not), Medium and Low pre-notices, runtimes crossing an end-of-life reminder (`psm.digest.eol_reminder_days`) and
- *   lockfiles that became unreadable, and incidents waiting for a fix when there is news about them (see
- *   awaitingPatch()). Findings closed automatically, the other incidents waiting for a fix and the counts of the rest
+ *   lockfiles that became unreadable, incidents waiting for a fix when there is news about them (see
+ *   awaitingPatch()), and incidents the team was told about at the immediate severities that no admin marked as read
+ *   for it (reminded every day until then, like findings). Findings closed automatically, the other incidents waiting for a fix and the counts of the rest
  *   are shown when there is a digest anyway, but do not cause one.
  * - weekly, on `psm.digest.weekly_day` instead of the daily one: everything still open, findings closed in the last
  *   seven days, every runtime reaching end of life within `psm.digest.eol_warning_days`, every incident waiting for a
@@ -80,7 +83,7 @@ class SendDailyDigest
     }
 
     /**
-     * @return array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool}
+     * @return array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool, incident_reminders: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>}
      */
     public function digestFor(Team $team, bool $isWeekly = false): array
     {
@@ -127,8 +130,9 @@ class SendDailyDigest
             'missing_lockfiles' => $services->filter(fn (Service $service): bool => ($service->productionDeployment->lockfiles ?? collect())->isEmpty())->count(),
             'unreadable_lockfiles' => $unreadable->count(),
             'new_unreadable_lockfiles' => $unreadable->filter(fn (Lockfile $lockfile): bool => $lockfile->uploaded_at?->gte($since) ?? false)->count(),
-            'awaiting_patch' => $awaitingPatch->pluck('item'),
-            'awaiting_patch_news' => $awaitingPatch->contains('is_news', true),
+            'awaiting_patch' => $awaitingPatch->where('is_reminder', false)->pluck('item')->values(),
+            'awaiting_patch_news' => $awaitingPatch->where('is_reminder', false)->contains('is_news', true),
+            'incident_reminders' => $awaitingPatch->where('is_reminder', true)->pluck('item')->values(),
         ];
     }
 
@@ -188,8 +192,14 @@ class SendDailyDigest
      * The list alone does not cause a daily digest, except for news since the previous one: an incident the team was
      * first told about, a new possible fix, or the review day.
      *
+     * An admin's assessment for the team decides the rest, while it holds (see IncidentTeam::hasValidAssessment()): an
+     * incident marked "Không" is left out, one marked "Có" or "Chưa rõ" stays listed. One the team was told about at the
+     * immediate severities with no assessment that holds is a reminder instead (`is_reminder`), every day until an admin
+     * marks it as read for the team. A runtime whose branch is not known counts as waiting for the reminder, listed by
+     * its version, as no fix can be matched to it; it does not put an incident on the awaiting list by itself.
+     *
      * @param  Collection<int, Runtime>  $runtimes
-     * @return Collection<int, array{item: array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}, is_news: bool}>
+     * @return Collection<int, array{item: array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}, is_news: bool, is_reminder: bool}>
      */
     private function awaitingPatch(Team $team, Collection $runtimes, CarbonInterface $since): Collection
     {
@@ -205,24 +215,36 @@ class SendDailyDigest
             ->orderBy('first_published_at')
             ->get()
             ->map(function (Incident $incident) use ($team, $runtimes, $since, $reviewAfter): ?array {
-                $notices = $incident->notices()->where('is_dismissed', false)->where('is_backfill', false)->get();
-                $firstTold = IncidentTeamNotice::firstToldAt($team->id, $incident->notices()->pluck('id')->all());
+                $all = $incident->notices()->get();
+                $notices = $all->where('is_dismissed', false)->where('is_backfill', false);
+                $firstTold = IncidentTeamNotice::firstToldAt($team->id, $all->modelKeys());
 
                 if ($notices->isEmpty() || $firstTold === null) {
                     return null;
                 }
 
-                $branches = $runtimes
-                    ->where('technology', $incident->technology)
+                $patches = $incident->confirmedPatches($all);
+                $technologyRuntimes = $runtimes->where('technology', $incident->technology)->values();
+                $exposure = IncidentTeamExposure::of($incident, $all, $technologyRuntimes, $patches);
+                $assessment = IncidentTeam::where('incident_id', $incident->id)->where('team_id', $team->id)->first();
+                $isAssessed = $assessment?->hasValidAssessment($exposure) ?? false;
+
+                if ($isAssessed && $assessment->isRuledOut($exposure)) {
+                    return null;
+                }
+
+                $branches = $technologyRuntimes
                     ->filter(fn (Runtime $runtime): bool => $runtime->branch !== null && $incident->scopeFor($runtime) !== IncidentScope::NotAffected)
                     ->pluck('branch')
                     ->unique()
-                    ->diff(array_keys($incident->confirmedPatches()))
+                    ->diff(array_keys($patches))
                     ->sort(SORT_NATURAL)
                     ->values()
                     ->all();
+                $waiting = IncidentTeamExposure::waitingBranches($incident, $technologyRuntimes, $patches);
+                $isReminder = $waiting !== [] && ! $isAssessed && $this->policy->remindsOfIncident(IncidentTeamNotice::severityToldTo($team->id, $all->modelKeys()));
 
-                if ($branches === []) {
+                if ($branches === [] && ! $isReminder) {
                     return null;
                 }
 
@@ -233,13 +255,14 @@ class SendDailyDigest
                     'item' => [
                         'incident' => $incident,
                         'notice' => $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first(),
-                        'branches' => $branches,
+                        'branches' => $isReminder ? $waiting : $branches,
                         'candidates' => array_map(fn (RuntimeRelease $release): string => $release->version, $candidates),
                         'needs_review' => ! $reviewDay->isFuture(),
                     ],
                     'is_news' => $firstTold->gte($since)
                         || collect($candidates)->contains(fn (RuntimeRelease $release): bool => $release->created_at->gte($since))
                         || $reviewDay->between($since, now()),
+                    'is_reminder' => $isReminder,
                 ];
             })
             ->filter()
@@ -304,24 +327,24 @@ class SendDailyDigest
      * Whether the daily digest has something to read. Findings closed automatically, new findings an admin already
      * read and counts that did not change wait for the weekly one.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool, incident_reminders: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>}  $digest
      */
     private function hasNews(array $digest): bool
     {
         return $digest['new']->contains(fn (Finding $finding): bool => ! $finding->isAcknowledged())
             || $digest['reminders']->isNotEmpty() || $digest['overdue']->isNotEmpty() || $digest['pre_notices']->isNotEmpty()
-            || $digest['ending']->isNotEmpty() || $digest['new_unreadable_lockfiles'] > 0 || $digest['awaiting_patch_news'];
+            || $digest['ending']->isNotEmpty() || $digest['new_unreadable_lockfiles'] > 0 || $digest['awaiting_patch_news'] || $digest['incident_reminders']->isNotEmpty();
     }
 
     /**
      * Services without a lockfile are counted when there is a digest anyway, but do not cause one on their own: some
      * services have no package manager the MVP reads.
      *
-     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool}  $digest
+     * @param  array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool, incident_reminders: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>}  $digest
      */
     private function isEmpty(array $digest): bool
     {
-        return ! $this->hasNews($digest) && $digest['new']->isEmpty() && $digest['open']->isEmpty() && $digest['resolved']->isEmpty() && $digest['awaiting_patch']->isEmpty()
+        return ! $this->hasNews($digest) && $digest['new']->isEmpty() && $digest['open']->isEmpty() && $digest['resolved']->isEmpty() && $digest['awaiting_patch']->isEmpty() && $digest['incident_reminders']->isEmpty()
             && $digest['unknown'] === 0 && $digest['outdated'] === 0 && $digest['unreadable_lockfiles'] === 0;
     }
 }

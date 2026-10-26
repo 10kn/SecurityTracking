@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
 
-/** A danger-ghost button that asks before running `onConfirm`, e.g. deleting a record. */
+/** A danger-ghost button that asks before running `onConfirm`, e.g. deleting a record; `variant` and `size` draw it otherwise, e.g. for a merge. */
 export function ConfirmButton({
     children,
     title,
@@ -22,13 +22,17 @@ export function ConfirmButton({
     confirmLabel,
     onConfirm,
     disabled = false,
+    variant = 'danger-ghost',
+    size = 'default',
 }: {
     children: ReactNode;
     title: string;
-    description: string;
+    description: ReactNode;
     confirmLabel: string;
     onConfirm: () => void;
     disabled?: boolean;
+    variant?: 'danger-ghost' | 'secondary' | 'ghost';
+    size?: 'default' | 'sm';
 }) {
     const t = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
@@ -36,7 +40,7 @@ export function ConfirmButton({
     return (
         <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
             <AlertDialogTrigger asChild>
-                <Button type="button" variant="danger-ghost" disabled={disabled}>
+                <Button type="button" variant={variant} size={size} disabled={disabled}>
                     {children}
                 </Button>
             </AlertDialogTrigger>

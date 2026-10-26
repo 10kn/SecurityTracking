@@ -7,6 +7,8 @@ use App\Enums\FindingRule;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\FindingEvent;
+use App\Models\Incident;
+use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\Team;
 use App\Services\AlertPolicy;
@@ -99,6 +101,8 @@ class SendFindingAlerts
      * current incident of the technology: the vendor's pre-notice usually names the fixed version soon after the
      * release, and its "Đã có bản vá" card then stands for the finding (see CoverPatchedFindings). The team already
      * has the incident's card meanwhile, or a card from before incidents; after the wait the finding is sent as before.
+     * An incident an admin validly assessed as not affecting the team ("Không") never sends it that card, so it holds
+     * nothing back.
      */
     private function isHeldForVendorPatch(Finding $finding): bool
     {
@@ -108,7 +112,14 @@ class SendFindingAlerts
 
         return $this->heldTechnologies["{$finding->team_id}:{$finding->runtime->technology->value}"] ??= IncidentTeamNotice::firstToldAt(
             $finding->team_id,
-            Advisory::alertable()->where('technology', $finding->runtime->technology)->pluck('id')->all(),
+            Advisory::alertable()
+                ->where('technology', $finding->runtime->technology)
+                ->get(['id', 'incident_id'])
+                ->groupBy('incident_id')
+                ->reject(fn (Collection $notices, int|string $incidentId): bool => $incidentId !== '' && ($incident = Incident::find($incidentId)) !== null && IncidentTeam::isRuledOutFor($incident, $finding->team_id))
+                ->collapse()
+                ->pluck('id')
+                ->all(),
         ) !== null;
     }
 

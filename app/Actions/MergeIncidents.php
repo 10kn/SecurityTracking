@@ -21,7 +21,10 @@ use InvalidArgumentException;
  * it was merged into.
  *
  * Each team's Google Chat thread of the merged incident stays on its IncidentTeam row, which points at the row of the
- * incident it went into (see mergeThreads()).
+ * incident it went into (see mergeThreads()). An admin's assessment of an incident for a team ("Đã đọc") stays on its
+ * own row: the incident it went into keeps its own, which holds only while it still covers what the merged pre-notices
+ * ask of the team (see IncidentTeamExposure::isCoveredBy()); a team that only assessed the merged one is unassessed.
+ * It may run inside a caller's transaction (see AcceptIncidentSuggestion).
  */
 class MergeIncidents
 {
