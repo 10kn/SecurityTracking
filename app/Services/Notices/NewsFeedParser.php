@@ -73,13 +73,15 @@ final class NewsFeedParser
             $link = trim($xpath->evaluate('string(a:link[@rel="alternate" or not(@rel)][1]/@href)', $entry));
             $contents = $xpath->query('a:content | a:summary', $entry);
             $content = $contents === false ? null : $contents->item(0);
+            $url = self::isWebAddress($id) ? $id : (self::isWebAddress($link) ? $link : null);
 
             $entries[] = new NoticeEntry(
                 externalId: $id !== '' ? $id : $link,
                 title: Str::squish($xpath->evaluate('string(a:title)', $entry)),
                 text: $content instanceof DOMElement ? self::atomText($content) : '',
-                url: self::isWebAddress($id) ? $id : (self::isWebAddress($link) ? $link : null),
+                url: $url,
                 publishedAt: self::date($xpath->evaluate('string(a:published)', $entry) ?: $xpath->evaluate('string(a:updated)', $entry)),
+                links: $content instanceof DOMElement ? self::links(self::atomHrefs($xpath, $content), $url) : [],
             );
         }
 
@@ -100,17 +102,61 @@ final class NewsFeedParser
         foreach ($xpath->query('/rss/channel/item') ?: [] as $item) {
             $link = trim($xpath->evaluate('string(link)', $item));
             $guid = trim($xpath->evaluate('string(guid)', $item));
+            $description = $xpath->evaluate('string(description)', $item);
+            $url = self::isWebAddress($link) ? $link : (self::isWebAddress($guid) ? $guid : null);
 
             $entries[] = new NoticeEntry(
                 externalId: $link !== '' ? $link : $guid,
                 title: Str::squish($xpath->evaluate('string(title)', $item)),
-                text: self::htmlToText($xpath->evaluate('string(description)', $item)),
-                url: self::isWebAddress($link) ? $link : (self::isWebAddress($guid) ? $guid : null),
+                text: self::htmlToText($description),
+                url: $url,
                 publishedAt: self::date($xpath->evaluate('string(pubDate)', $item)),
+                links: self::links(self::htmlHrefs($description), $url),
             );
         }
 
         return $entries;
+    }
+
+    /**
+     * The links of Atom content: the href attributes of XHTML content, or those written in escaped HTML content.
+     *
+     * @return list<string>
+     */
+    private static function atomHrefs(DOMXPath $xpath, DOMElement $content): array
+    {
+        if ($content->getAttribute('type') !== 'xhtml') {
+            return self::htmlHrefs($content->textContent);
+        }
+
+        return array_map(fn (DOMNode $href): string => (string) $href->nodeValue, iterator_to_array($xpath->query('.//*[local-name()="a"]/@href', $content) ?: []));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function htmlHrefs(string $html): array
+    {
+        preg_match_all('/<a\b[^>]*\bhref\s*=\s*(["\'])(.*?)\1/is', $html, $matches);
+
+        return $matches[2];
+    }
+
+    /**
+     * Absolute, normalized and without duplicates, at most 100.
+     *
+     * @param  list<string>  $hrefs
+     * @return list<string>
+     */
+    private static function links(array $hrefs, ?string $base): array
+    {
+        return collect($hrefs)
+            ->map(fn (string $href): ?string => NoticeUrl::resolve($href, $base))
+            ->filter()
+            ->unique()
+            ->take(100)
+            ->values()
+            ->all();
     }
 
     private static function atomText(DOMElement $content): string

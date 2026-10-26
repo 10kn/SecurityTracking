@@ -8,15 +8,20 @@ use Illuminate\Support\Str;
 
 /**
  * One feed entry as plain text. `externalId` is the entry's id, link or guid, whichever the feed keeps stable.
+ * `links` are the absolute addresses the entry links to, normalized (see NoticeUrl).
  */
 final readonly class NoticeEntry
 {
+    /**
+     * @param  list<string>  $links
+     */
     public function __construct(
         public string $externalId,
         public string $title,
         public string $text = '',
         public ?string $url = null,
         public ?CarbonImmutable $publishedAt = null,
+        public array $links = [],
     ) {}
 
     /**
@@ -64,6 +69,28 @@ final readonly class NoticeEntry
         preg_match_all('/\bCVE-\d{4}-\d{4,}\b/i', "{$this->title} {$this->text}", $matches);
 
         return array_values(array_unique(array_map('strtoupper', $matches[0])));
+    }
+
+    /**
+     * GitHub security advisory ids the entry mentions or links to, e.g. ["GHSA-w8hw-w9fx-j79w"].
+     *
+     * @return list<string>
+     */
+    public function ghsaIds(): array
+    {
+        preg_match_all('/\bGHSA(?:-[23456789cfghjmpqrvwx]{4}){3}\b/i', implode(' ', [$this->title, $this->text, ...$this->links]), $matches);
+
+        return array_values(array_unique(array_map(fn (string $id): string => 'GHSA-'.strtolower(substr($id, 5)), $matches[0])));
+    }
+
+    /**
+     * The CVE and GHSA ids of the entry: the ids that tie it to other news of the same issue.
+     *
+     * @return list<string>
+     */
+    public function referenceIds(): array
+    {
+        return [...$this->cveIds(), ...$this->ghsaIds()];
     }
 
     public function summary(int $length): ?string

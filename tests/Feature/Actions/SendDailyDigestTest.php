@@ -1,14 +1,17 @@
 <?php
 
+use App\Actions\AssignNoticeToIncident;
 use App\Actions\SendDailyDigest;
 use App\Enums\ChatNotificationKind;
 use App\Enums\FindingEventType;
+use App\Enums\IncidentAlertReason;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Deployment;
 use App\Models\Finding;
+use App\Models\IncidentTeamNotice;
 use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
@@ -264,4 +267,21 @@ it('counts services without a lockfile and lockfiles that cannot be read', funct
 
 it('sends no digest only because a service has no lockfile', function () {
     expect(app(SendDailyDigest::class)->handle())->toBe(0);
+});
+
+it('lists an incident by its most severe pre-notice, and not one sent right away or already in a card', function () {
+    runtimeAt($this->team, 'shop-api', Technology::Php, '8.3.35');
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP low notice', 'severity' => Severity::Low, 'aliases' => ['CVE-2026-1001']]);
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP medium notice', 'severity' => Severity::Medium, 'aliases' => ['CVE-2026-1001']]);
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP medium part of a critical issue', 'severity' => Severity::Medium, 'aliases' => ['CVE-2026-2002']]);
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'Upcoming Critical PHP Security Release', 'aliases' => ['CVE-2026-2002']]);
+    $told = Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP medium notice the team had in a card', 'severity' => Severity::Medium]);
+    app(AssignNoticeToIncident::class)->assignUnassigned();
+    IncidentTeamNotice::create(['team_id' => $this->team->id, 'advisory_id' => $told->id, 'severity' => Severity::Medium, 'reason' => IncidentAlertReason::New]);
+
+    expect(app(SendDailyDigest::class)->handle())->toBe(1);
+
+    $card = chatJson(chatMessagesTo('COMMERCE')->sole());
+    expect($card)->toContain('[Medium] PHP medium notice')
+        ->not->toContain('PHP low notice', 'part of a critical issue', 'Upcoming Critical', 'had in a card');
 });

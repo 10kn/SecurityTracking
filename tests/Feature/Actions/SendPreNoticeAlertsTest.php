@@ -8,6 +8,8 @@ use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\ChatNotification;
 use App\Models\Finding;
+use App\Models\Incident;
+use App\Models\IncidentTeamNotice;
 use App\Models\Team;
 
 beforeEach(function () {
@@ -47,7 +49,9 @@ it('sends one card to each team running the technology, listing its services wit
         ->and(chatJson(chatMessagesTo('BOOKING')->sole()))->toContain('booking-api', 'PHP 8.2.30')
         ->and(chatMessagesTo('ANALYTICS'))->toHaveCount(0)
         ->and(ChatNotification::where('kind', ChatNotificationKind::PreNotice)->pluck('dedupe_key')->all())
-        ->toEqualCanonicalizing(["pre_notice:{$this->preNotice->id}:{$this->commerce->id}:critical", "pre_notice:{$this->preNotice->id}:{$this->booking->id}:critical"])
+        ->each->toStartWith("pre_notice:incident:{$this->preNotice->refresh()->incident_id}:")
+        ->and(IncidentTeamNotice::where('advisory_id', $this->preNotice->id)->get(['team_id', 'severity'])->map(fn ($told) => [$told->team_id, $told->severity])->all())
+        ->toEqualCanonicalizing([[$this->commerce->id, Severity::Critical], [$this->booking->id, Severity::Critical]])
         ->and(Finding::count())->toBe(0);
 });
 
@@ -189,4 +193,72 @@ it('shows what gave the severity', function () {
     app(SendPreNoticeAlerts::class)->handle();
 
     expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('CVSS 9.2 · Mức theo điểm CVSS');
+});
+
+it('sends an incident right away when one of its pre-notices has no severity, even next to a low one', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['severity' => Severity::Low, 'aliases' => ['CVE-2026-1001']]);
+    Advisory::factory()->preNotice($this->php)->create(['title' => 'PHP security notice', 'severity' => Severity::Unknown, 'aliases' => ['CVE-2026-1001'], 'published_at' => now()]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
+        ->and(Incident::count())->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Low] Upcoming Critical PHP Security Release');
+});
+
+it('sends no other card for news that only adds to an incident, and one when the incident rises', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['severity' => Severity::High, 'aliases' => ['CVE-2026-1001']]);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $this->travel(1)->hour();
+    Advisory::factory()->preNotice($this->php)->create(['title' => 'PHP security advisory', 'severity' => Severity::High, 'aliases' => ['CVE-2026-1001'], 'published_at' => now()]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(0);
+
+    Advisory::factory()->preNotice($this->php)->create(['title' => 'PHP security advisory, now critical', 'severity' => Severity::Critical, 'aliases' => ['CVE-2026-1001'], 'published_at' => now()]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1);
+
+    $card = chatMessagesTo('COMMERCE')->last();
+    expect($card['text'])->toBe('[Critical] PHP security advisory, now critical')
+        ->and(chatJson($card))->toContain('Mức độ tăng từ High lên Critical.', 'Tin khác của cùng sự kiện', '[High] Upcoming Critical PHP Security Release', '[High] PHP security advisory');
+});
+
+it('says for each service whether the vendor named its branch as affected', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35')->update(['branch' => '8.3']);
+    runtimeAt($this->commerce, 'shop-admin', $this->php, '8.5.11')->update(['branch' => '8.5']);
+    runtimeAt($this->commerce, 'shop-legacy', $this->php, '8.2.30')->update(['branch' => '8.2']);
+    $this->preNotice->update(['affected_branches' => ['8.3'], 'unaffected_branches' => ['8.5']]);
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain(
+        'PHP 8.3.35 · Phạm vi: đã xác nhận',
+        'PHP 8.5.11 · Phạm vi: đã xác nhận không ảnh hưởng',
+        'PHP 8.2.30 · Phạm vi: chưa xác định',
+    );
+});
+
+it('tells the team again when the incident rises, even while a pre-notice without severity already makes it urgent', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['severity' => Severity::Low, 'aliases' => ['CVE-2026-1001']]);
+    Advisory::factory()->preNotice($this->php)->create(['title' => 'PHP security notice', 'severity' => Severity::Unknown, 'aliases' => ['CVE-2026-1001'], 'published_at' => now()]);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    $this->preNotice->update(['severity' => Severity::Medium]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Medium] Upcoming Critical PHP Security Release');
+});
+
+it('records as told only the pre-notices the card shows', function () {
+    config(['psm.alerts.max_listed_items' => 1]);
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['aliases' => ['CVE-2026-1001']]);
+    $shown = Advisory::factory()->preNotice($this->php)->create(['title' => 'PHP security advisory', 'severity' => Severity::High, 'aliases' => ['CVE-2026-1001'], 'published_at' => now()]);
+    Advisory::factory()->preNotice($this->php)->create(['title' => 'PHP security FAQ', 'severity' => Severity::Low, 'aliases' => ['CVE-2026-1001'], 'published_at' => now()]);
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(IncidentTeamNotice::pluck('advisory_id')->all())->toEqualCanonicalizing([$this->preNotice->id, $shown->id]);
 });

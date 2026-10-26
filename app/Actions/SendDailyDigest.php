@@ -2,13 +2,13 @@
 
 namespace App\Actions;
 
-use App\Enums\AdvisoryKind;
 use App\Enums\ChatNotificationKind;
 use App\Enums\FindingEventType;
 use App\Enums\FindingState;
 use App\Enums\RuntimeStatus;
 use App\Models\Advisory;
 use App\Models\Finding;
+use App\Models\IncidentTeamNotice;
 use App\Models\Lockfile;
 use App\Models\Runtime;
 use App\Models\RuntimeBranch;
@@ -46,6 +46,7 @@ class SendDailyDigest
         private AlertPolicy $policy,
         private QueueChatNotification $queueChatNotification,
         private GoogleChatCards $cards,
+        private AssignNoticeToIncident $assignNoticeToIncident,
     ) {}
 
     /**
@@ -53,6 +54,8 @@ class SendDailyDigest
      */
     public function handle(): int
     {
+        $this->assignNoticeToIncident->assignUnassigned();
+
         $today = now(config('psm.digest.timezone'));
         $isWeekly = $today->dayOfWeek === config('psm.digest.weekly_day');
 
@@ -111,7 +114,7 @@ class SendDailyDigest
             'overdue' => $overdue->values(),
             'open' => $notNew->diffKeys($reminders)->diffKeys($overdue)->values(),
             'resolved' => $findings->where('state', FindingState::Resolved)->values(),
-            'pre_notices' => $this->preNotices($runtimes, $since),
+            'pre_notices' => $this->preNotices($team, $runtimes, $since),
             'ending' => $this->endingSoon($runtimes, $isWeekly ? null : $since),
             'unknown' => $runtimes->where('status', RuntimeStatus::Unknown)->count(),
             'outdated' => $runtimes->where('status', RuntimeStatus::Outdated)->count(),
@@ -140,28 +143,30 @@ class SendDailyDigest
     }
 
     /**
-     * Pre-notices stored or changed since the previous digest that were not sent right away (Medium and Low), of a
-     * technology the team runs. Changes count, so an entry the classifier rates Medium only after the digest started
-     * is in the next one.
+     * Incidents of a technology the team runs that were not sent right away (all their pre-notices are Medium or Low),
+     * that are new or changed in severity or branches since the previous digest, and that the team got no card about.
+     * Each is listed by its most severe pre-notice. An incident the classifier rates Medium only after the digest
+     * started is in the next one.
      *
      * @param  Collection<int, Runtime>  $runtimes
      * @return Collection<int, Advisory>
      */
-    private function preNotices(Collection $runtimes, CarbonInterface $since): Collection
+    private function preNotices(Team $team, Collection $runtimes, CarbonInterface $since): Collection
     {
         if ($runtimes->isEmpty()) {
             return collect();
         }
 
-        return Advisory::where('kind', AdvisoryKind::PreNotice)
+        return Advisory::alertable()
             ->whereIn('technology', $runtimes->pluck('technology.value')->unique())
-            ->where('is_dismissed', false)
-            ->where('is_backfill', false)
-            ->where('published_at', '>=', now()->subDays(config('psm.notices.relevant_days')))
-            ->where('updated_at', '>=', $since)
+            ->whereHas('incident', fn ($query) => $query->whereNull('merged_into_id')->where('changed_at', '>=', $since))
             ->orderBy('published_at')
             ->get()
-            ->reject(fn (Advisory $advisory): bool => $this->policy->sendsPreNoticeRightAway($advisory))
+            ->groupBy('incident_id')
+            ->reject(fn (Collection $notices): bool => $notices->contains(fn (Advisory $notice): bool => $this->policy->sendsPreNoticeRightAway($notice)))
+            ->reject(fn (Collection $notices, int $incidentId): bool => IncidentTeamNotice::severityToldTo($team->id, Advisory::where('incident_id', $incidentId)->pluck('id')->all()) !== null)
+            ->map(fn (Collection $notices): Advisory => $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first())
+            ->sortBy('published_at')
             ->values();
     }
 

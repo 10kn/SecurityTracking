@@ -2,34 +2,45 @@
 
 namespace App\Actions;
 
-use App\Enums\AdvisoryKind;
 use App\Enums\ChatNotificationKind;
+use App\Enums\IncidentAlertReason;
 use App\Enums\Severity;
 use App\Models\Advisory;
-use App\Models\ChatNotification;
+use App\Models\Incident;
+use App\Models\IncidentTeamNotice;
 use App\Models\Runtime;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Traits\Localizable;
 
 /**
- * Sends "Cảnh báo chuẩn bị" (handover 5.2): every team that runs the technology of a pre-notice gets one card per
- * pre-notice, listing its services on that technology. Only pre-notices published within `psm.notices.relevant_days`
- * are sent, and never those a feed listed on its first poll (see SyncNoticeFeed). A team that starts running the
- * technology later gets the card on a later run while the pre-notice is still within that window. Running it again
- * sends nothing new.
+ * Sends "Cảnh báo chuẩn bị" (handover 5.2) per incident: every team that runs the technology gets one card per
+ * incident, listing its services on that technology with whether the vendor said their branch is affected. Only
+ * pre-notices published within `psm.notices.relevant_days` count, and never those a feed listed on its first poll
+ * (see SyncNoticeFeed). A team that starts running the technology later gets the card on a later run while the
+ * incident is still within that window. Running it again sends nothing new.
  *
- * Medium and Low pre-notices wait for the daily digest (see AlertPolicy), and those the classifier dismissed as not
- * security news are not sent at all. Pre-notices only notify: they never open or escalate findings, since the vendor
- * rarely says which branches are affected.
+ * An incident is sent right away when one of its pre-notices is (Critical, High or of unknown severity, see
+ * AlertPolicy): a Low one never hides one the classifier has not rated. Incidents of Medium and Low pre-notices only
+ * wait for the daily digest, and pre-notices the classifier dismissed as not security news do not count. Pre-notices
+ * only notify: they never open or escalate findings, since the vendor rarely says which branches are affected.
+ *
+ * Each card records which pre-notices it told the team about, at which severity (`incident_team_notices`), in the
+ * transaction that queues it. A team hears about an incident again only when its highest severity rises above what its
+ * pre-notices were sent at; news that only adds to an incident does not send another card.
  */
 class SendPreNoticeAlerts
 {
     use Localizable;
 
-    public function __construct(private AlertPolicy $policy, private QueueChatNotification $queueChatNotification, private GoogleChatCards $cards) {}
+    public function __construct(
+        private AlertPolicy $policy,
+        private QueueChatNotification $queueChatNotification,
+        private GoogleChatCards $cards,
+        private AssignNoticeToIncident $assignNoticeToIncident,
+    ) {}
 
     /**
      * @param  bool  $holdUnclassified  Leaves out pre-notices below Critical the classifier has not read yet: they wait
@@ -38,80 +49,98 @@ class SendPreNoticeAlerts
      */
     public function handle(bool $holdUnclassified = false): int
     {
-        return Advisory::where('kind', AdvisoryKind::PreNotice)
-            ->whereNotNull('technology')
-            ->where('is_dismissed', false)
-            ->where('is_backfill', false)
-            ->where('published_at', '>=', now()->subDays(config('psm.notices.relevant_days')))
-            ->orderBy('published_at')
+        $this->assignNoticeToIncident->assignUnassigned();
+
+        $incidentIds = Advisory::alertable()->whereNotNull('incident_id')->distinct()->pluck('incident_id');
+
+        return Incident::whereKey($incidentIds)
+            ->orderBy('first_published_at')
+            ->orderBy('id')
             ->get()
-            ->filter(fn (Advisory $advisory): bool => $this->policy->sendsPreNoticeRightAway($advisory))
-            ->reject(fn (Advisory $advisory): bool => $holdUnclassified && $advisory->severity !== Severity::Critical && $advisory->classified_by === null)
-            ->sum(fn (Advisory $advisory): int => $this->send($advisory));
+            ->sum(fn (Incident $incident): int => $this->send($incident, $holdUnclassified));
     }
 
     /**
-     * A team hears about a pre-notice once at each severity: again only when the severity rises, e.g. from unknown
-     * to Critical once classified. The severity is part of the dedupe key; for keys that predate it, the severity is
-     * read from the card's title ("[High] …", no tag when unknown).
+     * The incident row is locked while its cards are queued, so an admin cannot merge or split it meanwhile.
      */
-    private function send(Advisory $advisory): int
+    private function send(Incident $incident, bool $holdUnclassified): int
     {
-        $runtimesByTeam = Runtime::where('technology', $advisory->technology)
-            ->whereHas('deployment', fn ($query) => $query->where('is_current', true))
-            ->with('deployment.service.project.team')
-            ->get()
-            ->groupBy(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id);
+        return DB::transaction(function () use ($incident, $holdUnclassified): int {
+            $incident = Incident::whereKey($incident->id)->lockForUpdate()->first();
 
-        $queued = 0;
-
-        foreach ($runtimesByTeam as $teamId => $runtimes) {
-            $notifiedSeverity = $this->notifiedSeverity($advisory, $teamId);
-
-            if ($notifiedSeverity !== null && $notifiedSeverity->rank() >= $advisory->severity->rank()) {
-                continue;
+            if ($incident === null || $incident->merged_into_id !== null) {
+                return 0;
             }
 
-            $queued += (int) $this->queue($advisory, $runtimes, "pre_notice:{$advisory->id}:{$teamId}:{$advisory->severity->value}", $notifiedSeverity);
-        }
+            $notices = Advisory::alertable()
+                ->where('incident_id', $incident->id)
+                ->orderBy('published_at')
+                ->orderBy('id')
+                ->get()
+                ->reject(fn (Advisory $notice): bool => $holdUnclassified && $notice->severity !== Severity::Critical && $notice->classified_by === null)
+                ->values();
+            $urgent = $notices->filter(fn (Advisory $notice): bool => $this->policy->sendsPreNoticeRightAway($notice));
 
-        return $queued;
-    }
-
-    private function notifiedSeverity(Advisory $advisory, int $teamId): ?Severity
-    {
-        $prefix = "pre_notice:{$advisory->id}:{$teamId}";
-
-        return ChatNotification::where('dedupe_key', $prefix)
-            ->orWhere('dedupe_key', 'like', "{$prefix}:%")
-            ->get()
-            ->map(fn (ChatNotification $notification): Severity => $notification->dedupe_key === $prefix
-                ? $this->severityOfTitle((string) ($notification->payload['text'] ?? ''))
-                : Severity::tryFrom(Str::after($notification->dedupe_key, "{$prefix}:")) ?? Severity::Unknown)
-            ->sortByDesc(fn (Severity $severity): int => $severity->rank())
-            ->first();
-    }
-
-    private function severityOfTitle(string $title): Severity
-    {
-        foreach ([Severity::Critical, Severity::High, Severity::Medium, Severity::Low] as $severity) {
-            if (str_starts_with($title, "[{$severity->getLabel()}]")) {
-                return $severity;
+            if ($urgent->isEmpty()) {
+                return 0;
             }
-        }
 
-        return Severity::Unknown;
+            $memberIds = $incident->notices()->pluck('id')->all();
+
+            $runtimesByTeam = Runtime::where('technology', $incident->technology)
+                ->whereHas('deployment', fn ($query) => $query->where('is_current', true))
+                ->with('deployment.service.project.team')
+                ->get()
+                ->groupBy(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id);
+
+            $queued = 0;
+
+            foreach ($runtimesByTeam as $teamId => $runtimes) {
+                $toldSeverity = IncidentTeamNotice::severityToldTo($teamId, $memberIds);
+
+                if ($toldSeverity !== null && $toldSeverity->rank() >= Incident::highestSeverity($notices)->rank()) {
+                    continue;
+                }
+
+                $queued += (int) $this->queue($incident, $notices, $runtimes, $toldSeverity);
+            }
+
+            return $queued;
+        });
     }
 
     /**
+     * The card leads with the most severe pre-notice and lists the others up to `psm.alerts.max_listed_items`, most
+     * severe first. Only the pre-notices it shows are recorded as told.
+     *
+     * @param  Collection<int, Advisory>  $notices  The incident's pre-notices that count now, oldest first.
      * @param  Collection<int, Runtime>  $runtimes  One team's runtimes of the technology.
      */
-    private function queue(Advisory $advisory, Collection $runtimes, string $dedupeKey, ?Severity $previousSeverity): bool
+    private function queue(Incident $incident, Collection $notices, Collection $runtimes, ?Severity $toldSeverity): bool
     {
         $team = $runtimes->first()->deployment->service->project->team;
+        $lead = $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first();
+        $others = $notices->reject(fn (Advisory $notice): bool => $notice->is($lead))->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->take(config('psm.alerts.max_listed_items'))->values();
+        $shown = collect([$lead, ...$others]);
+        $dedupeKey = "pre_notice:incident:{$incident->id}:{$team->id}:".hash('sha256', $shown->map(fn (Advisory $notice): string => "{$notice->id}:{$notice->severity->value}")->sort()->join(','));
 
-        $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->preNotice($team, $advisory, $runtimes, $previousSeverity));
+        $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->preNotice($team, $incident, $lead, $others, $runtimes, $toldSeverity));
 
-        return $this->queueChatNotification->handle($team, ChatNotificationKind::PreNotice, $dedupeKey, $payload) !== null;
+        $notification = $this->queueChatNotification->handle($team, ChatNotificationKind::PreNotice, $dedupeKey, $payload);
+
+        if ($notification === null) {
+            return false;
+        }
+
+        IncidentTeamNotice::insertOrIgnore($shown->map(fn (Advisory $notice): array => [
+            'team_id' => $team->id,
+            'advisory_id' => $notice->id,
+            'severity' => $notice->severity->value,
+            'reason' => ($toldSeverity === null ? IncidentAlertReason::New : IncidentAlertReason::SeverityRise)->value,
+            'chat_notification_id' => $notification->id,
+            'created_at' => now(),
+        ])->all());
+
+        return true;
     }
 }

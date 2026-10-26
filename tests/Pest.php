@@ -14,6 +14,7 @@ use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
 use App\Services\Notices\RubyLangNoticeFeed;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Collection;
@@ -423,9 +424,10 @@ function gitHubRequests(string $path = ''): Collection
 }
 
 /**
- * Classifies every entry with `$answer`, which may throw, and keeps the titles of the entries it was given.
+ * Classifies every entry with `$answer`, which may throw, and keeps the titles of the entries it was given. `$answer`
+ * also gets the incidents offered to the classifier.
  *
- * @param  Closure(NoticeEntry): NoticeClassification  $answer
+ * @param  Closure(NoticeEntry, list<array{id: int, title: string, published_at: ?CarbonInterface}>): NoticeClassification  $answer
  */
 function classifyNoticesWith(Closure $answer): ArrayObject
 {
@@ -445,11 +447,11 @@ function classifyNoticesWith(Closure $answer): ArrayObject
             return 'claude-haiku-5-5';
         }
 
-        public function classify(Technology $technology, NoticeEntry $entry): NoticeClassification
+        public function classify(Technology $technology, NoticeEntry $entry, array $incidents = []): NoticeClassification
         {
             $this->titles[] = $entry->title;
 
-            return ($this->answer)($entry);
+            return ($this->answer)($entry, $incidents);
         }
     });
 

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AdvisoryKind;
 use App\Enums\Ecosystem;
+use App\Enums\IncidentBasis;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
@@ -11,15 +12,25 @@ use App\Services\Packages\PackagistVulnerabilityMatcher;
 use App\Services\Packages\RubySecVulnerabilityMatcher;
 use Database\Factories\AdvisoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'localized_summary'])]
+#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
     use HasFactory;
+
+    /**
+     * The attributes an incident is derived from.
+     *
+     * @var list<string>
+     */
+    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches'];
 
     /**
      * Get the attributes that should be cast.
@@ -30,11 +41,14 @@ class Advisory extends Model
     {
         return [
             'kind' => AdvisoryKind::class,
+            'incident_basis' => IncidentBasis::class,
+            'incident_evidence' => 'array',
             'aliases' => 'array',
             'severity' => Severity::class,
             'severity_basis' => SeverityBasis::class,
             'cvss_score' => 'decimal:1',
             'technology' => Technology::class,
+            'links' => 'array',
             'published_at' => 'datetime',
             'source_modified_at' => 'datetime',
             'withdrawn_at' => 'datetime',
@@ -45,7 +59,56 @@ class Advisory extends Model
             'is_backfill' => 'boolean',
             'planned_release_at' => 'datetime',
             'affected_branches' => 'array',
+            'unaffected_branches' => 'array',
         ];
+    }
+
+    /**
+     * The incident of a pre-notice follows every change to it, whichever code makes it. The incident is read from the
+     * database: a model loaded before an admin merged or split the incident still holds the old one, and saving it
+     * does not write it back.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (Advisory $advisory): void {
+            if ($advisory->kind !== AdvisoryKind::PreNotice) {
+                return;
+            }
+
+            if (! $advisory->wasRecentlyCreated && ! $advisory->wasChanged(self::INCIDENT_ATTRIBUTES)) {
+                return;
+            }
+
+            $current = self::whereKey($advisory->id)->value('incident_id');
+            $incidentIds = [$current, $advisory->wasChanged('incident_id') ? $advisory->getOriginal('incident_id') : null];
+
+            Incident::whereKey(array_filter($incidentIds))->get()->each->refreshFromNotices();
+        });
+    }
+
+    /**
+     * Pre-notices that may still alert: not dismissed, not history from a feed's first poll, and published within
+     * `psm.notices.relevant_days`.
+     *
+     * @param  Builder<Advisory>  $query
+     * @return Builder<Advisory>
+     */
+    #[Scope]
+    protected function alertable(Builder $query): Builder
+    {
+        return $query->where('kind', AdvisoryKind::PreNotice)
+            ->whereNotNull('technology')
+            ->where('is_dismissed', false)
+            ->where('is_backfill', false)
+            ->where('published_at', '>=', now()->subDays(config('psm.notices.relevant_days')));
+    }
+
+    /**
+     * @return BelongsTo<Incident, $this>
+     */
+    public function incident(): BelongsTo
+    {
+        return $this->belongsTo(Incident::class);
     }
 
     /**

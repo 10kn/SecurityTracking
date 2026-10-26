@@ -26,7 +26,7 @@ use Throwable;
  */
 class SyncNoticeFeed
 {
-    public function __construct(private NoticeClassifier $classifier) {}
+    public function __construct(private NoticeClassifier $classifier, private AssignNoticeToIncident $assignNoticeToIncident) {}
 
     /**
      * Polls and classifies in one go.
@@ -43,7 +43,8 @@ class SyncNoticeFeed
 
     /**
      * Stores the entries the feed lists now with what can be read from them without the classifier, keeping the
-     * previous classification.
+     * previous classification. The incidents of the technology are locked first (see AssignNoticeToIncident), as
+     * merging and assigning do, so they never wait on each other in opposite order.
      *
      * @return array<string, array{entry: NoticeEntry, advisory: Advisory}> Keyed by external id.
      *
@@ -75,14 +76,18 @@ class SyncNoticeFeed
             ->unique(fn (NoticeEntry $entry): string => $this->externalId($entry))
             ->keyBy(fn (NoticeEntry $entry): string => $this->externalId($entry));
 
-        $stored = Advisory::where('source', $technology->noticeSourceKey())->whereIn('external_id', $relevant->keys())->get()->keyBy('external_id');
+        $polled = DB::transaction(function () use ($technology, $relevant, $isFirstPoll): array {
+            $this->assignNoticeToIncident->lock($technology);
 
-        $polled = DB::transaction(fn (): array => $relevant
-            ->map(fn (NoticeEntry $entry, string $externalId): array => [
-                'entry' => $entry,
-                'advisory' => $this->store($technology, $entry, $stored->get($externalId), null, $isFirstPoll),
-            ])
-            ->all());
+            $stored = Advisory::where('source', $technology->noticeSourceKey())->whereIn('external_id', $relevant->keys())->get()->keyBy('external_id');
+
+            return $relevant
+                ->map(fn (NoticeEntry $entry, string $externalId): array => [
+                    'entry' => $entry,
+                    'advisory' => $this->store($technology, $entry, $stored->get($externalId), null, $isFirstPoll),
+                ])
+                ->all();
+        });
 
         $heartbeat->update(['last_success_at' => now(), 'last_error' => null]);
 
@@ -101,7 +106,14 @@ class SyncNoticeFeed
             ->map(function (array $item) use ($technology): Advisory {
                 $classification = $this->classification($technology, $item['entry'], $item['advisory']);
 
-                return $classification === null ? $item['advisory'] : $this->store($technology, $item['entry'], $item['advisory'], $classification, false);
+                if ($classification === null) {
+                    return $item['advisory'];
+                }
+
+                $advisory = $this->store($technology, $item['entry'], $item['advisory'], $classification, false);
+                $this->assignNoticeToIncident->suggestFromClassifier($advisory, $classification->relatedIncidentId);
+
+                return $advisory;
             })
             ->values()
             ->all();
@@ -128,8 +140,9 @@ class SyncNoticeFeed
     }
 
     /**
-     * Entries are classified once, and again when the vendor edits them. Entries older than `psm.notices.relevant_days`
-     * are not: they no longer alert anything. A classifier error is reported and the entry is tried again on the next
+     * Entries are classified once, and again when the vendor edits them, along with the recent incidents of the
+     * technology the entry may be about. Entries older than `psm.notices.relevant_days` are not: they no longer alert
+     * anything. A classifier error is reported and the entry is tried again on the next
      * poll; `classification_failed_at` keeps when the errors started, for psm:check-sources. A dismissal was made on
      * the earlier text, so it no longer holds for the new one.
      */
@@ -142,7 +155,7 @@ class SyncNoticeFeed
         }
 
         try {
-            return $this->classifier->classify($technology, $entry);
+            return $this->classifier->classify($technology, $entry, $this->assignNoticeToIncident->recentIncidents($technology, $advisory->incident_id));
         } catch (Throwable $exception) {
             report($exception);
 
@@ -159,6 +172,9 @@ class SyncNoticeFeed
      * The severity is the highest of the vendor's words, the CVSS score the entry gives and the classifier, which can
      * dismiss an entry as not security news only when neither of the others found a severity in it. Without a new
      * classification, the previous one is kept.
+     *
+     * The pre-notice is put in its incident when it is new, and checked again for other incidents when what ties it to
+     * them changes (see AssignNoticeToIncident).
      *
      * Entries a feed already lists on its first successful poll are history and are never sent, except a critical one
      * that is still fresh: a new install must not miss an ongoing critical issue. An entry of the history that turns
@@ -180,6 +196,7 @@ class SyncNoticeFeed
                 'is_dismissed' => ! $classification->isSecurityNews,
                 'planned_release_at' => $classification->plannedReleaseAt,
                 'affected_branches' => $classification->affectedBranches,
+                'unaffected_branches' => $classification->unaffectedBranches,
                 'localized_summary' => $classification->summary,
             ]);
         }
@@ -199,7 +216,7 @@ class SyncNoticeFeed
 
         $advisory->fill([
             'kind' => AdvisoryKind::PreNotice,
-            'aliases' => $entry->cveIds(),
+            'aliases' => $entry->referenceIds(),
             'title' => Str::limit($entry->title, 250),
             'summary' => $entry->summary(config('psm.notices.summary_length')),
             'severity' => $severity,
@@ -208,6 +225,7 @@ class SyncNoticeFeed
             'cvss_score' => $cvssScore,
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,
+            'links' => $entry->links,
             'published_at' => $entry->publishedAt,
         ]);
 
@@ -220,6 +238,10 @@ class SyncNoticeFeed
         }
 
         $advisory->save();
+
+        if ($advisory->incident_id === null || $advisory->wasChanged(['aliases', 'links', 'published_at', 'planned_release_at', 'is_dismissed'])) {
+            $this->assignNoticeToIncident->handle($advisory);
+        }
 
         return $advisory;
     }

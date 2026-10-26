@@ -75,8 +75,8 @@ return [
     | ("critical", "high"), its CVSS score (9.0+ Critical, 7.0+ High, 4.0+ Medium) and the classifier.
     |
     | Pre-notices published within `relevant_days` are sent right away to every team running the technology when they
-    | are Critical, High or of unknown severity (vendors often give none); Medium and Low ones only appear in the daily
-    | digest. The entries a feed lists on its first successful poll are history and are never sent, except critical
+    | are Critical, High or of unknown severity (vendors often give none), one card per incident (see `incidents`);
+    | Medium and Low ones only appear in the daily digest. The entries a feed lists on its first successful poll are history and are never sent, except critical
     | ones still within `relevant_days`. A feed that has not been polled successfully within `stale_after_minutes`
     | alerts the admin.
     |
@@ -101,6 +101,25 @@ return [
             'effort' => env('PSM_NOTICE_CLASSIFIER_EFFORT', 'low'),
             'timeout_seconds' => (int) env('PSM_NOTICE_CLASSIFIER_TIMEOUT', 60),
             'alert_after_minutes' => (int) env('PSM_NOTICE_CLASSIFIER_ALERT_AFTER_MINUTES', 60),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Incidents
+    |--------------------------------------------------------------------------
+    |
+    | The pre-notices of one security issue form an incident, and a team gets one card per incident. A pre-notice joins
+    | an incident on its own only when it shares a CVE or GHSA id with it or one links to the other. A pre-notice
+    | published from `release_window_hours.before` hours before to `release_window_hours.after` hours after the release
+    | another incident planned is only suggested to the admin, as is the incident the classifier relates it to.
+    |
+    */
+
+    'incidents' => [
+        'release_window_hours' => [
+            'before' => (int) env('PSM_INCIDENT_WINDOW_BEFORE_HOURS', 24),
+            'after' => (int) env('PSM_INCIDENT_WINDOW_AFTER_HOURS', 48),
         ],
     ],
 

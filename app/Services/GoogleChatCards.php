@@ -6,6 +6,7 @@ use App\Enums\FindingState;
 use App\Enums\Severity;
 use App\Models\Advisory;
 use App\Models\Finding;
+use App\Models\Incident;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
@@ -66,16 +67,20 @@ class GoogleChatCards
     }
 
     /**
-     * "Cảnh báo chuẩn bị": a vendor's security news for one team, listing the team's services that run the technology.
+     * "Cảnh báo chuẩn bị": a vendor's security news for one team, one card per incident, led by its most severe
+     * pre-notice and listing the team's services that run the technology with whether the vendor said their branch is
+     * affected.
      *
+     * @param  Collection<int, Advisory>  $others  The incident's other pre-notices that count now.
      * @param  Collection<int, Runtime>  $runtimes  The team's runtimes of the technology, with `deployment.service.project`.
      * @param  Severity|null  $previousSeverity  The severity of the card the team got before, when it rose since.
      * @return array<string, mixed>
      */
-    public function preNotice(Team $team, Advisory $advisory, Collection $runtimes, ?Severity $previousSeverity = null): array
+    public function preNotice(Team $team, Incident $incident, Advisory $advisory, Collection $others, Collection $runtimes, ?Severity $previousSeverity = null): array
     {
         $technology = $advisory->technology;
         $title = $advisory->severity === Severity::Unknown ? $advisory->title : "[{$advisory->severity->getLabel()}] {$advisory->title}";
+        $plannedReleaseAt = $incident->planned_release_at ?? $advisory->planned_release_at;
 
         $facts = array_filter([
             __('Nguồn: :source', ['source' => $technology->releaseSourceLabel()]),
@@ -85,8 +90,8 @@ class GoogleChatCards
         ]);
 
         $plan = array_filter([
-            $advisory->planned_release_at === null ? null : __('Dự kiến phát hành :time UTC', ['time' => $advisory->planned_release_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
-            blank($advisory->affected_branches) ? null : __('Nhánh bị ảnh hưởng: :branches', ['branches' => implode(', ', $advisory->affected_branches)]),
+            $plannedReleaseAt === null ? null : __('Dự kiến phát hành :time UTC', ['time' => $plannedReleaseAt->utc()->translatedFormat(__('d/m/Y H:i'))]),
+            blank($incident->affected_branches) ? null : __('Nhánh bị ảnh hưởng: :branches', ['branches' => implode(', ', $incident->affected_branches)]),
         ]);
         $summary = $advisory->localized_summary ?? $advisory->summary;
 
@@ -108,7 +113,7 @@ class GoogleChatCards
         $services = $runtimes
             ->sortBy(fn (Runtime $runtime): string => $runtime->deployment->service->name)
             ->take($this->maxListedItems())
-            ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, $runtime->displayName()))
+            ->map(fn (Runtime $runtime): array => $this->serviceWidget($runtime->deployment->service, $runtime->displayName().' · '.__('Phạm vi: :scope', ['scope' => $incident->scopeFor($runtime)->getLabel()])))
             ->values()
             ->all();
 
@@ -117,11 +122,27 @@ class GoogleChatCards
             ['header' => __(':count service đang chạy :technology', ['count' => $runtimes->count(), 'technology' => $technology->getLabel()]), 'widgets' => [...$services, ...$this->moreWidget($runtimes->count())]],
         ];
 
+        if ($others->isNotEmpty()) {
+            $sections[] = [
+                'header' => __('Tin khác của cùng sự kiện'),
+                'widgets' => $others
+                    ->take($this->maxListedItems())
+                    ->map(fn (Advisory $other): array => ['decoratedText' => array_filter([
+                        'text' => e($other->severity === Severity::Unknown ? $other->title : "[{$other->severity->getLabel()}] {$other->title}"),
+                        'bottomLabel' => $other->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $other->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
+                        'wrapText' => true,
+                        'button' => filled($other->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $other->url]]] : null,
+                    ])])
+                    ->values()
+                    ->all(),
+            ];
+        }
+
         if (filled($advisory->url)) {
             $sections[] = ['widgets' => [$this->buttons([__('Mở nguồn tin') => $advisory->url])]];
         }
 
-        return $this->card("pre-notice-{$advisory->id}", $title, __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections);
+        return $this->card("incident-{$incident->id}", $title, __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections);
     }
 
     /**
