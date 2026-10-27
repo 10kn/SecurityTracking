@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\FindingResource;
 use App\Models\Finding;
 use App\Models\Team;
+use App\Support\FindingSearch;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -32,7 +33,7 @@ class FindingController extends Controller
         $status = in_array($request->string('status')->toString(), self::STATUSES, true) ? $request->string('status')->toString() : null;
         $ids = collect(explode(',', $request->string('ids')->toString()))->filter(fn (string $id): bool => ctype_digit($id))->map(fn (string $id): int => (int) $id)->take(200)->values()->all();
 
-        $findings = $table->search(Finding::open(), ['title'])
+        $findings = FindingSearch::apply(Finding::open(), $table->search)
             ->with(['deployment.service.project', 'team', 'acknowledgedBy'])
             ->withMax(['events as version' => fn (Builder $query) => $query->whereIn('type', AcknowledgeFindings::VERSION_EVENTS)], 'id')
             ->when($teamId !== null, fn (Builder $query) => $query->where('team_id', $teamId))
@@ -40,11 +41,11 @@ class FindingController extends Controller
             ->when($status === 'unread', fn (Builder $query) => $query->whereNull('acknowledged_at'))
             ->when($status === 'read', fn (Builder $query) => $query->whereNotNull('acknowledged_at'))
             ->when($status === 'overdue', fn (Builder $query) => $query->where('sla_due_at', '<', now()))
-            ->when(
-                $table->sort === 'severity',
-                fn (Builder $query) => $query->orderByRaw($this->severityOrder().' '.($table->descending ? 'asc' : 'desc')),
-                fn (Builder $query) => $query->orderBy($table->sort, $table->direction()),
-            )
+            ->tap(fn (Builder $query) => match ($table->sort) {
+                'severity' => $query->orderByRaw($this->severityOrder().' '.($table->descending ? 'asc' : 'desc')),
+                'title' => FindingSearch::orderByTitle($query, $table->descending),
+                default => $query->orderBy($table->sort, $table->direction()),
+            })
             ->orderBy('sla_due_at')
             ->orderBy('id')
             ->paginate($table->perPage)
