@@ -68,8 +68,8 @@ class MergeIncidents
     /**
      * A team with a thread only on the merged incident keeps it: the row of the incident it went into takes it over,
      * so updates go on in the thread the team knows. A team with a thread on both keeps the one of the incident it
-     * went into. What the team was told about either incident (confirmed branches, exploitation) counts for both.
-     * The rows are locked after the incidents, as SendPreNoticeAlerts locks them.
+     * went into. What the team was told about either incident (confirmed branches, exploitation, the CVE ids CISA KEV
+     * lists) counts for both. The rows are locked after the incidents, as SendPreNoticeAlerts locks them.
      */
     private function mergeThreads(Incident $from, Incident $into): void
     {
@@ -89,6 +89,7 @@ class MergeIncidents
 
             $target->told_confirmed_branches = collect([...($target->told_confirmed_branches ?? []), ...($row->told_confirmed_branches ?? [])])->unique()->sort(SORT_NATURAL)->values()->all();
             $target->exploited_told_at = collect([$target->exploited_told_at, $row->exploited_told_at])->filter()->min();
+            $target->told_known_exploited = collect([...($target->told_known_exploited ?? []), ...($row->told_known_exploited ?? [])])->unique()->sort()->values()->all() ?: null;
             $target->last_notification_id ??= $row->last_notification_id;
             $target->save();
 

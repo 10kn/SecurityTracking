@@ -6,6 +6,7 @@ use App\Enums\IncidentScope;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
+use App\Services\Kev\KnownExploitation;
 use App\Support\Version;
 use Database\Factories\IncidentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -121,7 +122,7 @@ class Incident extends Model
     /**
      * Derives the title, severity, dates and branches from the pre-notices that were not dismissed: the title of the
      * first one, the highest known severity, the release time of the latest one that gives one. `changed_at` moves only
-     * when what the incident asks of the teams changes, its severity or branches, so news that only adds to it, a merge
+     * when what the incident asks of the teams changes, its severity, branches or the CVE ids of it CISA KEV lists, so news that only adds to it, a merge
      * or a split of news at the same severity does not bring it back to the digest. An incident left with no such
      * pre-notice keeps its last title.
      *
@@ -154,7 +155,8 @@ class Incident extends Model
                 'unaffected_branches' => $unaffected,
             ]);
 
-            $fingerprint = hash('sha256', (string) json_encode([$severity->value, $affected, $unaffected]));
+            $knownExploited = $notices->flatMap(fn (Advisory $notice): array => KnownExploitation::cves($notice->known_exploited))->unique()->sort()->values()->all();
+            $fingerprint = hash('sha256', (string) json_encode([$severity->value, $affected, $unaffected, ...($knownExploited === [] ? [] : [$knownExploited])]));
 
             if ($this->fingerprint !== $fingerprint) {
                 $this->changed_at = $this->fingerprint === null ? ($this->changed_at ?? now()) : now();

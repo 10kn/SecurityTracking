@@ -10,6 +10,7 @@ use App\Models\Incident;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
+use App\Services\Kev\KnownExploitation;
 use App\Support\Version;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -22,7 +23,7 @@ class GoogleChatCards
 {
     /**
      * One card for one issue at one team, listing every affected service. Services added since the previous card are
-     * marked new.
+     * marked new. When CISA KEV lists a CVE id of the issue, the card says so first, with the severity its source gave.
      *
      * @param  Collection<int, Finding>  $findings  Open findings of the issue, with `deployment.service.project`.
      * @param  list<int>  $newFindingIds
@@ -54,8 +55,15 @@ class GoogleChatCards
             array_unshift($sections, ['widgets' => [['textParagraph' => ['text' => e($first->context['advisory_title'])]]]]);
         }
 
+        $exploited = $findings->filter(fn (Finding $finding): bool => filled($finding->context['known_exploited'] ?? null))->values();
+
+        if ($exploited->isNotEmpty()) {
+            array_unshift($sections, ['widgets' => $this->knownExploitedWidgets($exploited)]);
+        }
+
         $links = array_filter([
             __('Mở nguồn tin') => $first->context['source_url'] ?? null,
+            __('Mở CISA KEV') => $exploited->isEmpty() ? null : KnownExploitation::url($exploited->first()->context['known_exploited'][0]['cve']),
             __('Đánh dấu đã đọc') => $this->findingsUrl(['team' => $team->id, 'ids' => implode(',', $findings->sortBy('id')->modelKeys())]),
         ], filled(...));
 
@@ -65,6 +73,50 @@ class GoogleChatCards
         ]];
 
         return $this->card("finding-{$first->id}", "[{$severity}] {$first->title}", $team->name, $sections);
+    }
+
+    /**
+     * What CISA KEV says about the findings of a card: every CVE id it lists, when it added them and the date it asks
+     * them fixed by, the fixes of the branches that address them for runtimes, and the severity the sources gave.
+     *
+     * @param  Collection<int, Finding>  $findings  The card's findings with KEV evidence.
+     * @return list<array<string, mixed>>
+     */
+    private function knownExploitedWidgets(Collection $findings): array
+    {
+        $evidence = $findings->flatMap(fn (Finding $finding): array => $finding->context['known_exploited'])->unique('cve')->sortBy('cve')->values()->all();
+        $fixes = $findings
+            ->flatMap(function (Finding $finding): array {
+                $cves = KnownExploitation::cves($finding->context['known_exploited']);
+                $relatedPatches = is_array($finding->context['related_patches'] ?? null) ? $finding->context['related_patches'] : [];
+
+                return collect($relatedPatches)
+                    ->filter(fn (array $patch): bool => array_intersect($patch['cves'] ?? [], $cves) !== [])
+                    ->map(fn (array $patch): string => __('Bản vá :version của nhánh :branch xử lý :cves.', ['version' => $patch['fixed_version'], 'branch' => $finding->context['branch'] ?? '', 'cves' => implode(', ', array_intersect($patch['cves'], $cves))]))
+                    ->all();
+            })
+            ->unique()
+            ->sort()
+            ->values();
+        $sources = $findings
+            ->map(function (Finding $finding): ?string {
+                $source = Severity::tryFrom((string) ($finding->context['source_severity'] ?? ''));
+                $sourceCvss = $finding->context['source_cvss'] ?? null;
+
+                return $source === null || $source === $finding->severity ? null : $source->getLabel().($sourceCvss === null ? '' : " · CVSS {$sourceCvss}");
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        return [
+            ['textParagraph' => ['text' => '<b>'.e(KnownExploitation::describe($evidence)).'</b>']],
+            ...$fixes->map(fn (string $fix): array => ['textParagraph' => ['text' => e($fix)]])->all(),
+            ['textParagraph' => ['text' => e(implode(' ', array_filter([
+                __('Không có nghĩa service của team đã bị tấn công: ưu tiên nâng cấp hoặc giảm thiểu ngay.'),
+                $sources->isEmpty() ? null : __('Mức theo nguồn: :severity.', ['severity' => $sources->join(', ')]),
+            ])))]],
+        ];
     }
 
     /**

@@ -19,7 +19,7 @@ use Throwable;
 
 /**
  * Matches the components of deployments against the vulnerability matchers, each one the packages of its ecosystems,
- * and syncs their package findings. Every attempt is recorded on the matcher's source heartbeat, so psm:check-sources
+ * reads the CISA KEV evidence of the advisories found (see MatchKnownExploited) and syncs their package findings. Every attempt is recorded on the matcher's source heartbeat, so psm:check-sources
  * alerts the admin when one keeps failing.
  *
  * Alerts are not sent here: callers run SendFindingAlerts once they finish, so the same advisory across services of
@@ -34,6 +34,7 @@ class ScanPackages
         #[Tag(VulnerabilityMatcher::class)] private iterable $matchers,
         private SyncFindings $syncFindings,
         private PackageFindings $packageFindings,
+        private MatchKnownExploited $matchKnownExploited,
     ) {}
 
     /**
@@ -72,6 +73,8 @@ class ScanPackages
                 $failure ??= $exception;
             }
         }
+
+        $this->matchKnownExploited->handle(collect($matches)->flatten(1));
 
         foreach ($deployments as $deployment) {
             $this->syncFindings->handle(

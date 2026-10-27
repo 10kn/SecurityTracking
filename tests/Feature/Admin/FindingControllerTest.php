@@ -44,6 +44,18 @@ it('lists the open findings, Critical first, with their deadline and who read th
             ->where('findings.data.1.team', 'Commerce'));
 });
 
+it('marks the findings CISA KEV lists a CVE of', function () {
+    actingAsAdmin();
+    Finding::factory()->for($this->deployment)->create(['severity' => Severity::Critical, 'context' => ['known_exploited' => [['cve' => 'CVE-2026-109618', 'name' => 'PHP RCE', 'date_added' => '2026-10-26', 'due_date' => '2026-10-29', 'listed' => true]]]]);
+    Finding::factory()->for($this->deployment)->create(['severity' => Severity::High]);
+
+    get('/admin/findings')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('findings.data.0.known_exploited', ['CVE-2026-109618'])
+            ->where('findings.data.1.known_exploited', null));
+});
+
 it('filters on a team, the read state and the findings of one card, as the links in Google Chat do', function () {
     actingAsAdmin();
     $booking = Deployment::factory()->for(Service::factory()->for(Project::factory()->for(Team::factory())))->create();
@@ -130,7 +142,7 @@ it('does not mark a finding that rose in severity or opened again since the page
         ->assertInertiaFlash('toast.description', '1 finding đã thay đổi từ lúc mở trang (mức tăng hoặc mở lại) nên chưa được đánh dấu. Xem lại rồi đánh dấu.');
 
     expect($finding->refresh()->acknowledged_at)->toBeNull();
-})->with([FindingEventType::Escalated, FindingEventType::Opened]);
+})->with([FindingEventType::Escalated, FindingEventType::Opened, FindingEventType::KnownExploited]);
 
 it('goes back to the first page of the list', function () {
     actingAsAdmin();

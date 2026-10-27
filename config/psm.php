@@ -147,6 +147,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Known exploited vulnerabilities (CISA KEV)
+    |--------------------------------------------------------------------------
+    |
+    | psm:sync-kev reads the CISA Known Exploited Vulnerabilities catalog at `url` every hour. A CVE CISA lists is
+    | exploited in the wild: a pre-notice or package advisory that names it rises to `severity`, and so do the findings
+    | it reaches, whose deadline becomes the earliest of their own, the CISA due date and the deadline of `severity`
+    | from now. Being listed tells nothing about a given service, and not being listed never means safe. A pre-notice
+    | that only names GitHub advisory ids (GHSA) is matched through the CVE of each id: the package advisories already
+    | stored, else the GitHub advisory database at `ghsa_api_url`. When the catalog has not been read successfully
+    | within `stale_after_minutes` the admin is alerted.
+    |
+    */
+
+    'kev' => [
+        'url' => env('PSM_KEV_URL', 'https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json'),
+        'severity' => env('PSM_KEV_SEVERITY', 'critical'),
+        'ghsa_api_url' => env('PSM_KEV_GHSA_API_URL', 'https://api.github.com/advisories'),
+        'stale_after_minutes' => (int) env('PSM_KEV_STALE_AFTER_MINUTES', 360),
+        'http_timeout_seconds' => (int) env('PSM_KEV_HTTP_TIMEOUT', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Package vulnerabilities (Packagist, RubySec, OSV)
     |--------------------------------------------------------------------------
     |

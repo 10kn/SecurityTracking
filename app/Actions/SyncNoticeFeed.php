@@ -10,6 +10,7 @@ use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\IncidentTeamNotice;
 use App\Models\SourceHeartbeat;
+use App\Services\Kev\KnownExploitation;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeClassifier;
 use App\Services\Notices\NoticeEntry;
@@ -28,7 +29,12 @@ use Throwable;
  */
 class SyncNoticeFeed
 {
-    public function __construct(private NoticeClassifier $classifier, private AssignNoticeToIncident $assignNoticeToIncident) {}
+    public function __construct(
+        private NoticeClassifier $classifier,
+        private AssignNoticeToIncident $assignNoticeToIncident,
+        private MatchKnownExploited $matchKnownExploited,
+        private KnownExploitation $knownExploitation,
+    ) {}
 
     /**
      * Polls and classifies in one go.
@@ -173,9 +179,10 @@ class SyncNoticeFeed
     }
 
     /**
-     * The severity is the highest of the vendor's words, the CVSS score the entry gives and the classifier, which can
-     * dismiss an entry as not security news only when neither of the others found a severity in it. Without a new
-     * classification, the previous one is kept.
+     * The severity is the highest of the vendor's words, the CVSS score the entry gives, the classifier, which can
+     * dismiss an entry as not security news only when neither of the others found a severity in it, and CISA KEV
+     * listing one of its CVE ids (see MatchKnownExploited). Without a new classification, the previous one is kept. The
+     * KEV evidence is kept apart from what the entry's words say (`is_exploited`), so polling again never drops it.
      *
      * The pre-notice is put in its incident when it is new, and checked again for other incidents when what ties it to
      * them changes (see AssignNoticeToIncident).
@@ -205,11 +212,15 @@ class SyncNoticeFeed
             ]);
         }
 
+        $advisory->aliases = $entry->referenceIds();
+        $this->matchKnownExploited->fill($advisory);
+
         $cvssScore = $entry->cvssScore();
         $ratings = [
             SeverityBasis::Vendor->value => $entry->severity(),
             SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
             SeverityBasis::Classifier->value => $advisory->classified_severity ?? Severity::Unknown,
+            SeverityBasis::Kev->value => $advisory->isKnownExploited() ? $this->knownExploitation->severity() : Severity::Unknown,
         ];
         $basis = collect($ratings)
             ->reject(fn (Severity $severity): bool => $severity === Severity::Unknown)
@@ -217,15 +228,16 @@ class SyncNoticeFeed
             ->keys()
             ->first();
         $severity = $basis === null ? Severity::Unknown : $ratings[$basis];
+        $withoutKev = collect($ratings)->except(SeverityBasis::Kev->value)->sortByDesc(fn (Severity $rating): int => $rating->rank())->first();
 
         $advisory->fill([
             'kind' => AdvisoryKind::PreNotice,
-            'aliases' => $entry->referenceIds(),
             'title' => Str::limit($entry->title, 250),
             'summary' => $entry->summary(config('psm.notices.summary_length')),
             'severity' => $severity,
             'severity_basis' => $basis,
-            'is_dismissed' => $advisory->is_dismissed && $ratings[SeverityBasis::Vendor->value] === Severity::Unknown && $ratings[SeverityBasis::Cvss->value] === Severity::Unknown,
+            'severity_before_kev' => $basis === SeverityBasis::Kev->value ? $withoutKev : null,
+            'is_dismissed' => $advisory->is_dismissed && $ratings[SeverityBasis::Vendor->value] === Severity::Unknown && $ratings[SeverityBasis::Cvss->value] === Severity::Unknown && ! $advisory->isKnownExploited(),
             'cvss_score' => $cvssScore,
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,
@@ -235,7 +247,7 @@ class SyncNoticeFeed
             ...$this->exploitation($entry, $advisory, $classification),
         ]);
 
-        $isOngoingCritical = $severity === Severity::Critical && $this->isFresh($entry);
+        $isOngoingCritical = ($severity === Severity::Critical && $this->isFresh($entry)) || KnownExploitation::isFresh($advisory->known_exploited);
 
         if (! $advisory->exists) {
             $advisory->is_backfill = $isFirstPoll && ! $isOngoingCritical;

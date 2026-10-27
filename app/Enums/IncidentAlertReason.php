@@ -11,6 +11,7 @@ enum IncidentAlertReason: string
     case SeverityRise = 'severity_rise';
     case PatchConfirmed = 'patch_confirmed';
     case Exploited = 'exploited';
+    case KnownExploited = 'known_exploited';
     case ScopeExtended = 'scope_extended';
     case Manual = 'manual';
 }

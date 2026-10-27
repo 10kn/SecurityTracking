@@ -13,6 +13,7 @@ use App\Models\IncidentTeamNotice;
 use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
+use App\Services\Kev\KnownExploitation;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -23,8 +24,8 @@ use Illuminate\Support\Traits\Localizable;
  *
  * A finding is sent once at each severity. A team hears about an issue again only when its severity rises or another
  * service gets the same issue; the daily digest is the reminder. Running it again sends nothing new. A "thiếu bản vá"
- * finding a "Đã có bản vá" card stands for counts as sent without a card of its own, and a new one may wait a few
- * hours for that card (see isHeldForVendorPatch()).
+ * finding a "Đã có bản vá" card stands for counts as sent without a card of its own (see isToldByIncident()), and a
+ * new one may wait a few hours for that card (see isHeldForVendorPatch()).
  */
 class SendFindingAlerts
 {
@@ -34,6 +35,11 @@ class SendFindingAlerts
      * @var array<string, bool>
      */
     private array $heldTechnologies = [];
+
+    /**
+     * @var array<int, list<string>>
+     */
+    private array $toldKnownExploited = [];
 
     public function __construct(
         private AlertPolicy $policy,
@@ -52,7 +58,7 @@ class SendFindingAlerts
             ->with('runtime')
             ->get()
             ->filter(fn (Finding $finding): bool => $this->policy->awaitsImmediateAlert($finding))
-            ->partition(fn (Finding $finding): bool => isset($finding->context['covered_by_patch_id']));
+            ->partition(fn (Finding $finding): bool => $this->isToldByIncident($finding));
 
         $covered->each(fn (Finding $finding) => Finding::whereKey($finding->id)
             ->where('severity', $finding->severity)
@@ -77,7 +83,7 @@ class SendFindingAlerts
                 ->get();
 
             $pending = $findings->filter(fn (Finding $finding): bool => $this->policy->awaitsImmediateAlert($finding)
-                && ! isset($finding->context['covered_by_patch_id'])
+                && ! $this->isToldByIncident($finding)
                 && ! $this->isHeldForVendorPatch($finding));
 
             if ($pending->isEmpty()) {
@@ -94,6 +100,28 @@ class SendFindingAlerts
 
             return true;
         });
+    }
+
+    /**
+     * A "thiếu bản vá" finding a "Đã có bản vá" card stands for (see CoverPatchedFindings) is told by the incident's
+     * thread. When CISA KEV lists CVE ids of it, the team must also have been told about each of them in an incident
+     * thread (see SendPreNoticeAlerts); otherwise the finding gets a card of its own.
+     */
+    private function isToldByIncident(Finding $finding): bool
+    {
+        if (! isset($finding->context['covered_by_patch_id'])) {
+            return false;
+        }
+
+        $this->toldKnownExploited[$finding->team_id] ??= IncidentTeam::where('team_id', $finding->team_id)
+            ->pluck('told_known_exploited')
+            ->flatten()
+            ->filter(fn (mixed $cve): bool => is_string($cve))
+            ->unique()
+            ->values()
+            ->all();
+
+        return array_diff(KnownExploitation::cves($finding->context['known_exploited'] ?? null), $this->toldKnownExploited[$finding->team_id]) === [];
     }
 
     /**

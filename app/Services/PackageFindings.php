@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\FindingRule;
 use App\Models\Advisory;
 use App\Models\Component;
+use App\Services\Kev\KnownExploitation;
 use App\Services\Packages\PackageVersion;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -12,7 +13,8 @@ use Illuminate\Support\Str;
 /**
  * Turns matched package versions into findings: one per deployment, package and advisory (handover 5.4: never the
  * version, so upgrading to a release that is still affected keeps the finding). Versions of the same package that
- * share an advisory, as npm can install, make one finding listing every version. The severity is the advisory's.
+ * share an advisory, as npm can install, make one finding listing every version. The severity is the advisory's,
+ * raised when CISA KEV lists one of its CVE ids (see KnownExploitation).
  */
 class PackageFindings
 {
@@ -20,6 +22,8 @@ class PackageFindings
      * @var list<FindingRule>
      */
     public const array RULES = [FindingRule::DependencyVulnerable];
+
+    public function __construct(private KnownExploitation $knownExploitation) {}
 
     /**
      * @param  Collection<int, Component>  $components
@@ -89,7 +93,7 @@ class PackageFindings
             'detail' => $detail,
         ];
 
-        return new FindingData(
+        return $this->knownExploitation->overlay(new FindingData(
             fingerprint: FindingData::fingerprint($rule, $deploymentId, "package:{$subject}", $advisory->external_id),
             rule: $rule,
             severity: $advisory->severity,
@@ -98,6 +102,6 @@ class PackageFindings
             context: $context,
             componentId: $component->id,
             advisoryId: $advisory->id,
-        );
+        ), $advisory->known_exploited, $advisory->cvss_score);
     }
 }

@@ -27,6 +27,7 @@ interface FindingRow {
     first_seen: string | null;
     deadline: string | null;
     is_overdue: boolean;
+    known_exploited: string[] | null;
     acknowledged: { by: string | null; at: string } | null;
 }
 
@@ -141,6 +142,7 @@ export default function FindingsIndex({ findings, table, teams, statuses }: Prop
                                     </Td>
                                     <Td>
                                         <CellTitle title={finding.title} sub={finding.rule} />
+                                        {finding.known_exploited && <StatusDot status={{ label: t('CISA KEV: :cves', { cves: finding.known_exploited.join(', ') }), tone: 'danger' }} className="mt-1" />}
                                     </Td>
                                     <Td>
                                         <CellTitle title={finding.service.name} sub={`${finding.service.project} · ${finding.team}`} href={editService.url(finding.service.id)} />

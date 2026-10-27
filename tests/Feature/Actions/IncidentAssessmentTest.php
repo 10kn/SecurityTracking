@@ -89,10 +89,23 @@ it('ends an assessment once the team\'s exposure grows', function (Closure $chan
 })->with([
     'the severity rises' => [fn () => $this->preNotice->update(['severity' => Severity::Critical])],
     'the incident is exploited' => [fn () => $this->preNotice->update(['is_exploited' => true, 'exploited_basis' => ['method' => 'keyword', 'excerpt' => 'It is actively exploited.', 'content_hash' => 'x']])],
+    'CISA KEV lists a CVE of it' => [fn () => $this->preNotice->update(['known_exploited' => [['cve' => 'CVE-2026-1001', 'name' => 'PHP RCE', 'date_added' => '2026-10-20', 'due_date' => '2026-10-23', 'listed' => true]]])],
     'the vendor confirms the branch' => [fn () => $this->preNotice->update(['affected_branches' => ['8.3']])],
     'a service on a branch the vendor did not rule out' => [fn () => assessedRuntime($this->commerce, 'shop-web', '8.4.26')],
     'the service moves to another branch' => [fn () => $this->runtime->update(['raw_version' => '8.4.26', 'version' => '8.4.26', 'branch' => '8.4'])],
 ]);
+
+it('ends an assessment made while the vendor already said the incident is exploited once CISA KEV lists a CVE of it', function () {
+    $this->preNotice->update(['is_exploited' => true, 'exploited_basis' => ['method' => 'keyword', 'excerpt' => 'It is actively exploited.', 'content_hash' => 'x']]);
+    $incident = toldIncident($this->preNotice);
+    assessIncident($incident, $this->commerce, IncidentImpact::No);
+
+    expect(holdsFor($incident, $this->commerce))->toBeTrue();
+
+    $this->preNotice->update(['known_exploited' => [['cve' => 'CVE-2026-1001', 'name' => 'PHP RCE', 'date_added' => '2026-10-20', 'due_date' => '2026-10-23', 'listed' => true]]]);
+
+    expect(holdsFor($incident, $this->commerce))->toBeFalse();
+});
 
 it('ends an assessment made while the branch was ruled out once the vendor stops ruling it out', function () {
     $this->preNotice->update(['unaffected_branches' => ['8.3']]);

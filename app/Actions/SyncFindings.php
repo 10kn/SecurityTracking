@@ -12,6 +12,7 @@ use App\Models\IncidentTeamPatch;
 use App\Models\Runtime;
 use App\Services\AlertPolicy;
 use App\Services\FindingData;
+use App\Services\Kev\KnownExploitation;
 use App\Support\IncidentLock;
 use Carbon\CarbonInterface;
 use Closure;
@@ -28,7 +29,9 @@ use Illuminate\Support\Facades\DB;
  *
  * Each occurrence gets the handling deadline of its severity, or its own (see FindingData). A rise in severity can
  * only bring the deadline forward, and it clears "Đã đọc", so the team is reminded again; a reopened finding starts
- * over. A "thiếu bản vá" finding its "Đã có bản vá" card no longer stands for (it now asks for a later release than
+ * over. CISA KEV listing a CVE of the finding it did not list before (see KnownExploitation) does the same and counts
+ * as not sent, so the team is told even when the finding was already at the KEV severity; the CISA due date can only
+ * bring the deadline forward too, on every sync, which clears "Đã đọc" so the new deadline is reminded. A "thiếu bản vá" finding its "Đã có bản vá" card no longer stands for (it now asks for a later release than
  * the card's) counts as not sent again, so it gets a card of its own at its severity; its deadline stays.
  */
 class SyncFindings
@@ -69,6 +72,24 @@ class SyncFindings
             foreach ($wanted as $fingerprint => $data) {
                 $this->store($deployment, $teamId, $this->withCoveringPatch($teamId, $data), $existing->get($fingerprint));
             }
+        });
+    }
+
+    /**
+     * Applies what an evaluation found to one open finding only, e.g. new CISA KEV evidence read from the database (see
+     * RefreshKnownExploitedFindings), with the same transitions as handle(). Nothing happens when the finding closed or
+     * is another one meanwhile.
+     */
+    public function refresh(Finding $finding, FindingData $data): void
+    {
+        DB::transaction(function () use ($finding, $data): void {
+            $locked = Finding::open()->with('deployment')->whereKey($finding->id)->lockForUpdate()->first();
+
+            if ($locked === null || $locked->fingerprint !== $data->fingerprint) {
+                return;
+            }
+
+            $this->store($locked->deployment, $locked->team_id, $data, $locked);
         });
     }
 
@@ -157,6 +178,7 @@ class SyncFindings
             ]);
 
             $finding->events()->create(['type' => FindingEventType::Opened, 'data' => ['severity' => $data->severity->value]]);
+            $this->recordKnownExploited($finding, $data, KnownExploitation::cves($data->context['known_exploited'] ?? null));
 
             return;
         }
@@ -174,27 +196,32 @@ class SyncFindings
             ]);
 
             $finding->events()->create(['type' => FindingEventType::Opened, 'data' => ['severity' => $data->severity->value, 'reopened' => true]]);
+            $this->recordKnownExploited($finding, $data, KnownExploitation::cves($data->context['known_exploited'] ?? null));
 
             return;
         }
 
         $previousSeverity = $finding->severity;
         $isRaised = $data->severity->rank() > $previousSeverity->rank();
+        $newlyKnownExploited = array_values(array_diff(KnownExploitation::cves($data->context['known_exploited'] ?? null), KnownExploitation::cves($finding->context['known_exploited'] ?? null)));
         $coveredBy = $finding->context['covered_by_patch_id'] ?? null;
 
-        if ($coveredBy !== null && ($data->context['covered_by_patch_id'] ?? null) !== $coveredBy) {
+        if (($coveredBy !== null && ($data->context['covered_by_patch_id'] ?? null) !== $coveredBy) || $newlyKnownExploited !== []) {
             $attributes = [...$attributes, 'notified_severity' => null, 'notified_at' => null];
         }
 
-        if ($isRaised) {
-            $deadline = $this->deadline($data);
+        $deadline = $finding->sla_due_at;
 
-            $attributes = [
-                ...$attributes,
-                'sla_due_at' => $finding->sla_due_at === null || ($deadline !== null && $deadline->lt($finding->sla_due_at)) ? $deadline : $finding->sla_due_at,
-                'acknowledged_at' => null,
-                'acknowledged_by' => null,
-            ];
+        if ($isRaised || $newlyKnownExploited !== []) {
+            $deadline = self::earliest($deadline, $this->deadline($data));
+
+            $attributes = [...$attributes, 'acknowledged_at' => null, 'acknowledged_by' => null];
+        }
+
+        $deadline = self::earliest($deadline, KnownExploitation::dueDate($data->context['known_exploited'] ?? null));
+
+        if ($deadline?->getTimestamp() !== $finding->sla_due_at?->getTimestamp()) {
+            $attributes = [...$attributes, 'sla_due_at' => $deadline, 'acknowledged_at' => null, 'acknowledged_by' => null];
         }
 
         $finding->update($attributes);
@@ -202,5 +229,32 @@ class SyncFindings
         if ($isRaised) {
             $finding->events()->create(['type' => FindingEventType::Escalated, 'data' => ['from' => $previousSeverity->value, 'to' => $data->severity->value]]);
         }
+
+        $this->recordKnownExploited($finding, $data, $newlyKnownExploited);
+    }
+
+    /**
+     * Records that CISA KEV lists CVE ids of the finding it did not list before.
+     *
+     * @param  list<string>  $cves
+     */
+    private function recordKnownExploited(Finding $finding, FindingData $data, array $cves): void
+    {
+        if ($cves === []) {
+            return;
+        }
+
+        $finding->events()->create(['type' => FindingEventType::KnownExploited, 'data' => [
+            'cves' => $cves,
+            'due_date' => KnownExploitation::dueDate($data->context['known_exploited'] ?? null)?->toDateString(),
+        ]]);
+    }
+
+    /**
+     * The earlier of two deadlines; a missing one does not count.
+     */
+    private static function earliest(?CarbonInterface $deadline, ?CarbonInterface $other): ?CarbonInterface
+    {
+        return $deadline === null || ($other !== null && $other->lt($deadline)) ? ($other ?? $deadline) : $deadline;
     }
 }

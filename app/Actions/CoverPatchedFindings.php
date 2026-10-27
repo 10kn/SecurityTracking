@@ -18,7 +18,8 @@ use Illuminate\Database\Eloquent\Collection;
  * patched version or an earlier one: they take the incident's severity when it is higher and count as sent, so they
  * send no card of their own. A finding asking for a later version is left alone, since the vendor has not said that
  * release is the fix. The card and the findings it stands for share one deadline: that of the incident's severity
- * from now, or a finding's own when it is earlier, so a deadline is never pushed back. RuntimeFindings gives findings
+ * from now, the date CISA KEV asks a CVE of the incident fixed by, or a finding's own, whichever is earliest, so a
+ * deadline is never pushed back. RuntimeFindings gives findings
  * opened later the same severity (see IncidentTeamPatch::covering()).
  */
 class CoverPatchedFindings
@@ -43,24 +44,25 @@ class CoverPatchedFindings
     }
 
     /**
-     * The deadline the card shows: that of `$severity` from now, or the earliest of the findings it stands for.
+     * The deadline the card shows: that of `$severity` from now, the CISA KEV due date of the incident, or the earliest
+     * of the findings it stands for.
      *
      * @param  Collection<int, Finding>  $findings
      */
-    public function deadlineFor(Severity $severity, Collection $findings): ?CarbonInterface
+    public function deadlineFor(Severity $severity, Collection $findings, ?CarbonInterface $knownExploitedDueDate = null): ?CarbonInterface
     {
-        return collect([$this->policy->deadlineFor($severity, now()), ...$findings->pluck('sla_due_at')])->filter()->min();
+        return collect([$this->policy->deadlineFor($severity, now()), $knownExploitedDueDate, ...$findings->pluck('sla_due_at')])->filter()->min();
     }
 
     /**
      * @param  Collection<int, Finding>  $findings  The findings the card stands for (see findingsFor()).
      */
-    public function handle(IncidentTeamPatch $patch, Collection $findings): void
+    public function handle(IncidentTeamPatch $patch, Collection $findings, ?CarbonInterface $knownExploitedDueDate = null): void
     {
-        $findings->each(fn (Finding $finding) => $this->cover($finding, $patch));
+        $findings->each(fn (Finding $finding) => $this->cover($finding, $patch, $knownExploitedDueDate));
     }
 
-    private function cover(Finding $finding, IncidentTeamPatch $patch): void
+    private function cover(Finding $finding, IncidentTeamPatch $patch, ?CarbonInterface $knownExploitedDueDate): void
     {
         $previous = $finding->severity;
         $isRaised = $patch->severity->rank() > $previous->rank();
@@ -71,7 +73,7 @@ class CoverPatchedFindings
             'context' => [...($finding->context ?? []), 'covered_by_patch_id' => $patch->id],
             'notified_severity' => $severity,
             'notified_at' => now(),
-            'sla_due_at' => $this->deadlineFor($patch->severity, new Collection([$finding])),
+            'sla_due_at' => $this->deadlineFor($patch->severity, new Collection([$finding]), $knownExploitedDueDate),
             ...($isRaised ? ['acknowledged_at' => null, 'acknowledged_by' => null] : []),
         ]);
 

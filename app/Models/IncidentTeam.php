@@ -14,9 +14,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * The Google Chat thread of an incident at one team, and what the team was told about the incident beyond the
- * severities of its pre-notices (see IncidentTeamNotice): the branches the vendor had confirmed as affected and
- * whether it was told the incident is exploited. What the team was told is written when the message is queued,
- * like the other ledgers; the thread's name only once Google Chat delivered a message of it.
+ * severities of its pre-notices (see IncidentTeamNotice): the branches the vendor had confirmed as affected,
+ * whether it was told the incident is exploited and the CVE ids CISA KEV lists it was told about. What the team was
+ * told is written when the message is queued, like the other ledgers; the thread's name only once Google Chat
+ * delivered a message of it.
  *
  * Each generation is one thread with its own `thread_key`. A team whose webhook changed starts the next generation
  * (see moveTo()), as Google Chat scopes thread keys to the webhook's app: its next alert opens a new thread with a full
@@ -27,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * exposure still covers the team's current one (see hasValidAssessment()); its history is in IncidentTeamEvent.
  */
 #[Table('incident_team')]
-#[Fillable(['incident_id', 'team_id', 'generation', 'thread_key', 'space', 'webhook_hash', 'thread_name', 'opening_notification_id', 'last_notification_id', 'merged_into_id', 'told_confirmed_branches', 'exploited_told_at', 'acknowledged_at', 'acknowledged_by', 'impact', 'impact_note', 'acknowledged_exposure', 'acknowledged_exposure_hash', 'assessment_revision'])]
+#[Fillable(['incident_id', 'team_id', 'generation', 'thread_key', 'space', 'webhook_hash', 'thread_name', 'opening_notification_id', 'last_notification_id', 'merged_into_id', 'told_confirmed_branches', 'exploited_told_at', 'told_known_exploited', 'acknowledged_at', 'acknowledged_by', 'impact', 'impact_note', 'acknowledged_exposure', 'acknowledged_exposure_hash', 'assessment_revision'])]
 class IncidentTeam extends Model
 {
     /**
@@ -41,6 +42,7 @@ class IncidentTeam extends Model
             'generation' => 'integer',
             'told_confirmed_branches' => 'array',
             'exploited_told_at' => 'datetime',
+            'told_known_exploited' => 'array',
             'acknowledged_at' => 'datetime',
             'impact' => IncidentImpact::class,
             'acknowledged_exposure' => 'array',

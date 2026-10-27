@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Admin;
 
 use App\Models\Finding;
+use App\Services\Kev\KnownExploitation;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -36,6 +37,7 @@ class FindingResource extends JsonResource
             'first_seen' => $this->date($this->first_seen_at),
             'deadline' => $this->date($this->sla_due_at),
             'is_overdue' => $this->sla_due_at?->isPast() ?? false,
+            'known_exploited' => blank($this->context['known_exploited'] ?? null) ? null : KnownExploitation::cves($this->context['known_exploited']),
             'acknowledged' => $this->acknowledged_at === null ? null : [
                 'by' => $this->acknowledgedBy?->name,
                 'at' => $this->local($this->acknowledged_at)->translatedFormat(__('d/m/Y H:i')),

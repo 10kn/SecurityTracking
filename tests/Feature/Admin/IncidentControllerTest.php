@@ -170,6 +170,24 @@ it('reads the list in a number of queries that does not grow with the incidents 
     expect(queryCountOf(fn () => get($url)->assertOk()))->toBe($before);
 })->with(['/admin/incidents', '/admin/incidents?attention=1']);
 
+it('shows the CVE ids of the incident CISA KEV lists, with when CISA added them and asks them fixed by', function () {
+    actingAsAdmin();
+    $this->preNotice->update(['known_exploited' => [
+        ['cve' => 'CVE-2026-1001', 'name' => 'PHP RCE', 'date_added' => '2026-10-26', 'due_date' => '2026-10-29', 'listed' => true],
+        ['cve' => 'CVE-2026-1002', 'name' => 'PHP RCE', 'date_added' => '2026-10-20', 'due_date' => null, 'listed' => false],
+    ]]);
+
+    get("/admin/incidents/{$this->incident->id}")
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('incident.is_exploited', false)
+            ->where('incident.known_exploited', [
+                ['cve' => 'CVE-2026-1001', 'added' => '26/10/2026', 'due' => '29/10/2026', 'listed' => true],
+                ['cve' => 'CVE-2026-1002', 'added' => '20/10/2026', 'due' => null, 'listed' => false],
+            ])
+            ->where('notices.0.known_exploited.0.cve', 'CVE-2026-1001'));
+});
+
 it('shows the incident with its notices, its teams and what the forms need', function () {
     $admin = actingAsAdmin();
     assessIncident($this->incident, $this->booking, IncidentImpact::No, $admin, 'Chỉ chạy CLI nội bộ');

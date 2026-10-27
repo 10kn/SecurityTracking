@@ -8,13 +8,14 @@ use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\Runtime;
 use App\Models\Team;
+use App\Services\Kev\KnownExploitation;
 use Illuminate\Support\Collection;
 
 /**
  * What an incident asks of one team now, computed from the current data and never stored: the incident's pre-notices
  * and their CVE and GHSA ids (which issue it is), the team's services on the technology with the branch they run,
- * whether the vendor said the branch is affected and the fix confirmed for it, the highest severity and whether the
- * incident is exploited. The scope of every runtime is the one the alerts use (see Incident::scopeFor()), which reads
+ * whether the vendor said the branch is affected and the fix confirmed for it, the highest severity, whether the
+ * incident is exploited and the CVE ids of it CISA KEV lists. The scope of every runtime is the one the alerts use (see Incident::scopeFor()), which reads
  * the branch from the version when the branch is not known; such a runtime gets no fix, as the alerts give it none.
  * Only a runtime whose branch and version say nothing is of unknown scope.
  *
@@ -28,6 +29,7 @@ final readonly class IncidentTeamExposure
      * @param  list<int>  $noticeIds  The incident's pre-notices, sorted.
      * @param  list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null}>  $services  Sorted by service and branch.
      * @param  array<int, list<string>>  $noticeIssueIds  Pre-notice id => its CVE and GHSA ids.
+     * @param  list<string>  $knownExploitedCves  Sorted.
      */
     public function __construct(
         public array $noticeIds,
@@ -35,6 +37,7 @@ final readonly class IncidentTeamExposure
         public Severity $severity,
         public bool $isExploited,
         public array $noticeIssueIds = [],
+        public array $knownExploitedCves = [],
     ) {}
 
     /**
@@ -95,8 +98,9 @@ final readonly class IncidentTeamExposure
             noticeIds: $notices->pluck('id')->map(fn (mixed $id): int => (int) $id)->sort()->values()->all(),
             services: $services,
             severity: Incident::highestSeverity($counting),
-            isExploited: $counting->contains(fn (Advisory $notice): bool => $notice->is_exploited === true),
+            isExploited: $counting->contains(fn (Advisory $notice): bool => $notice->isExploited()),
             noticeIssueIds: $notices->mapWithKeys(fn (Advisory $notice): array => [(int) $notice->id => self::issueIdsOf($notice)])->all(),
+            knownExploitedCves: $counting->flatMap(fn (Advisory $notice): array => KnownExploitation::cves($notice->known_exploited))->unique()->sort()->values()->all(),
         );
     }
 
@@ -140,7 +144,7 @@ final readonly class IncidentTeamExposure
      * pre-notice it showed is still part of the incident, and every other one shares a CVE or GHSA id with one it
      * showed, as a pre-notice joining on its own does; a merged-in issue or a pre-notice without a shared id ends it),
      * the severity is not higher,
-     * the incident is not newly exploited, and no service and branch the vendor confirmed or did not rule out is new
+     * the incident is not newly exploited, CISA KEV lists no CVE id of it the snapshot did not show, and no service and branch the vendor confirmed or did not rule out is new
      * to it, or moved from not affected or unknown to confirmed. A branch getting its fix, a service leaving and a
      * branch being ruled out ask nothing new of the team, so they keep it.
      *
@@ -173,6 +177,10 @@ final readonly class IncidentTeamExposure
             return false;
         }
 
+        if (array_diff($this->knownExploitedCves, (array) ($snapshot['known_exploited'] ?? [])) !== []) {
+            return false;
+        }
+
         $seen = collect((array) $snapshot['services'])->groupBy(fn (array $service): string => "{$service['service_id']}|{$service['branch']}");
 
         return collect($this->services)
@@ -189,7 +197,7 @@ final readonly class IncidentTeamExposure
     /**
      * The snapshot an assessment keeps.
      *
-     * @return array{notice_ids: list<int>, issue_ids: list<string>, services: list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null}>, severity: string, exploited: bool}
+     * @return array{notice_ids: list<int>, issue_ids: list<string>, services: list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null}>, severity: string, exploited: bool, known_exploited: list<string>}
      */
     public function toArray(): array
     {
@@ -199,6 +207,7 @@ final readonly class IncidentTeamExposure
             'services' => $this->services,
             'severity' => $this->severity->value,
             'exploited' => $this->isExploited,
+            'known_exploited' => $this->knownExploitedCves,
         ];
     }
 
