@@ -13,8 +13,9 @@ use Illuminate\Support\Facades\DB;
  * reminded once more when their deadline passes. Only the findings the admin was shown are marked, and only those
  * still open and not read yet.
  *
- * Each finding comes with the version the admin saw: the id of its latest opening or rise in severity. A finding that
- * opened again or rose since is left unread, so a page left open never confirms what the admin has not seen.
+ * Each finding comes with the version the admin saw: the id of its latest opening, rise in severity or CISA KEV listing
+ * one of its CVE ids. A finding that opened again, rose or was newly listed since is left unread, so a page left open
+ * never confirms what the admin has not seen.
  */
 class AcknowledgeFindings
 {
@@ -23,7 +24,7 @@ class AcknowledgeFindings
      *
      * @var list<FindingEventType>
      */
-    public const array VERSION_EVENTS = [FindingEventType::Opened, FindingEventType::Escalated];
+    public const array VERSION_EVENTS = [FindingEventType::Opened, FindingEventType::Escalated, FindingEventType::KnownExploited];
 
     /**
      * @param  array<int, int|null>  $versions  Finding id => the version the admin saw.

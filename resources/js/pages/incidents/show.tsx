@@ -48,8 +48,16 @@ interface Notice {
     patch_versions: string[];
     is_exploited: boolean;
     exploited_excerpt: string | null;
+    known_exploited: KnownExploited[];
     is_dismissed: boolean;
     basis: string | null;
+}
+
+interface KnownExploited {
+    cve: string;
+    added: string;
+    due: string | null;
+    listed: boolean;
 }
 
 interface Suggestion {
@@ -84,6 +92,7 @@ interface Props {
         affected_branches: string[];
         unaffected_branches: string[];
         is_exploited: boolean;
+        known_exploited: KnownExploited[];
         merged_from: { id: number; title: string }[];
     };
     notices: Notice[];
@@ -114,6 +123,7 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                         <Detail label={t('Mức cao nhất')}>
                             <SeverityBadge severity={incident.severity} />
                             {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
+                            {incident.known_exploited.length > 0 && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
                         </Detail>
                         <Detail label={t('Bản vá')}>
                             <FixStatus incident={incident} />
@@ -126,6 +136,11 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                             <span className="font-mono">{incident.unaffected_branches.join(', ') || '—'}</span>
                         </Detail>
                         <Detail label={t('Dự kiến phát hành')}>{incident.planned_release ?? '—'}</Detail>
+                        {incident.known_exploited.length > 0 && (
+                            <Detail label="CISA KEV">
+                                <KnownExploitedList entries={incident.known_exploited} />
+                            </Detail>
+                        )}
                         {incident.merged_from.length > 0 && (
                             <Detail label={t('Đã gộp vào đây')}>{incident.merged_from.map((merged) => `#${merged.id} ${merged.title}`).join(' · ')}</Detail>
                         )}
@@ -576,6 +591,12 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                                         {notice.exploited_excerpt && <span className="block text-muted-foreground">“{notice.exploited_excerpt}”</span>}
                                     </span>
                                 )}
+                                {notice.known_exploited.length > 0 && (
+                                    <span className="mt-0.5 block text-sm">
+                                        <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} />
+                                        <KnownExploitedList entries={notice.known_exploited} />
+                                    </span>
+                                )}
                             </Td>
                             <Td className="align-top text-sm whitespace-nowrap text-muted-foreground tabular-nums">{notice.published ?? '—'}</Td>
                             <Td className="align-top text-sm">
@@ -705,5 +726,23 @@ function UrgentUpdate({ incidentId, update }: { incidentId: number; update: Prop
                 </AlertDialogContent>
             </AlertDialog>
         </Card>
+    );
+}
+
+// CISA saw these CVEs exploited in the wild: it says nothing about a given service, and a CVE it does not list is not safe for that.
+function KnownExploitedList({ entries }: { entries: KnownExploited[] }) {
+    const t = useTranslation();
+
+    return (
+        <span className="block text-sm text-muted-foreground">
+            {entries.map((entry) => (
+                <span key={entry.cve} className="block">
+                    <span className="font-mono text-foreground">{entry.cve}</span>
+                    {' · '}
+                    {entry.due ? t('CISA thêm ngày :added, hạn :due', { added: entry.added, due: entry.due }) : t('CISA thêm ngày :added', { added: entry.added })}
+                    {!entry.listed && ` · ${t('CISA đã gỡ khỏi danh sách')}`}
+                </span>
+            ))}
+        </span>
     );
 }

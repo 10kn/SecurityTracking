@@ -240,6 +240,44 @@ function fakeNoticeFeeds(): void
 }
 
 /**
+ * Fakes the CISA KEV catalog with tests/Fixtures/kev: 6 real entries of catalog 2026.10.26 (the PHP RCEs CISA added on
+ * 2026-10-26, Livewire, Vite, jQuery and Ignition). `$change` may edit an entry or drop it by returning null. Calling
+ * it again, or fakeKevResponse(), changes what the catalog answers from then on.
+ *
+ * @param  (Closure(array<string, mixed>): ?array<string, mixed>)|null  $change
+ */
+function fakeKevCatalog(?Closure $change = null): void
+{
+    $catalog = json_decode((string) file_get_contents(base_path('tests/Fixtures/kev/known_exploited_vulnerabilities.json')), true);
+
+    if ($change !== null) {
+        $catalog['vulnerabilities'] = array_values(array_filter(array_map($change, $catalog['vulnerabilities'])));
+        $catalog['count'] = count($catalog['vulnerabilities']);
+    }
+
+    fakeKevResponse($catalog);
+}
+
+/**
+ * Makes the CISA KEV catalog URL answer `$body` with `$status` from now on. The GitHub advisory database knows no GHSA
+ * id, unless a test fakes it first.
+ *
+ * @param  array<string, mixed>|string  $body
+ */
+function fakeKevResponse(array|string $body, int $status = 200): void
+{
+    $isFaked = app()->bound('tests.kev');
+    app()->instance('tests.kev', [$body, $status]);
+
+    if (! $isFaked) {
+        Http::fake([
+            config('psm.kev.url') => fn () => Http::response(...app('tests.kev')),
+            rtrim((string) config('psm.kev.ghsa_api_url'), '/').'/*' => Http::response(['message' => 'Not Found'], 404),
+        ]);
+    }
+}
+
+/**
  * A runtime of a team's service, on the service's current production deployment.
  */
 function runtimeAt(Team $team, string $service, Technology $technology, string $version): Runtime

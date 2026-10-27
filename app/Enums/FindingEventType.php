@@ -8,6 +8,7 @@ enum FindingEventType: string
     case Resolved = 'resolved';
     case Escalated = 'escalated';
     case Acknowledged = 'acknowledged';
+    case KnownExploited = 'known_exploited';
 
     public function getLabel(): string
     {
@@ -16,6 +17,7 @@ enum FindingEventType: string
             self::Resolved => __('Tự đóng'),
             self::Escalated => __('Tăng mức'),
             self::Acknowledged => __('Đã đọc'),
+            self::KnownExploited => __('CISA KEV ghi nhận bị khai thác'),
         };
     }
 }

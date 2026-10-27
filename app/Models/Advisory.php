@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'patch_versions', 'is_exploited', 'exploited_basis', 'localized_summary'])]
+#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -30,7 +30,7 @@ class Advisory extends Model
      *
      * @var list<string>
      */
-    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches'];
+    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'known_exploited'];
 
     /**
      * Get the attributes that should be cast.
@@ -63,6 +63,11 @@ class Advisory extends Model
             'patch_versions' => 'array',
             'is_exploited' => 'boolean',
             'exploited_basis' => 'array',
+            'known_exploited' => 'array',
+            'known_exploited_at' => 'datetime',
+            'severity_before_kev' => Severity::class,
+            'resolved_cve_ids' => 'array',
+            'cves_resolved_at' => 'datetime',
         ];
     }
 
@@ -120,6 +125,23 @@ class Advisory extends Model
     public function findings(): HasMany
     {
         return $this->hasMany(Finding::class);
+    }
+
+    /**
+     * Whether CISA KEV lists, or listed, one of the advisory's CVE ids (see KnownExploitation).
+     */
+    public function isKnownExploited(): bool
+    {
+        return filled($this->known_exploited);
+    }
+
+    /**
+     * Whether the advisory is exploited: the vendor's words say so (`is_exploited`, pre-notices only) or CISA KEV
+     * lists one of its CVE ids.
+     */
+    public function isExploited(): bool
+    {
+        return $this->is_exploited === true || $this->isKnownExploited();
     }
 
     /**

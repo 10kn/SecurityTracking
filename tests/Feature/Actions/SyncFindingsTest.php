@@ -11,6 +11,7 @@ use App\Models\Finding;
 use App\Models\Runtime;
 use App\Models\User;
 use App\Services\FindingData;
+use App\Services\Kev\KnownExploitation;
 use App\Services\RuntimeFindings;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -192,4 +193,49 @@ it('takes the lock of the technology\'s incidents before locking any row when it
 
     expect($locks(DB::getQueryLog()))->toHaveCount(1)
         ->and(Finding::where('rule', FindingRule::RuntimeOutdatedSecurity)->sole()->state)->toBe(FindingState::Resolved);
+});
+
+/**
+ * The CISA KEV evidence of the CVE ids, as KnownExploitation stores it.
+ *
+ * @param  array<string, string>  $dueDates  CVE id => the date CISA asks it fixed by.
+ */
+function knownExploitedEvidence(array $dueDates): array
+{
+    return collect($dueDates)->map(fn (string $dueDate, string $cve): array => ['cve' => $cve, 'name' => 'PHP RCE', 'date_added' => '2026-10-26', 'due_date' => $dueDate, 'listed' => true])->values()->all();
+}
+
+it('counts a finding CISA KEV newly lists a CVE of as not sent and unread, even at the same severity, and brings its deadline forward', function () {
+    $this->travelTo('2026-10-27 10:00:00');
+    $deployment = Deployment::factory()->create();
+    $data = fn (array $dueDates): FindingData => app(KnownExploitation::class)->overlay(eolFindingData($deployment, severity: Severity::Critical), knownExploitedEvidence($dueDates));
+
+    syncEol($deployment, [eolFindingData($deployment, severity: Severity::Critical)]);
+    $finding = Finding::sole();
+    $finding->update(['notified_severity' => Severity::Critical, 'notified_at' => now(), 'acknowledged_at' => now(), 'acknowledged_by' => User::factory()->create()->id, 'sla_due_at' => now()->addDays(20)]);
+
+    syncEol($deployment, [$data(['CVE-2026-109618' => '2026-11-10'])]);
+
+    expect($finding->refresh())
+        ->severity->toBe(Severity::Critical)
+        ->notified_severity->toBeNull()
+        ->acknowledged_at->toBeNull()
+        ->sla_due_at->toDateTimeString()->toBe('2026-10-30 10:00:00')
+        ->and($finding->events()->where('type', FindingEventType::KnownExploited)->pluck('data')->all())->toBe([['cves' => ['CVE-2026-109618'], 'due_date' => '2026-11-10']]);
+
+    $finding->update(['notified_severity' => Severity::Critical, 'notified_at' => now(), 'acknowledged_at' => now(), 'acknowledged_by' => User::factory()->create()->id]);
+    $this->travel(1)->day();
+    syncEol($deployment, [$data(['CVE-2026-109618' => '2026-10-29'])]);
+
+    expect($finding->refresh())
+        ->notified_severity->toBe(Severity::Critical)
+        ->acknowledged_at->toBeNull()
+        ->sla_due_at->toDateTimeString()->toBe('2026-10-29 16:59:59')
+        ->and($finding->events()->where('type', FindingEventType::KnownExploited)->count())->toBe(1);
+
+    syncEol($deployment, [$data(['CVE-2026-109618' => '2026-10-29', 'CVE-2026-109619' => '2026-10-29'])]);
+
+    expect($finding->refresh())
+        ->notified_severity->toBeNull()
+        ->and($finding->events()->where('type', FindingEventType::KnownExploited)->pluck('data')->last())->toBe(['cves' => ['CVE-2026-109619'], 'due_date' => '2026-10-29']);
 });

@@ -2,11 +2,13 @@
 
 namespace App\Actions;
 
+use App\Enums\AdvisoryKind;
 use App\Enums\ChatNotificationKind;
 use App\Enums\ChatThreadRole;
 use App\Enums\IncidentAlertReason;
 use App\Enums\IncidentScope;
 use App\Enums\Severity;
+use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Incident;
@@ -18,6 +20,7 @@ use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
 use App\Services\IncidentTeamExposure;
+use App\Services\Kev\KnownExploitation;
 use App\Support\IncidentLock;
 use App\Support\Version;
 use Carbon\CarbonInterface;
@@ -41,13 +44,21 @@ use Illuminate\Support\Traits\Localizable;
  *
  * A team told about an incident hears about it again only when it has to act on something new, whenever the incident
  * began, while it still runs a branch the incident may affect: the vendor confirms the fix for a branch it runs
- * ("Đã có bản vá", see Incident::confirmedPatches()), says the incident is exploited, confirms a branch of the team as
- * affected that it was not told about, including one the vendor had ruled out or stopped naming, or the incident's
- * severity rises above what its pre-notices were sent at. All of them in one run make one compact reply in the
+ * ("Đã có bản vá", see Incident::confirmedPatches()), says the incident is exploited, CISA KEV lists a CVE id of it
+ * the team was not told about, the vendor confirms a branch of the team as affected that it was not told about,
+ * including one the vendor had ruled out or stopped naming, or the incident's severity rises above what its
+ * pre-notices were sent at. Exploitation and a rise in severity are not told to a team whose services all run the
+ * fix of their branch already. All of them in one run make one compact reply in the
  * thread; a team without a ready thread (a card from before threads, a new space, an opener that failed) gets a full
  * card that opens one. News that only adds CVEs, moves the planned release or rewords the text sends nothing. A fix
  * is also the first card of an incident the team had not heard of. A security release no pre-notice names is not a
  * fix yet: it only appears in the digest.
+ *
+ * CISA KEV adding a CVE id of the incident (see KnownExploitation::isFresh()) is news of its own, however old the
+ * pre-notice: a team never told about the incident gets a first card when it runs a branch the vendor did not rule
+ * out and has no fix yet, even for a pre-notice a feed listed on its first poll (see MatchKnownExploited). So does a
+ * fresh pre-notice only KEV made urgent (`severity_before_kev`); one urgent on its own words goes to every team. A team is told each CVE id once, whichever incident thread told it. The cards say the evidence is
+ * CISA's, that the vulnerability is exploited in the wild, never that the team was attacked.
  *
  * What each message tells is recorded in the transaction that queues it (`incident_team_notices`,
  * `incident_team_patches`, the told branches and exploitation on IncidentTeam), linked to the message, as having
@@ -81,10 +92,17 @@ class SendPreNoticeAlerts
 
         $alertableIds = Advisory::alertable()->whereNotNull('incident_id')->distinct()->pluck('incident_id');
         $toldIds = Advisory::whereKey(IncidentTeamNotice::toldNoticeIds())->whereNotNull('incident_id')->distinct()->pluck('incident_id');
+        $knownExploitedIds = Advisory::where('kind', AdvisoryKind::PreNotice)
+            ->where('is_dismissed', false)
+            ->whereNotNull('incident_id')
+            ->whereNotNull('known_exploited')
+            ->get(['id', 'incident_id', 'known_exploited'])
+            ->filter(fn (Advisory $notice): bool => KnownExploitation::isFresh($notice->known_exploited))
+            ->pluck('incident_id');
         $runtimes = [];
 
         return Incident::current()
-            ->whereKey($alertableIds->merge($toldIds)->unique()->values())
+            ->whereKey($alertableIds->merge($toldIds)->merge($knownExploitedIds)->unique()->values())
             ->get()
             ->sort(fn (Incident $a, Incident $b): int => [$b->severity->rank(), $b->first_published_at?->getTimestamp() ?? 0, $b->id] <=> [$a->severity->rank(), $a->first_published_at?->getTimestamp() ?? 0, $a->id])
             ->sum(function (Incident $incident) use (&$runtimes, $holdUnclassified): int {
@@ -129,7 +147,8 @@ class SendPreNoticeAlerts
      * reset there (see IncidentTeam::resetStaleAssessment()).
      *
      * A team sent a card about the incident gets its updates whatever the incident's severity now; a team never sent
-     * one gets a first card only while the incident is fresh and urgent.
+     * one gets a first card only while the incident is fresh and urgent, or newly listed by CISA KEV when it is
+     * exposed (see isExposed()).
      *
      * @param  array{by_team: Collection<int|string, EloquentCollection<int, Runtime>>, signature: string}  $technologyRuntimes
      */
@@ -154,8 +173,11 @@ class SendPreNoticeAlerts
             }
 
             $notices = $this->countingNotices($all->reject(fn (Advisory $notice): bool => $notice->is_dismissed || $notice->is_backfill), $holdUnclassified);
-            $fresh = $notices->filter(fn (Advisory $notice): bool => $notice->published_at !== null && $notice->published_at->gte($since))->values();
+            $isPublished = fn (Advisory $notice): bool => $notice->published_at !== null && $notice->published_at->gte($since);
+            $fresh = $notices->filter(fn (Advisory $notice): bool => $isPublished($notice) || KnownExploitation::isFresh($notice->known_exploited))->values();
             $isFresh = $this->isUrgent($fresh);
+            $isPublishedFresh = $fresh->contains(fn (Advisory $notice): bool => $isPublished($notice) && $this->policy->sendsPreNoticeSeverityRightAway($notice->severity_basis === SeverityBasis::Kev ? $notice->severity_before_kev ?? Severity::Unknown : $notice->severity));
+            $knownExploited = $this->knownExploited($notices);
             $memberIds = $all->modelKeys();
             $confirmedPatches = $patches;
             $patches = $notices->isEmpty() ? [] : $patches;
@@ -164,11 +186,13 @@ class SendPreNoticeAlerts
             foreach ($notices->isEmpty() ? [] : $technologyRuntimes['by_team'] as $teamId => $runtimes) {
                 $wasTold = IncidentTeamNotice::wasSentTo($teamId, $memberIds);
 
-                if (! $wasTold && ! $isFresh) {
+                $team = $runtimes->first()->deployment->service->project->team;
+                $untoldKnownExploited = collect($knownExploited)->whereNotIn('cve', $this->toldKnownExploited($team))->values()->all();
+
+                if (! $wasTold && (! $isFresh || (! $isPublishedFresh && (! $this->isExposed($incident, $runtimes, $confirmedPatches) || ! KnownExploitation::isFresh($untoldKnownExploited))))) {
                     continue;
                 }
 
-                $team = $runtimes->first()->deployment->service->project->team;
                 [$thread, $isNewThread] = IncidentTeam::lockFor($incident, $team);
                 $thread->moveTo($team->google_chat_webhook_url);
                 $exposure = IncidentTeamExposure::of($incident, $all, $runtimes, $confirmedPatches);
@@ -176,8 +200,8 @@ class SendPreNoticeAlerts
                 $duePatches = $this->duePatches($teamId, $runtimes, $patches, $memberIds);
 
                 $queued += (int) ($wasTold
-                    ? $this->queueUpdate($team, $incident, $notices, $runtimes, $thread, $isNewThread, IncidentTeamNotice::severityToldTo($teamId, $memberIds) ?? Severity::Unknown, $duePatches, $patches, $thread->isRuledOut($exposure))
-                    : $this->queueFirstCard($team, $incident, $fresh, $runtimes, $thread, $duePatches, $patches));
+                    ? $this->queueUpdate($team, $incident, $notices, $runtimes, $thread, $isNewThread, IncidentTeamNotice::severityToldTo($teamId, $memberIds) ?? Severity::Unknown, $duePatches, $patches, $thread->isRuledOut($exposure), $knownExploited)
+                    : $this->queueFirstCard($team, $incident, $fresh, $runtimes, $thread, $duePatches, $patches, $untoldKnownExploited));
             }
 
             if (! $holdUnclassified) {
@@ -203,14 +227,15 @@ class SendPreNoticeAlerts
             $inputs,
             IncidentTeamNotice::whereIn('advisory_id', $memberIds)->max('id'),
             IncidentTeamPatch::whereIn('advisory_id', $memberIds)->max('id'),
-            IncidentTeam::where('incident_id', $incident->id)->orderBy('id')->get()->map(fn (IncidentTeam $thread): array => [$thread->team_id, $thread->told_confirmed_branches, $thread->exploited_told_at?->getTimestamp(), $thread->last_notification_id, $thread->impact?->value, $thread->assessment_revision])->all(),
+            IncidentTeam::where('incident_id', $incident->id)->orderBy('id')->get()->map(fn (IncidentTeam $thread): array => [$thread->team_id, $thread->told_confirmed_branches, $thread->exploited_told_at?->getTimestamp(), $thread->told_known_exploited, $thread->last_notification_id, $thread->impact?->value, $thread->assessment_revision])->all(),
         ]));
     }
 
     /**
      * A hash of the inputs the run decides on, taken from the very snapshot it decides on, so whatever is committed
      * afterwards (a catalog release, a classification) changes the next fingerprint: what decides the alerts of each
-     * pre-notice, which of them are fresh now (the only input that changes with time alone), the confirmed fixes, the
+     * pre-notice (its CISA KEV evidence included), which of them are fresh now (the only input that changes with time
+     * alone, as does whether CISA added a CVE of it recently), the confirmed fixes, the
      * runtimes of the technology and the alert settings. Values, not update times, so two edits within one second are
      * told apart.
      *
@@ -223,6 +248,8 @@ class SendPreNoticeAlerts
             $notices->sortBy('id')->map(fn (Advisory $notice): array => [
                 $notice->id,
                 $notice->severity->value,
+                $notice->severity_basis?->value,
+                $notice->severity_before_kev?->value,
                 $notice->is_dismissed,
                 $notice->is_backfill,
                 $notice->classified_by,
@@ -233,30 +260,36 @@ class SendPreNoticeAlerts
                 $notice->patch_versions,
                 $notice->is_exploited,
                 $notice->exploited_basis['excerpt'] ?? null,
+                collect($notice->known_exploited ?? [])->map(fn (array $entry): string => implode(':', [$entry['cve'], $entry['date_added'], $entry['due_date'] ?? '', (int) ($entry['listed'] ?? false)]))->sort()->values()->all(),
+                KnownExploitation::isFresh($notice->known_exploited),
             ])->values()->all(),
             [$incident->affected_branches, $incident->unaffected_branches],
             collect($patches)->map(fn (array $patch): string => "{$patch['notice']->id}:{$patch['version']}")->all(),
             $runtimeSignature,
-            [config('psm.alerts.immediate_severities'), config('psm.notices.relevant_days'), config('psm.alerts.max_listed_items')],
+            [config('psm.alerts.immediate_severities'), config('psm.notices.relevant_days'), config('psm.alerts.max_listed_items'), config('psm.kev.severity')],
         ]));
     }
 
     /**
      * The first card of an incident for a team: the pre-notices that count now, with the fixes due, and that the
-     * incident is exploited when it is.
+     * incident is exploited when it is, by CISA KEV or the vendor's words.
      *
      * @param  Collection<int, Advisory>  $notices  The incident's fresh pre-notices that count, oldest first.
      * @param  Collection<int, Runtime>  $runtimes
      * @param  array<string, array{version: string, notice: Advisory}>  $duePatches
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
+     * @param  list<array<string, mixed>>  $knownExploited  The CISA KEV evidence of the incident's pre-notices that count (see knownExploited()) the team was not told about in another thread.
      */
-    private function queueFirstCard(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, array $duePatches, array $patches): bool
+    private function queueFirstCard(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, array $duePatches, array $patches, array $knownExploited): bool
     {
         $exploited = $notices->first(fn (Advisory $notice): bool => $notice->is_exploited);
-        $changes = $exploited === null ? [] : [IncidentAlertReason::Exploited->value => $this->exploitedLine($exploited)];
+        $changes = array_filter([
+            IncidentAlertReason::KnownExploited->value => $knownExploited === [] ? null : KnownExploitation::describe($knownExploited),
+            IncidentAlertReason::Exploited->value => $exploited === null ? null : $this->exploitedLine($exploited),
+        ]);
         $reason = $duePatches === [] ? IncidentAlertReason::New : IncidentAlertReason::PatchConfirmed;
 
-        return $this->queue($team, $incident, $notices, $runtimes, $thread, null, $changes, $reason, $duePatches, $patches, null);
+        return $this->queue($team, $incident, $notices, $runtimes, $thread, null, $changes, $reason, $duePatches, $patches, null, $knownExploited);
     }
 
     /**
@@ -266,27 +299,31 @@ class SendPreNoticeAlerts
      * A team an admin validly assessed as not affected ("Không") gets no reply for a fix alone: it has nothing to
      * upgrade for this incident, and its "thiếu bản vá" findings are not covered by a card it never got, so they alert
      * on their own. Exploitation, a branch newly confirmed or a rise in severity grow its exposure, which ends the
-     * assessment, so those replies still go.
+     * assessment, so those replies still go. Exploitation and a rise in severity are only told to a team still
+     * exposed (see isExposed()). Being told the CISA KEV CVE ids also counts as being told the incident is exploited.
      *
      * @param  Collection<int, Advisory>  $notices  The incident's pre-notices that count, oldest first.
      * @param  Collection<int, Runtime>  $runtimes
      * @param  array<string, array{version: string, notice: Advisory}>  $duePatches
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
      * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
+     * @param  list<array<string, mixed>>  $knownExploited  The CISA KEV evidence of the incident's pre-notices that count (see knownExploited()).
      */
-    private function queueUpdate(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, bool $isNewThread, Severity $toldSeverity, array $duePatches, array $patches, bool $isRuledOut): bool
+    private function queueUpdate(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, bool $isNewThread, Severity $toldSeverity, array $duePatches, array $patches, bool $isRuledOut, array $knownExploited): bool
     {
         $confirmed = $incident->confirmedBranches($runtimes);
         $told = $isNewThread ? $confirmed : array_values(array_intersect($thread->told_confirmed_branches ?? [], $confirmed));
         $extended = array_values(array_diff($confirmed, $told));
-        $isAffected = $runtimes->contains(fn (Runtime $runtime): bool => $incident->scopeFor($runtime) !== IncidentScope::NotAffected);
+        $isExposed = $this->isExposed($incident, $runtimes, $patches);
         $severity = Incident::highestSeverity($notices);
         $exploited = $notices->first(fn (Advisory $notice): bool => $notice->is_exploited);
-        $isRaised = $isAffected && $toldSeverity->rank() < $severity->rank();
+        $isRaised = $isExposed && $toldSeverity->rank() < $severity->rank();
+        $newlyKnownExploited = $isExposed ? collect($knownExploited)->whereNotIn('cve', $this->toldKnownExploited($team))->values()->all() : [];
 
         $changes = array_filter([
             IncidentAlertReason::PatchConfirmed->value => $duePatches === [] ? null : __('Hãng đã xác nhận bản vá :versions.', ['versions' => collect($duePatches)->pluck('version')->join(', ')]),
-            IncidentAlertReason::Exploited->value => $isAffected && $exploited !== null && $thread->exploited_told_at === null ? $this->exploitedLine($exploited) : null,
+            IncidentAlertReason::KnownExploited->value => $newlyKnownExploited === [] ? null : KnownExploitation::describe($newlyKnownExploited),
+            IncidentAlertReason::Exploited->value => $isExposed && $exploited !== null && $thread->exploited_told_at === null && $newlyKnownExploited === [] ? $this->exploitedLine($exploited) : null,
             IncidentAlertReason::ScopeExtended->value => $extended === [] ? null : __('Hãng xác nhận thêm nhánh bị ảnh hưởng: :branches.', ['branches' => implode(', ', $extended)]),
             IncidentAlertReason::SeverityRise->value => $isRaised ? __('Mức độ tăng từ :from lên :to.', ['from' => $toldSeverity->getLabel(), 'to' => $severity->getLabel()]) : null,
         ]);
@@ -299,7 +336,7 @@ class SendPreNoticeAlerts
             return false;
         }
 
-        return $this->queue($team, $incident, $notices, $runtimes, $thread, $isRaised ? $toldSeverity : null, $changes, IncidentAlertReason::from(array_key_first($changes)), $duePatches, $patches, $extended);
+        return $this->queue($team, $incident, $notices, $runtimes, $thread, $isRaised ? $toldSeverity : null, $changes, IncidentAlertReason::from(array_key_first($changes)), $duePatches, $patches, $extended, $newlyKnownExploited);
     }
 
     /**
@@ -317,8 +354,9 @@ class SendPreNoticeAlerts
      * @param  array<string, array{version: string, notice: Advisory}>  $duePatches
      * @param  array<string, array{version: string, notice: Advisory}>  $patches  Every fix of the incident (see Incident::confirmedPatches()).
      * @param  list<string>|null  $extended  The branches newly confirmed as affected, for an update; null for a first card.
+     * @param  list<array<string, mixed>>  $knownExploited  The CISA KEV evidence the message tells, recorded as told.
      */
-    private function queue(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, ?Severity $previousSeverity, array $changes, IncidentAlertReason $reason, array $duePatches, array $patches, ?array $extended): bool
+    private function queue(Team $team, Incident $incident, Collection $notices, Collection $runtimes, IncidentTeam $thread, ?Severity $previousSeverity, array $changes, IncidentAlertReason $reason, array $duePatches, array $patches, ?array $extended, array $knownExploited = []): bool
     {
         $isUpdate = $extended !== null;
         $lead = $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first();
@@ -329,9 +367,10 @@ class SendPreNoticeAlerts
         $shown = $isReply ? collect([$lead]) : collect([$lead, ...$others]);
         $versions = collect($duePatches)->map(fn (array $patch, string $branch): string => "{$branch}:{$patch['version']}")->sort()->join(',');
         $covered = collect($duePatches)->map(fn (array $patch, string $branch) => $this->coverPatchedFindings->findingsFor($team->id, $incident->technology, $branch, $patch['version']));
-        $deadline = $this->coverPatchedFindings->deadlineFor($severity, new EloquentCollection($covered->collapse()->all()));
+        $dueDate = KnownExploitation::dueDate($this->knownExploited($notices));
+        $deadline = $this->coverPatchedFindings->deadlineFor($severity, new EloquentCollection($covered->collapse()->all()), $dueDate);
         $versionsOf = fn (array $patches): array => collect($patches)->map(fn (array $patch): string => $patch['version'])->all();
-        $cardChanges = array_values(array_intersect_key($changes, array_flip([IncidentAlertReason::Exploited->value, IncidentAlertReason::ScopeExtended->value])));
+        $cardChanges = array_values(array_intersect_key($changes, array_flip([IncidentAlertReason::KnownExploited->value, IncidentAlertReason::Exploited->value, IncidentAlertReason::ScopeExtended->value])));
 
         $opening = $this->withLocale(config('psm.alerts.locale'), fn (): array => $duePatches === []
             ? $this->cards->preNotice($team, $incident, $lead, $others, $runtimes, $previousSeverity, $cardChanges)
@@ -371,13 +410,18 @@ class SendPreNoticeAlerts
                 'version' => $patch['version'],
                 'severity' => $severity,
                 'chat_notification_id' => $notification->id,
-            ]), $covered[$branch]);
+            ]), $covered[$branch], $dueDate);
         }
 
         $thread->told_confirmed_branches = $incident->confirmedBranches($runtimes);
 
         if (isset($changes[IncidentAlertReason::Exploited->value])) {
             $thread->exploited_told_at ??= now();
+        }
+
+        if (isset($changes[IncidentAlertReason::KnownExploited->value]) && $knownExploited !== []) {
+            $thread->exploited_told_at ??= now();
+            $thread->told_known_exploited = collect([...($thread->told_known_exploited ?? []), ...array_column($knownExploited, 'cve')])->unique()->sort()->values()->all();
         }
 
         $thread->recordQueued($notification);
@@ -396,12 +440,54 @@ class SendPreNoticeAlerts
     }
 
     /**
+     * The CVE ids CISA KEV lists the team was told about in any incident thread: a split or merged incident, or another
+     * incident of the same CVE, does not tell it again.
+     *
+     * @return list<string>
+     */
+    private function toldKnownExploited(Team $team): array
+    {
+        return IncidentTeam::where('team_id', $team->id)->pluck('told_known_exploited')->flatten()->filter(fn (mixed $cve): bool => is_string($cve))->unique()->values()->all();
+    }
+
+    /**
+     * The CISA KEV evidence of the pre-notices that CISA still lists, one entry per CVE id, sorted.
+     *
+     * @param  Collection<int, Advisory>  $notices
+     * @return list<array<string, mixed>>
+     */
+    private function knownExploited(Collection $notices): array
+    {
+        return $notices
+            ->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])
+            ->filter(fn (array $entry): bool => $entry['listed'] ?? false)
+            ->unique('cve')
+            ->sortBy('cve')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Whether the team still runs a branch the incident may affect below its confirmed fix: a service on a branch the
+     * vendor did not rule out, with no fix confirmed for it or below that fix, or whose version is not known.
+     *
+     * @param  Collection<int, Runtime>  $runtimes
+     * @param  array<string, array{version: string, notice: Advisory}>  $patches
+     */
+    private function isExposed(Incident $incident, Collection $runtimes, array $patches): bool
+    {
+        return $runtimes->contains(fn (Runtime $runtime): bool => $incident->scopeFor($runtime) !== IncidentScope::NotAffected
+            && ($runtime->version === null || $runtime->branch === null || ! isset($patches[$runtime->branch]) || Version::isNewer($patches[$runtime->branch]['version'], $runtime->version)));
+    }
+
+    /**
      * What a reply asks the team to do, for its most important change.
      */
     private function action(IncidentAlertReason $reason): string
     {
         return match ($reason) {
             IncidentAlertReason::PatchConfirmed => __('Nâng cấp các service dưới đây lên bản vá. Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.'),
+            IncidentAlertReason::KnownExploited => __('Lỗ hổng đã bị khai thác trong thực tế, không có nghĩa service của team đã bị tấn công: ưu tiên nâng cấp hoặc giảm thiểu ngay.'),
             IncidentAlertReason::Exploited => __('Lỗ hổng đang bị khai thác: ưu tiên nâng cấp hoặc giảm thiểu ngay.'),
             IncidentAlertReason::ScopeExtended => __('Kiểm tra và chuẩn bị nâng cấp các service ở nhánh bị ảnh hưởng.'),
             default => __('Xem lại mức ưu tiên xử lý theo mức độ mới.'),

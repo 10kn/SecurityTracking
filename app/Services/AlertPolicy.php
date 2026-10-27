@@ -39,7 +39,15 @@ class AlertPolicy
      */
     public function sendsPreNoticeRightAway(Advisory $preNotice): bool
     {
-        return $preNotice->severity === Severity::Unknown || $this->isImmediate($preNotice->severity);
+        return $this->sendsPreNoticeSeverityRightAway($preNotice->severity);
+    }
+
+    /**
+     * Whether a pre-notice of `$severity` is sent right away (see sendsPreNoticeRightAway()).
+     */
+    public function sendsPreNoticeSeverityRightAway(Severity $severity): bool
+    {
+        return $severity === Severity::Unknown || $this->isImmediate($severity);
     }
 
     /**
@@ -52,9 +60,10 @@ class AlertPolicy
     }
 
     /**
-     * An open finding the team has not been told about yet, or whose severity rose since the last message. A
-     * vulnerable package only installed for development waits for the digest unless
-     * `psm.alerts.immediate_dev_dependencies` is on.
+     * An open finding the team has not been told about yet, or whose severity rose since the last message (a CVE of it
+     * newly listed by CISA KEV counts as not told, see SyncFindings). A vulnerable package only installed for
+     * development waits for the digest unless `psm.alerts.immediate_dev_dependencies` is on, or CISA KEV lists one of
+     * its CVE ids: such a package is exploited in the wild, e.g. on development servers left reachable.
      */
     public function awaitsImmediateAlert(Finding $finding): bool
     {
@@ -65,6 +74,6 @@ class AlertPolicy
 
     private function isDigestOnlyDevDependency(Finding $finding): bool
     {
-        return ($finding->context['is_dev'] ?? false) === true && ! config('psm.alerts.immediate_dev_dependencies');
+        return ($finding->context['is_dev'] ?? false) === true && ! config('psm.alerts.immediate_dev_dependencies') && blank($finding->context['known_exploited'] ?? null);
     }
 }

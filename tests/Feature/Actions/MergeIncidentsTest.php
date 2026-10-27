@@ -12,6 +12,7 @@ use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\IncidentSuggestion;
+use App\Models\IncidentTeam;
 use App\Models\Team;
 use App\Models\User;
 
@@ -43,6 +44,19 @@ it('moves the pre-notices of an incident into another and tells no team again wh
         ->incident_basis->toBe(IncidentBasis::Manual)
         ->and($from->refresh()->merged_into_id)->toBe($into->id)
         ->and($suggestion->refresh())->status->toBe(IncidentSuggestionStatus::Accepted)->decided_by->toBe($this->admin->id)
+        ->and(app(SendPreNoticeAlerts::class)->handle())->toBe(0)
+        ->and(chatMessagesTo('COMMERCE'))->toHaveCount(2);
+});
+
+it('carries what a team was told about the CVE ids CISA KEV lists over to the incident it merges into', function () {
+    $this->advisory->update(['known_exploited' => [['cve' => 'CVE-2026-1001', 'name' => 'PHP RCE', 'date_added' => '2026-10-21', 'due_date' => '2026-10-24', 'listed' => true]]]);
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->firstWhere('text', '[Critical] PHP security advisory')))->toContain('CISA KEV ghi nhận CVE-2026-1001');
+
+    $into = app(MergeIncidents::class)->handle($this->advisory->incident, $this->announcement->incident, $this->admin);
+
+    expect(IncidentTeam::where('incident_id', $into->id)->sole()->told_known_exploited)->toBe(['CVE-2026-1001'])
         ->and(app(SendPreNoticeAlerts::class)->handle())->toBe(0)
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(2);
 });

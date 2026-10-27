@@ -24,6 +24,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -110,6 +111,7 @@ class IncidentController extends Controller
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
+                'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
             ],
             'notices' => $notices->map(fn (Advisory $notice): array => [
@@ -123,6 +125,7 @@ class IncidentController extends Controller
                 'patch_versions' => $notice->patch_versions ?? [],
                 'is_exploited' => $notice->is_exploited === true,
                 'exploited_excerpt' => $notice->exploited_basis['excerpt'] ?? null,
+                'known_exploited' => $this->knownExploited($notice->known_exploited ?? []),
                 'is_dismissed' => $notice->is_dismissed,
                 'basis' => $notice->incident_basis?->getLabel(),
             ])->all(),
@@ -309,6 +312,24 @@ class IncidentController extends Controller
     private function severity(Severity $severity): array
     {
         return ['value' => $severity->value, 'label' => $severity->getLabel()];
+    }
+
+    /**
+     * The CISA KEV evidence, with the dates CISA added each CVE and asks it fixed by.
+     *
+     * @param  list<array<string, mixed>>  $evidence
+     * @return list<array{cve: string, added: string, due: string|null, listed: bool}>
+     */
+    private function knownExploited(array $evidence): array
+    {
+        $date = fn (?string $date): ?string => $date === null ? null : Carbon::parse($date)->translatedFormat(__('d/m/Y'));
+
+        return array_map(fn (array $entry): array => [
+            'cve' => (string) $entry['cve'],
+            'added' => (string) $date($entry['date_added']),
+            'due' => $date($entry['due_date'] ?? null),
+            'listed' => (bool) ($entry['listed'] ?? false),
+        ], $evidence);
     }
 
     /**
