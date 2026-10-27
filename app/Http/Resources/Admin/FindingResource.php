@@ -29,7 +29,7 @@ class FindingResource extends JsonResource
             'id' => $this->id,
             'version' => $this->version === null ? null : (int) $this->version,
             'severity' => ['value' => $this->severity->value, 'label' => $this->severity->getLabel()],
-            'title' => $this->title,
+            'title' => $this->localizedTitle(),
             'rule' => $this->rule->getLabel(),
             'service' => ['id' => $service->id, 'name' => $service->name, 'project' => $service->project->name],
             'team' => $this->team->name,

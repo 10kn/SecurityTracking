@@ -22,4 +22,41 @@ enum FindingRule: string
             self::PreNotice => __('Thông báo sớm'),
         };
     }
+
+    /**
+     * The title of a finding of this rule in `$locale` (the current one by default), built from its context, so the
+     * admin pages show it in the viewer's language while Google Chat keeps the stored one. Null when the rule has no
+     * title of its own or the context lacks a part of it.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function title(array $context, ?string $locale = null): ?string
+    {
+        $parts = match ($this) {
+            self::RuntimeEol => ['technology', 'branch'],
+            self::RuntimeOutdatedSecurity => ['technology', 'branch', 'latest'],
+            self::DependencyVulnerable => ['advisory', 'package'],
+            default => null,
+        };
+
+        if ($parts === null) {
+            return null;
+        }
+
+        $replace = [];
+
+        foreach ($parts as $part) {
+            if (! is_string($context[$part] ?? null)) {
+                return null;
+            }
+
+            $replace[$part] = $context[$part];
+        }
+
+        return match ($this) {
+            self::RuntimeEol => __(':technology :branch hết hỗ trợ', $replace, $locale),
+            self::RuntimeOutdatedSecurity => __(':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest', $replace, $locale),
+            default => __(':advisory trong :package', $replace, $locale),
+        };
+    }
 }

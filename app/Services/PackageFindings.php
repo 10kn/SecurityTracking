@@ -75,25 +75,27 @@ class PackageFindings
             $isDev ? __('chỉ dùng khi phát triển', [], $locale) : null,
         ])->filter()->join(' · ');
 
+        $context = [
+            'ecosystem' => $component->ecosystem->value,
+            'package' => $component->name,
+            'version' => $versions->join(', '),
+            'fixed' => $fixes->isEmpty() ? null : $fixes->join(', '),
+            'lockfile' => $component->lockfile_path,
+            'is_dev' => $isDev,
+            'advisory' => $advisory->reference(),
+            'advisory_title' => $advisory->title,
+            'aliases' => array_values(array_diff($advisory->aliases ?? [], [$advisory->reference()])),
+            'source_url' => $advisory->url,
+            'detail' => $detail,
+        ];
+
         return new FindingData(
             fingerprint: FindingData::fingerprint($rule, $deploymentId, "package:{$subject}", $advisory->external_id),
             rule: $rule,
             severity: $advisory->severity,
-            title: Str::limit(__(':advisory trong :package', ['advisory' => $advisory->reference(), 'package' => $component->name], $locale), 250),
+            title: Str::limit((string) $rule->title($context, $locale), 250),
             groupKey: "{$rule->value}:{$advisory->external_id}",
-            context: [
-                'ecosystem' => $component->ecosystem->value,
-                'package' => $component->name,
-                'version' => $versions->join(', '),
-                'fixed' => $fixes->isEmpty() ? null : $fixes->join(', '),
-                'lockfile' => $component->lockfile_path,
-                'is_dev' => $isDev,
-                'advisory' => $advisory->reference(),
-                'advisory_title' => $advisory->title,
-                'aliases' => array_values(array_diff($advisory->aliases ?? [], [$advisory->reference()])),
-                'source_url' => $advisory->url,
-                'detail' => $detail,
-            ],
+            context: $context,
             componentId: $component->id,
             advisoryId: $advisory->id,
         );

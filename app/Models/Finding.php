@@ -54,6 +54,15 @@ class Finding extends Model
     }
 
     /**
+     * The title in the current locale. The stored one is written in the alert locale for Google Chat; it is kept
+     * when the rule cannot rebuild it from the context.
+     */
+    public function localizedTitle(): string
+    {
+        return $this->rule->title($this->context ?? []) ?? $this->title;
+    }
+
+    /**
      * Whether an admin marked the finding as read since it opened or last rose in severity.
      */
     public function isAcknowledged(): bool

@@ -2,7 +2,9 @@
 
 use App\Actions\AcknowledgeFindings;
 use App\Enums\FindingEventType;
+use App\Enums\FindingRule;
 use App\Enums\FindingState;
+use App\Enums\Locale;
 use App\Enums\Severity;
 use App\Models\Deployment;
 use App\Models\Finding;
@@ -57,6 +59,20 @@ it('filters on a team, the read state and the findings of one card, as the links
             ->where('table.ids', "{$inCard->id},{$readInCard->id},{$otherTeam->id}"));
 
     get('/admin/findings?status=read')->assertInertia(fn (Assert $page) => $page->has('findings.data', 1)->where('findings.data.0.title', 'Read'));
+});
+
+it('shows titles in the admin language, keeping the stored one for Google Chat', function () {
+    actingAsAdmin()->update(['locale' => Locale::Japanese]);
+    Finding::factory()->for($this->deployment)->create(['rule' => FindingRule::DependencyVulnerable, 'severity' => Severity::Critical, 'title' => 'GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt', 'context' => ['advisory' => 'GHSA-8xf4-w7qw-pjjw', 'package' => 'firebase/php-jwt']]);
+    Finding::factory()->for($this->deployment)->create(['rule' => FindingRule::RuntimeOutdatedSecurity, 'severity' => Severity::High, 'title' => 'PHP 8.5 thiếu bản vá bảo mật, cần nâng lên 8.5.12', 'context' => ['technology' => 'PHP', 'branch' => '8.5', 'latest' => '8.5.12']]);
+    $stored = Finding::factory()->for($this->deployment)->create(['rule' => FindingRule::RuntimeEol, 'severity' => Severity::Medium, 'title' => 'PHP 8.1 hết hỗ trợ', 'context' => null]);
+
+    get('/admin/findings')->assertInertia(fn (Assert $page) => $page
+        ->where('findings.data.0.title', 'firebase/php-jwt の GHSA-8xf4-w7qw-pjjw')
+        ->where('findings.data.1.title', 'PHP 8.5 にセキュリティパッチ未適用、8.5.12 へ更新が必要')
+        ->where('findings.data.2.title', 'PHP 8.1 hết hỗ trợ'));
+
+    expect($stored->fresh()->title)->toBe('PHP 8.1 hết hỗ trợ');
 });
 
 it('shows times in the digest timezone, as Google Chat does', function () {
