@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Tổng quan — Security Manager</title>
+        <script>
+            try {
+                const params = new URLSearchParams(location.search);
+                document.documentElement.dataset.theme = params.get('theme') || localStorage.getItem('psm-theme') || 'graphite';
+                document.documentElement.lang = params.get('lang') || localStorage.getItem('psm-lang') || 'vi';
+            } catch (error) {
+                document.documentElement.dataset.theme = 'graphite';
+            }
+        </script>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <!--
+        Tổng quan (bản thu gọn, thay cho dashboard.html): chỉ trả lời hai câu hỏi của admin.
+        1. Hệ thống giám sát có đang im lặng vì lỗi không? → khối "Sự cố giám sát", chỉ hiện khi có vấn đề.
+        2. Hôm nay phải can thiệp ở đâu? → 2 danh sách ngắn, mỗi danh sách tối đa 3 mục, số đếm mở danh sách đã lọc.
+        Dòng cuối trang ghi bằng chứng (lúc kiểm tra, nguồn quá ngưỡng, tin Chat gửi gần nhất) để "không có cảnh báo" không bị hiểu nhầm.
+    -->
+    <body
+        data-page="dashboard"
+        data-states='{"target":"#content","label":"Trạng thái dữ liệu","options":{"ready":"Có dữ liệu","empty":"Không còn việc","stale":"Nguồn dữ liệu lỗi","partial":"Lỗi một phần","monitor-error":"Không kiểm tra được giám sát","loading":"Đang tải","error":"Lỗi tải trang"}}'
+    >
+        <main class="page" id="content">
+            <header class="page-header">
+                <div>
+                    <h1>Tổng quan</h1>
+                    <p>Thứ Sáu, 23/10/2026 · kiểm tra lúc 09:42</p>
+                </div>
+            </header>
+
+            <!-- Sự cố giám sát: tối đa 3 dòng (phát hiện, gửi tin, độ phủ). Không có vấn đề thì ẩn cả khối. -->
+            <section class="exceptions" aria-label="Sự cố giám sát" data-view="ready stale partial">
+                <div class="callout danger" data-view="stale">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>
+                    <div class="callout-body">
+                        <strong>OSV thành công lần cuối 26 giờ trước (ngưỡng 12 giờ)</strong>
+                        <p>Có thể bỏ sót lỗ hổng mới của package npm. Finding đang mở vẫn giữ nguyên.</p>
+                        <details class="callout-details">
+                            <summary>Xem lỗi</summary>
+                            <p class="mono">HTTP 503 Service Unavailable · lần thử gần nhất 09:30</p>
+                        </details>
+                    </div>
+                </div>
+
+                <div class="callout danger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16v10H8l-4 4V6Z" /><path d="M12 9v3M12 14.5h.01" /></svg>
+                    <div class="callout-body">
+                        <strong>Tin Google Chat chưa gửi được</strong>
+                        <ul class="callout-list">
+                            <li data-view="stale">
+                                <span>Space admin: 2 tin lỗi từ 08:15 (HTTP 403, #318 và #319) — cảnh báo nguồn lỗi chưa tới admin</span>
+                                <details class="callout-details">
+                                    <summary>Xem lỗi</summary>
+                                    <p>Cấu hình: <span class="mono">PSM_ADMIN_CHAT_WEBHOOK</span></p>
+                                    <p>Gửi lại sau khi sửa: <span class="mono">php artisan psm:resend-notification 318</span>, <span class="mono">php artisan psm:resend-notification 319</span></p>
+                                </details>
+                            </li>
+                            <li>
+                                <span>Booking: 3 tin chưa gửi từ 22/10 14:05 (HTTP 404)</span>
+                                <a class="link" href="/admin/teams/2/edit" data-toast="Mở /admin/teams/2/edit">Sửa team</a>
+                            </li>
+                            <li>
+                                <span>Internal Tools: chưa có webhook</span>
+                                <a class="link" href="/admin/teams/3/edit" data-toast="Mở /admin/teams/3/edit">Thêm webhook</a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="callout">
+                    <span class="state unknown" aria-hidden="true"></span>
+                    <div class="callout-body">
+                        <strong>3 service chưa được đánh giá đầy đủ</strong>
+                        <p>Runtime chưa rõ trạng thái hoặc lockfile không đọc được. Không tính là Đạt.</p>
+                    </div>
+                    <a class="link" href="/admin/services?attention=1" data-toast="Mở /admin/services?attention=1">Xem 3 service →</a>
+                </div>
+            </section>
+
+            <!-- Không đọc được dữ liệu giám sát: không bao giờ hiểu là "không có sự cố". -->
+            <section class="exceptions" data-view="monitor-error">
+                <div class="callout danger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></svg>
+                    <div class="callout-body">
+                        <strong>Không kiểm tra được sự cố giám sát</strong>
+                        <p>Chưa biết nguồn dữ liệu và việc gửi Google Chat có đang lỗi hay không.</p>
+                    </div>
+                    <button class="btn secondary sm" type="button" data-loading="Đã tải lại.">Thử lại</button>
+                </div>
+            </section>
+
+            <!-- Việc cần xử lý: số đếm và "+N" mở danh sách đã lọc; mỗi mục mở đúng finding / incident đó. -->
+            <div class="grid-2" data-view="ready stale partial empty monitor-error">
+                <section class="card work">
+                    <header class="card-header">
+                        <div>
+                            <h2>Finding ưu tiên</h2>
+                            <p>CISA KEV, quá hạn, hoặc Critical / High chưa đọc</p>
+                        </div>
+                        <a class="work-count" href="/admin/findings?priority=1" data-toast="Mở /admin/findings?priority=1" data-view="ready stale monitor-error">7</a>
+                        <span class="work-count muted" data-view="partial" aria-label="Không tải được">—</span>
+                        <a class="work-count" href="/admin/findings?priority=1" data-toast="Mở /admin/findings?priority=1" data-view="empty">0</a>
+                    </header>
+
+                    <ul class="work-list" data-view="ready stale monitor-error">
+                        <li>
+                            <span class="badge" data-sev="critical">Critical</span>
+                            <div class="work-main">
+                                <a class="cell-title" href="/admin/findings?ids=41" data-toast="Mở /admin/findings?ids=41">guzzlehttp/guzzle 7.4.5</a>
+                                <span class="cell-sub"><span>shop-api · Commerce · </span><span class="kev">CISA KEV</span></span>
+                            </div>
+                            <span class="sla overdue">Quá 6 giờ</span>
+                        </li>
+                        <li>
+                            <span class="badge" data-sev="high">High</span>
+                            <div class="work-main">
+                                <a class="cell-title" href="/admin/findings?ids=27" data-toast="Mở /admin/findings?ids=27">Node.js 20 hết hỗ trợ</a>
+                                <span class="cell-sub"><span>realtime-gateway · Booking · </span><span>Đã đọc</span></span>
+                            </div>
+                            <span class="sla overdue">Quá 2 ngày</span>
+                        </li>
+                        <li>
+                            <span class="badge" data-sev="critical">Critical</span>
+                            <div class="work-main">
+                                <a class="cell-title" href="/admin/findings?ids=52" data-toast="Mở /admin/findings?ids=52">PHP 8.3.12 thiếu bản vá 21/10</a>
+                                <span class="cell-sub"><span>shop-api · Commerce · </span><span>Chưa đọc</span></span>
+                            </div>
+                            <span class="sla">Còn 14 giờ</span>
+                        </li>
+                    </ul>
+
+                    <div class="empty compact" data-view="empty">
+                        <strong>Không có finding ưu tiên</strong>
+                        Finding đang mở khác vẫn có ở màn Findings.
+                        <a class="btn secondary sm" href="/admin/findings" data-toast="Mở /admin/findings">Mở Findings</a>
+                    </div>
+
+                    <div class="empty compact" data-view="partial">
+                        <strong>Không tải được finding ưu tiên</strong>
+                        Số đếm không được coi là 0. Các phần tải được vẫn hiển thị.
+                        <button class="btn secondary sm" type="button" data-loading="Đã tải lại.">Thử lại</button>
+                    </div>
+
+                    <footer class="card-footer" data-view="ready stale monitor-error">
+                        <a class="link" href="/admin/findings?priority=1" data-toast="Mở /admin/findings?priority=1">+4 finding khác</a>
+                    </footer>
+                </section>
+
+                <section class="card work">
+                    <header class="card-header">
+                        <div>
+                            <h2>Incident cần xem</h2>
+                            <p>Cần đánh giá hoặc đánh giá lại ảnh hưởng, hoặc có gợi ý gộp đang chờ</p>
+                        </div>
+                        <a class="work-count" href="/admin/incidents?attention=1" data-toast="Mở /admin/incidents?attention=1" data-view="ready stale partial monitor-error">2</a>
+                        <a class="work-count" href="/admin/incidents?attention=1" data-toast="Mở /admin/incidents?attention=1" data-view="empty">0</a>
+                    </header>
+
+                    <ul class="work-list" data-view="ready stale partial monitor-error">
+                        <li>
+                            <span class="badge" data-sev="critical">Critical</span>
+                            <div class="work-main">
+                                <a class="cell-title" href="/admin/incidents/3" data-toast="Mở /admin/incidents/3">php.net phát hành bản vá cho 2 lỗ hổng critical (CVSS 9.2)</a>
+                                <span class="cell-sub">2 team cần đánh giá ảnh hưởng</span>
+                            </div>
+                            <span class="sla">21/10/2026</span>
+                        </li>
+                        <li>
+                            <span class="badge" data-sev="high">High</span>
+                            <div class="work-main">
+                                <a class="cell-title" href="/admin/incidents/5" data-toast="Mở /admin/incidents/5">nodejs.org báo trước bản vá bảo mật</a>
+                                <span class="cell-sub">1 gợi ý gộp đang chờ</span>
+                            </div>
+                            <span class="sla">22/10/2026</span>
+                        </li>
+                    </ul>
+
+                    <div class="empty compact" data-view="empty">
+                        <strong>Không có incident cần xem</strong>
+                        Incident khác vẫn có ở màn Incidents.
+                        <a class="btn secondary sm" href="/admin/incidents" data-toast="Mở /admin/incidents">Mở Incidents</a>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Bằng chứng: luôn hiện, để "không có cảnh báo" không bị hiểu là "chưa kiểm tra". -->
+            <footer class="evidence" data-view="ready stale partial empty monitor-error">
+                <p>
+                    <span>Kiểm tra lúc 09:42</span>
+                    <span data-view="ready partial empty">Không có nguồn đã ghi nhận nào quá ngưỡng</span>
+                    <span class="overdue" data-view="stale">1 nguồn quá ngưỡng</span>
+                    <span data-view="ready stale partial empty">Ghi nhận gửi Google Chat gần nhất: 23/10, 08:00</span>
+                    <span class="overdue" data-view="monitor-error">Không đọc được thời điểm cập nhật của nguồn</span>
+                    <span class="overdue" data-view="monitor-error">Không đọc được lịch sử gửi Google Chat</span>
+                </p>
+                <details data-view="ready stale partial empty">
+                    <summary>12 nguồn đã ghi nhận</summary>
+                    <ul class="list">
+                        <li data-view="stale"><span class="state danger">OSV</span><span class="sla overdue">26 giờ trước · ngưỡng 12 giờ</span></li>
+                        <li><span class="state success">Danh mục PHP</span><span class="sla">18 phút trước · ngưỡng 3 giờ</span></li>
+                        <li><span class="state success">Danh mục Node.js</span><span class="sla">18 phút trước · ngưỡng 3 giờ</span></li>
+                        <li><span class="state success">Danh mục Ruby</span><span class="sla">18 phút trước · ngưỡng 3 giờ</span></li>
+                        <li><span class="state success">Tin báo trước php.net</span><span class="sla">12 phút trước · ngưỡng 2 giờ</span></li>
+                        <li><span class="state success">Tin báo trước nodejs.org</span><span class="sla">12 phút trước · ngưỡng 2 giờ</span></li>
+                        <li><span class="state success">Tin báo trước ruby-lang.org</span><span class="sla">12 phút trước · ngưỡng 2 giờ</span></li>
+                        <li><span class="state success">Packagist</span><span class="sla">3 giờ trước · ngưỡng 12 giờ</span></li>
+                        <li><span class="state success">RubySec</span><span class="sla">3 giờ trước · ngưỡng 12 giờ</span></li>
+                        <li data-view="ready partial empty"><span class="state success">OSV</span><span class="sla">3 giờ trước · ngưỡng 12 giờ</span></li>
+                        <li><span class="state success">CISA KEV</span><span class="sla">22 phút trước · ngưỡng 6 giờ</span></li>
+                        <li><span class="state success">GHSA → CVE</span><span class="sla">22 phút trước · ngưỡng 6 giờ</span></li>
+                        <li><span class="state success">GitHub (lockfile)</span><span class="sla">3 giờ trước · ngưỡng 25 giờ</span></li>
+                    </ul>
+                </details>
+            </footer>
+
+            <!-- Đang tải -->
+            <div data-view="loading" aria-busy="true">
+                <div class="grid-2">
+                    <section class="card">
+                        <div class="card-body stack" style="gap: 18px">
+                            <span class="skeleton" style="width: 40%"></span>
+                            <span class="skeleton" style="width: 80%"></span>
+                            <span class="skeleton" style="width: 70%"></span>
+                            <span class="skeleton" style="width: 75%"></span>
+                        </div>
+                    </section>
+                    <section class="card">
+                        <div class="card-body stack" style="gap: 18px">
+                            <span class="skeleton" style="width: 40%"></span>
+                            <span class="skeleton" style="width: 80%"></span>
+                            <span class="skeleton" style="width: 65%"></span>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Lỗi tải cả trang: không khẳng định Google Chat vẫn chạy. -->
+            <section class="card" data-view="error">
+                <div class="empty">
+                    <strong>Không tải được trang tổng quan</strong>
+                    Máy chủ trả lỗi lúc 09:42. Chưa xác minh được việc gửi tin Google Chat.
+                    <button class="btn secondary" type="button" data-loading="Đã tải lại.">Thử lại</button>
+                </div>
+            </section>
+        </main>
+
+        <script src="i18n.js"></script>
+        <script src="app.js"></script>
+    </body>
+</html>
