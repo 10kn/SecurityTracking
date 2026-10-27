@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Admin;
 
+use App\Enums\LockfileFormat;
 use App\Models\Finding;
 use App\Models\Lockfile;
 use App\Models\Runtime;
@@ -94,7 +95,8 @@ class ServiceResource extends JsonResource
 
     /**
      * One entry per lockfile with its package count and how many of its packages have an open vulnerability. A
-     * lockfile not read yet, or one that cannot be read, shows as missing data.
+     * lockfile not read yet, or one that cannot be read, shows as missing data. One not read because another npm
+     * lockfile in its directory is read instead says which (LockfileFormat::supersededPaths()).
      *
      * @param  Collection<int, Lockfile>  $lockfiles
      * @param  Collection<int, Finding>  $openPackageFindings
@@ -105,16 +107,18 @@ class ServiceResource extends JsonResource
         $vulnerablePackages = $openPackageFindings
             ->groupBy(fn (Finding $finding): string => (string) ($finding->context['lockfile'] ?? ''))
             ->map(fn (Collection $findings): int => $findings->unique(fn (Finding $finding): string => (string) ($finding->context['package'] ?? ''))->count());
+        $superseded = LockfileFormat::supersededPaths($lockfiles->pluck('path'));
 
         return $lockfiles
             ->sortBy('path')
-            ->map(function (Lockfile $lockfile) use ($vulnerablePackages): array {
+            ->map(function (Lockfile $lockfile) use ($vulnerablePackages, $superseded): array {
                 $vulnerable = $vulnerablePackages->get($lockfile->path, 0);
                 $isReady = $lockfile->isParsed() && ! $lockfile->isUnreadable();
 
                 return [
                     'path' => $lockfile->path,
                     'state' => match (true) {
+                        isset($superseded[$lockfile->path]) && ! $lockfile->isParsed() => ['label' => __('Bỏ qua, đọc :file', ['file' => basename($superseded[$lockfile->path])]), 'tone' => 'neutral'],
                         $lockfile->isUnreadable() => ['label' => __('Không đọc được'), 'tone' => 'unknown'],
                         ! $lockfile->isParsed() => ['label' => __('Đang chờ quét'), 'tone' => 'unknown'],
                         default => null,

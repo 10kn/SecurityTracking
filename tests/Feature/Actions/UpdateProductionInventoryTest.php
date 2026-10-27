@@ -95,6 +95,8 @@ it('detects the ecosystem from the lockfile name', function (string $name, Ecosy
     'composer' => ['composer.lock', Ecosystem::Packagist],
     'bundler' => ['Gemfile.lock', Ecosystem::Rubygems],
     'npm' => ['package-lock.json', Ecosystem::Npm],
+    'pnpm' => ['pnpm-lock.yaml', Ecosystem::Npm],
+    'yarn' => ['yarn.lock', Ecosystem::Npm],
 ]);
 
 it('deletes the lockfiles the admin removed', function () {
@@ -111,6 +113,6 @@ it('deletes the lockfiles the admin removed', function () {
 it('rejects an unsupported lockfile name', function () {
     $service = Service::factory()->create();
 
-    expect(fn () => app(UpdateProductionInventory::class)->handle($service, [], [['name' => 'yarn.lock', 'content' => 'x']]))
+    expect(fn () => app(UpdateProductionInventory::class)->handle($service, [], [['name' => 'bun.lock', 'content' => 'x']]))
         ->toThrow(InvalidArgumentException::class);
 });

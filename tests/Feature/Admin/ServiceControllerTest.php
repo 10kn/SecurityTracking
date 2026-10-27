@@ -94,10 +94,31 @@ it('accepts a version that no catalog lists', function () {
 it('rejects a lockfile it cannot scan', function () {
     actingAsAdmin();
 
-    post('/admin/services', serviceForm(['lockfile_uploads' => [UploadedFile::fake()->createWithContent('yarn.lock', 'x')]]))
-        ->assertSessionHasErrors(['lockfile_uploads.0' => 'Chỉ nhận composer.lock, Gemfile.lock hoặc package-lock.json.']);
+    post('/admin/services', serviceForm(['lockfile_uploads' => [UploadedFile::fake()->createWithContent('bun.lock', 'x')]]))
+        ->assertSessionHasErrors(['lockfile_uploads.0' => 'Chỉ nhận composer.lock, Gemfile.lock, package-lock.json, pnpm-lock.yaml hoặc yarn.lock.']);
 
     expect(Service::count())->toBe(0);
+});
+
+it('takes pnpm and yarn lockfiles and shows the one not read because the other is', function () {
+    actingAsAdmin();
+    fakeOsv();
+
+    post('/admin/services', serviceForm([
+        'lockfile_uploads' => [
+            UploadedFile::fake()->createWithContent('pnpm-lock.yaml', lockfileFixture('pnpm-lock.yaml')),
+            UploadedFile::fake()->createWithContent('yarn.lock', lockfileFixture('yarn.lock')),
+        ],
+    ]))->assertSessionHasNoErrors();
+
+    expect(Service::sole()->productionDeployment->lockfiles()->pluck('ecosystem', 'path')->map->value->all())->toEqual(['pnpm-lock.yaml' => 'npm', 'yarn.lock' => 'npm']);
+
+    get('/admin/services')->assertInertia(fn (Assert $page) => $page
+        ->where('services.data.0.lockfiles.0.path', 'pnpm-lock.yaml')
+        ->where('services.data.0.lockfiles.0.packages', '32 package')
+        ->where('services.data.0.lockfiles.1.path', 'yarn.lock')
+        ->where('services.data.0.lockfiles.1.state', ['label' => 'Bỏ qua, đọc pnpm-lock.yaml', 'tone' => 'neutral'])
+        ->where('services.data.0.lockfiles.1.packages', null));
 });
 
 it('rejects a version with characters a runtime version never has', function () {

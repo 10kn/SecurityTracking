@@ -6,6 +6,7 @@ use App\Enums\ChatNotificationKind;
 use App\Enums\FindingEventType;
 use App\Enums\FindingState;
 use App\Enums\IncidentScope;
+use App\Enums\LockfileFormat;
 use App\Enums\RuntimeStatus;
 use App\Models\Advisory;
 use App\Models\Finding;
@@ -113,7 +114,12 @@ class SendDailyDigest
         $services = Service::with('productionDeployment.lockfiles')
             ->whereHas('project', fn ($query) => $query->where('team_id', $team->id))
             ->get();
-        $unreadable = $services->flatMap(fn (Service $service) => ($service->productionDeployment->lockfiles ?? collect())->filter->isUnreadable());
+        $unreadable = $services->flatMap(function (Service $service): Collection {
+            $lockfiles = $service->productionDeployment->lockfiles ?? collect();
+            $superseded = LockfileFormat::supersededPaths($lockfiles->pluck('path'));
+
+            return $lockfiles->filter(fn (Lockfile $lockfile): bool => $lockfile->isUnreadable() && ! isset($superseded[$lockfile->path]));
+        });
         $awaitingPatch = $this->awaitingPatch($team, $runtimes, $since);
 
         return [

@@ -78,6 +78,19 @@ it('reads each service from its own repository and the default branch when none 
     expect($query)->not->toHaveKey('sha');
 });
 
+it('reads pnpm and yarn lockfiles as npm lockfiles', function () {
+    fakeGitHub([
+        'apps/api/pnpm-lock.yaml' => lockfileFixture('pnpm-lock.yaml'),
+        'apps/api/yarn.lock' => lockfileFixture('yarn.lock'),
+        'apps/api/bun.lock' => '{}',
+    ]);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect($this->service->productionDeployment->lockfiles()->pluck('ecosystem', 'path')->map->value->all())->toEqual(['pnpm-lock.yaml' => 'npm', 'yarn.lock' => 'npm'])
+        ->and($this->service->fresh()->lockfiles_sync_error)->toBeNull();
+});
+
 it('evaluates nothing again when the lockfiles did not change', function () {
     $commit = GITHUB_COMMIT;
     Http::fake(['https://api.github.com/repos/*/commits*' => function () use (&$commit) {

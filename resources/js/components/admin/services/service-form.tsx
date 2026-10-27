@@ -22,7 +22,7 @@ const RAW_VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+~_-]*$/;
 const RAW_VERSION_MAX_LENGTH = 64;
 
 /** Mirrors Ecosystem::lockfileNames() and Lockfile::MAX_UPLOAD_KILOBYTES. */
-const LOCKFILE_NAMES = ['composer.lock', 'Gemfile.lock', 'package-lock.json'];
+const LOCKFILE_NAMES = ['composer.lock', 'Gemfile.lock', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
 const MAX_LOCKFILE_BYTES = 20480 * 1024;
 
 export interface TechnologyOption extends Option<string> {
@@ -284,7 +284,7 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
     return (
         <FormSection
             title={t('Repository')}
-            description={t('Chọn repository GitHub để mỗi ngày hệ thống tự đọc composer.lock, Gemfile.lock và package-lock.json trong thư mục của service, tại commit mới nhất của branch. GitHub App chỉ có quyền đọc.')}
+            description={t('Chọn repository GitHub để mỗi ngày hệ thống tự đọc composer.lock, Gemfile.lock, package-lock.json, pnpm-lock.yaml và yarn.lock trong thư mục của service, tại commit mới nhất của branch. GitHub App chỉ có quyền đọc.')}
         >
             <FormFields columns={2}>
                 <Field label={t('Repository GitHub')} htmlFor="repository" error={form.errors.repository} help={listHelp} className="sm:col-span-2">
@@ -547,7 +547,7 @@ function LockfileUpload({ form, errors }: { form: InertiaFormProps<ServiceFormDa
 
     const fileProblem = (file: File): string | undefined => {
         if (!LOCKFILE_NAMES.includes(file.name)) {
-            return t('Chỉ nhận composer.lock, Gemfile.lock hoặc package-lock.json.');
+            return t('Chỉ nhận composer.lock, Gemfile.lock, package-lock.json, pnpm-lock.yaml hoặc yarn.lock.');
         }
 
         if (file.size > MAX_LOCKFILE_BYTES) {
@@ -558,7 +558,7 @@ function LockfileUpload({ form, errors }: { form: InertiaFormProps<ServiceFormDa
     };
 
     return (
-        <Field label={t('Tải lockfile')} help={t('composer.lock, Gemfile.lock hoặc package-lock.json. File cùng tên thay file cũ.')}>
+        <Field label={t('Tải lockfile')} help={t('composer.lock, Gemfile.lock, package-lock.json, pnpm-lock.yaml hoặc yarn.lock. File cùng tên thay file cũ.')}>
             <div
                 onDragOver={(event) => {
                     event.preventDefault();

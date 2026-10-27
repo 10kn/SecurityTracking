@@ -95,6 +95,18 @@ it('lists every version of a package that the same advisory affects in one findi
         ->toBe('@babel/traverse 7.23.0 · nâng lên 7.23.2 · package-lock.json · chỉ dùng khi phát triển');
 });
 
+it('scans the packages of pnpm and yarn lockfiles with OSV', function (string $lockfile) {
+    fakeOsv();
+
+    scanWithLockfiles($this->deployment, $lockfile);
+
+    expect(Finding::where('title', 'GHSA-xvch-5gv4-984h trong minimist')->sole()->context)->toMatchArray([
+        'version' => '0.0.10, 1.2.0',
+        'lockfile' => $lockfile,
+        'detail' => "minimist 0.0.10, 1.2.0 · nâng lên 0.2.4, 1.2.6 · {$lockfile}",
+    ]);
+})->with(['pnpm-lock.yaml', 'yarn.lock']);
+
 it('scans Gemfile.lock gems by their plain version', function () {
     fakeRubySec();
 

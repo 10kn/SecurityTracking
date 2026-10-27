@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\Ecosystem;
+use App\Enums\LockfileFormat;
 use App\Enums\LockfileSource;
 use App\Models\Deployment;
 use App\Models\Lockfile;
@@ -33,12 +34,12 @@ class LockfileFactory extends Factory
     }
 
     /**
-     * A lockfile with the given name and content, e.g. a fixture from tests/Fixtures/lockfiles.
+     * A lockfile with the given path and content, e.g. a fixture from tests/Fixtures/lockfiles.
      */
     public function withContent(string $path, string $content): static
     {
         return $this->state(fn (array $attributes) => [
-            'ecosystem' => Ecosystem::forLockfile($path) ?? Ecosystem::Packagist,
+            'ecosystem' => LockfileFormat::forPath($path)?->ecosystem() ?? Ecosystem::Packagist,
             'path' => $path,
             'content' => $content,
             'content_hash' => hash('sha256', $content),

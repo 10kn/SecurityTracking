@@ -267,6 +267,16 @@ it('counts services without a lockfile and lockfiles that cannot be read', funct
         ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Service chưa có lockfile: 1 · Lockfile không đọc được: 1');
 });
 
+it('does not count an unreadable lockfile that another lockfile in its directory replaces', function () {
+    Lockfile::factory()->for($this->deployment)->withContent('package-lock.json', 'not json')->create(['parsed_hash' => hash('sha256', 'not json'), 'parse_error' => 'Not valid JSON: Syntax error.']);
+    Lockfile::factory()->for($this->deployment)->withContent('yarn.lock', "lockfileVersion: 1\n")->create(['parsed_hash' => hash('sha256', "lockfileVersion: 1\n"), 'parse_error' => 'Not a yarn.lock.']);
+    Lockfile::factory()->for($this->deployment)->withContent('web/package-lock.json', 'not json')->create(['parsed_hash' => hash('sha256', 'not json'), 'parse_error' => 'Not valid JSON: Syntax error.']);
+
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Lockfile không đọc được: 2');
+});
+
 it('sends no digest only because a service has no lockfile', function () {
     expect(app(SendDailyDigest::class)->handle())->toBe(0);
 });
