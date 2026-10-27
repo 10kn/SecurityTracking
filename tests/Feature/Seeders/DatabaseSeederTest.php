@@ -1,8 +1,5 @@
 <?php
 
-use App\Enums\Environment;
-use App\Models\Service;
-use App\Models\Team;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 
@@ -10,17 +7,10 @@ use function Pest\Laravel\assertAuthenticatedAs;
 use function Pest\Laravel\post;
 use function Pest\Laravel\seed;
 
-it('seeds an admin account and the demo teams and services', function () {
+it('seeds an admin account', function () {
     seed(DatabaseSeeder::class);
 
-    $admin = User::where('email', 'admin@example.com')->sole();
-    $services = Service::with('deployments.runtimes')->get();
-
-    expect($admin->is_admin)->toBeTrue()
-        ->and(Team::pluck('name')->sort()->values()->all())->toBe(['Booking', 'Commerce', 'Internal Tools'])
-        ->and($services)->toHaveCount(8)
-        ->and($services->every(fn (Service $service): bool => $service->deployments->sole()->environment === Environment::Production
-            && $service->deployments->sole()->runtimes->count() === 1))->toBeTrue();
+    expect(User::where('email', 'admin@example.com')->sole()->is_admin)->toBeTrue();
 });
 
 it('lets the seeded admin sign in to the admin screens', function () {

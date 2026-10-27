@@ -33,5 +33,8 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="ANTHROPIC_API_KEY" value="" force="true"/>
+        <env name="PSM_GITHUB_APP_ID" value="" force="true"/>
+        <env name="PSM_GITHUB_INSTALLATION_ID" value="" force="true"/>
+        <env name="PSM_GITHUB_PRIVATE_KEY_PATH" value="" force="true"/>
     </php>
 </phpunit>
