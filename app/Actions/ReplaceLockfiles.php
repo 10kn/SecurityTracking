@@ -2,9 +2,9 @@
 
 namespace App\Actions;
 
-use App\Enums\Ecosystem;
 use App\Enums\LockfileSource;
 use App\Models\Deployment;
+use App\Support\LockfilePath;
 use InvalidArgumentException;
 
 /**
@@ -13,10 +13,10 @@ use InvalidArgumentException;
 class ReplaceLockfiles
 {
     /**
-     * A lockfile replaces the one with the same name. Identical content keeps the row, so its packages are not read
-     * again; only where it came from is updated.
+     * A lockfile replaces the one at the same path (relative to the service directory, see LockfilePath). Identical
+     * content keeps the row, so its packages are not read again; only where it came from is updated.
      *
-     * @param  list<array{name: string, content: string}>  $lockfiles
+     * @param  list<array{path: string, content: string}>  $lockfiles
      * @param  list<string>  $removedPaths
      * @return bool Whether a lockfile was added, changed or removed.
      */
@@ -25,12 +25,12 @@ class ReplaceLockfiles
         $hasChanges = $removedPaths !== []
             && $deployment->lockfiles()->whereIn('path', $removedPaths)->delete() > 0;
 
-        foreach ($lockfiles as ['name' => $name, 'content' => $content]) {
-            $ecosystem = Ecosystem::forLockfile($name)
-                ?? throw new InvalidArgumentException("Unsupported lockfile [{$name}].");
+        foreach ($lockfiles as ['path' => $path, 'content' => $content]) {
+            $ecosystem = (LockfilePath::isValid($path) ? LockfilePath::ecosystem($path) : null)
+                ?? throw new InvalidArgumentException("Unsupported lockfile [{$path}].");
 
             $contentHash = hash('sha256', $content);
-            $existing = $deployment->lockfiles()->where('path', $name)->first();
+            $existing = $deployment->lockfiles()->where('path', $path)->first();
 
             if ($existing?->content_hash === $contentHash) {
                 $existing->update(['source' => $source, 'commit_sha' => $commitSha]);
@@ -38,7 +38,7 @@ class ReplaceLockfiles
                 continue;
             }
 
-            $deployment->lockfiles()->updateOrCreate(['path' => $name], [
+            $deployment->lockfiles()->updateOrCreate(['path' => $path], [
                 'ecosystem' => $ecosystem,
                 'source' => $source,
                 'commit_sha' => $commitSha,

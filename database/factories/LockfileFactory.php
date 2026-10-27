@@ -3,10 +3,10 @@
 namespace Database\Factories;
 
 use App\Enums\Ecosystem;
-use App\Enums\LockfileFormat;
 use App\Enums\LockfileSource;
 use App\Models\Deployment;
 use App\Models\Lockfile;
+use App\Support\LockfilePath;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -39,7 +39,7 @@ class LockfileFactory extends Factory
     public function withContent(string $path, string $content): static
     {
         return $this->state(fn (array $attributes) => [
-            'ecosystem' => LockfileFormat::forPath($path)?->ecosystem() ?? Ecosystem::Packagist,
+            'ecosystem' => LockfilePath::ecosystem($path) ?? Ecosystem::Packagist,
             'path' => $path,
             'content' => $content,
             'content_hash' => hash('sha256', $content),

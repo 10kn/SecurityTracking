@@ -266,7 +266,7 @@ it('alerts the owning team right after a lockfile with a vulnerable package is u
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     teamWithChatSpace('Booking', 'BOOKING');
 
-    app(UpdateProductionInventory::class)->handle(serviceOfTeam($commerce, 'shop-api'), [], [['name' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]]);
+    app(UpdateProductionInventory::class)->handle(serviceOfTeam($commerce, 'shop-api'), [], [['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]]);
 
     $message = chatMessagesTo('COMMERCE')->sole();
     expect($message['text'])->toBe('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
@@ -283,7 +283,7 @@ it('sends each team one card listing its affected services when Packagist publis
     });
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     $booking = teamWithChatSpace('Booking', 'BOOKING');
-    $lockfile = [['name' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]];
+    $lockfile = [['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]];
     $inventory = app(UpdateProductionInventory::class);
     $inventory->handle(serviceOfTeam($commerce, 'shop-api'), [], $lockfile);
     $inventory->handle(serviceOfTeam($commerce, 'shop-admin'), [], $lockfile);
@@ -301,4 +301,78 @@ it('sends each team one card listing its affected services when Packagist publis
     expect($commerceMessage['text'])->toBe('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
         ->and(chatJson($commerceMessage))->toContain('2 service bị ảnh hưởng', 'shop-api', 'shop-admin')->not->toContain('booking-api')
         ->and(chatJson(chatMessagesTo('BOOKING')->sole()))->toContain('GHSA-8xf4-w7qw-pjjw', 'booking-api')->not->toContain('shop-api');
+});
+
+/**
+ * Fakes the root tree of the repository with the given lockfiles, by path, while $isActive is true; fakeGitHub()
+ * answers otherwise.
+ *
+ * @param  array<string, string>  $files
+ */
+function fakeRepositoryTree(bool &$isActive, array $files): void
+{
+    Http::fake(['https://api.github.com/repos/*/git/trees/*' => function () use (&$isActive, $files) {
+        return $isActive ? Http::response(['sha' => GITHUB_COMMIT, 'truncated' => false, 'tree' => collect($files)
+            ->map(fn (string $content, string $path): array => ['path' => $path, 'mode' => '100644', 'type' => 'blob', 'sha' => sha1($content), 'size' => strlen($content)])
+            ->values()
+            ->all()]) : null;
+    }]);
+}
+
+it('alerts once for a vulnerable package in a nested lockfile from github, and closes its findings when the lockfile is gone', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    $isRemoved = false;
+    fakeRepositoryTree($isRemoved, ['composer.lock' => '{"packages":[]}']);
+    fakePackagist();
+    fakeGitHub(['composer.lock' => '{"packages":[]}', 'admin/composer.lock' => lockfileFixture('composer.lock')]);
+    $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
+    $service = serviceOfTeam($commerce, 'shop-api');
+    $service->update(['repository' => 'acme/shop', 'repository_path' => '/']);
+
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+
+    $message = chatMessagesTo('COMMERCE')->sole();
+    expect($message['text'])->toBe('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
+        ->and(chatJson($message))->toContain('firebase/php-jwt v5.5.1 · nâng lên 6.0.0 · admin/composer.lock')
+        ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(4);
+
+    $isRemoved = true;
+    $this->travel(1)->day();
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+
+    expect($service->productionDeployment->lockfiles()->pluck('path')->all())->toBe(['composer.lock'])
+        ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(0)
+        ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->where('state', FindingState::Resolved)->count())->toBe(4)
+        ->and(chatMessagesTo('COMMERCE'))->toHaveCount(1);
+});
+
+it('keeps one finding for a package in a root and a nested lockfile, open until both are gone', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    $isRemoved = false;
+    fakeRepositoryTree($isRemoved, ['composer.lock' => lockfileFixture('composer.lock')]);
+    fakePackagist();
+    fakeGitHub(['composer.lock' => lockfileFixture('composer.lock'), 'admin/composer.lock' => lockfileFixture('composer.lock')]);
+    $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
+    $service = serviceOfTeam($commerce, 'shop-api');
+    $service->update(['repository' => 'acme/shop', 'repository_path' => '/']);
+
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+
+    $finding = Finding::where('rule', FindingRule::DependencyVulnerable)->where('context->advisory', 'GHSA-8xf4-w7qw-pjjw')->sole();
+    expect(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(4)
+        ->and($finding->lockfilePaths())->toBe(['admin/composer.lock', 'composer.lock'])
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('firebase/php-jwt v5.5.1 · nâng lên 6.0.0 · admin/composer.lock, composer.lock');
+
+    $finding->update(['acknowledged_at' => now()]);
+    $isRemoved = true;
+    $this->travel(1)->day();
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+
+    expect($finding->fresh())
+        ->state->toBe(FindingState::Open)
+        ->acknowledged_at->not->toBeNull()
+        ->lockfilePaths()->toBe(['composer.lock'])
+        ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(4)
+        ->and(chatMessagesTo('COMMERCE'))->toHaveCount(1);
 });

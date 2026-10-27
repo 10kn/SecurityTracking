@@ -4,6 +4,7 @@ namespace App\Services\Repositories;
 
 use App\Enums\LockfileSource;
 use App\Services\Catalog\CatalogHttp;
+use Closure;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use InvalidArgumentException;
@@ -100,20 +101,55 @@ class GitHubRepositoryReader implements RepositoryReader
         return $sha;
     }
 
-    public function filesIn(string $repository, string $directory, string $commitSha): array
+    /**
+     * The directory is found by walking the trees of the commit from its root (https://docs.github.com/en/rest/git/trees),
+     * then listed in one recursive request. GitHub cuts a recursive listing short above 100,000 entries or 7 MB; the
+     * directory is then listed level by level instead, without entering excluded directories. Every tree request counts
+     * against `psm.github.lockfile_search.max_tree_requests`.
+     */
+    public function findFiles(string $repository, string $directory, string $commitSha, array $names, int $maxDepth, Closure $isExcluded): array
     {
-        $entries = $this->get($this->contentsPath($repository, $directory), ['ref' => $commitSha])->json();
+        $budget = (int) config('psm.github.lockfile_search.max_tree_requests');
+        $treeSha = $this->treeSha($repository, $directory, $commitSha, $budget);
+        $tree = $this->tree($repository, $treeSha, true, $budget);
 
-        // The contents API answers with the file itself when the path is a file.
-        if (! is_array($entries) || ! array_is_list($entries)) {
-            throw new RepositoryNotFoundException("[{$directory}] is not a directory.");
+        if (! $tree['truncated']) {
+            $files = [];
+
+            foreach ($tree['entries'] as $entry) {
+                $segments = explode('/', $entry['path']);
+
+                if ($entry['type'] === 'blob' && count($segments) - 1 <= $maxDepth && in_array(end($segments), $names, true)
+                    && ! $this->isWithinExcluded($segments, $isExcluded)) {
+                    $files[$entry['path']] = $entry['size'];
+                }
+            }
+
+            return $files;
         }
 
         $files = [];
+        $pending = [['path' => '', 'sha' => $treeSha, 'depth' => 0]];
 
-        foreach ($entries as $entry) {
-            if (is_array($entry) && ($entry['type'] ?? null) === 'file' && is_string($entry['name'] ?? null)) {
-                $files[$entry['name']] = (int) ($entry['size'] ?? 0);
+        while (($level = array_shift($pending)) !== null) {
+            $tree = $this->tree($repository, $level['sha'], false, $budget);
+
+            if ($tree['truncated']) {
+                throw new IncompleteListingException("[{$directory}/{$level['path']}] has too many entries to list.");
+            }
+
+            foreach ($tree['entries'] as $entry) {
+                $path = ltrim("{$level['path']}/{$entry['path']}", '/');
+
+                if ($isExcluded($path)) {
+                    continue;
+                }
+
+                if ($entry['type'] === 'tree' && $level['depth'] < $maxDepth) {
+                    $pending[] = ['path' => $path, 'sha' => $entry['sha'], 'depth' => $level['depth'] + 1];
+                } elseif ($entry['type'] === 'blob' && in_array($entry['path'], $names, true)) {
+                    $files[$path] = $entry['size'];
+                }
             }
         }
 
@@ -157,6 +193,88 @@ class GitHubRepositoryReader implements RepositoryReader
 
             throw $exception;
         }
+    }
+
+    /**
+     * Whether the file at $segments, or one of the directories above it, is excluded.
+     *
+     * @param  list<string>  $segments
+     * @param  Closure(string): bool  $isExcluded
+     */
+    private function isWithinExcluded(array $segments, Closure $isExcluded): bool
+    {
+        for ($length = 1; $length <= count($segments); $length++) {
+            if ($isExcluded(implode('/', array_slice($segments, 0, $length)))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The tree of the directory at the commit, found segment by segment from the root tree of the commit. A commit
+     * SHA names its root tree.
+     *
+     * @throws RepositoryNotFoundException When the directory does not exist at the commit.
+     * @throws IncompleteListingException When a level is too large to tell.
+     */
+    private function treeSha(string $repository, string $directory, string $commitSha, int &$budget): string
+    {
+        $segments = array_values(array_filter(explode('/', $directory), fn (string $segment): bool => $segment !== ''));
+
+        if (array_intersect($segments, ['.', '..']) !== []) {
+            throw new InvalidArgumentException("[{$directory}] must not contain . or .. segments.");
+        }
+
+        $treeSha = $commitSha;
+
+        foreach ($segments as $segment) {
+            $tree = $this->tree($repository, $treeSha, false, $budget);
+            $entry = collect($tree['entries'])->first(fn (array $entry): bool => $entry['path'] === $segment && $entry['type'] === 'tree');
+
+            if ($entry === null) {
+                throw $tree['truncated']
+                    ? new IncompleteListingException("[{$directory}] could not be found in a tree GitHub cut short.")
+                    : new RepositoryNotFoundException("[{$directory}] is not a directory.");
+            }
+
+            $treeSha = $entry['sha'];
+        }
+
+        return $treeSha;
+    }
+
+    /**
+     * The entries of a tree, with paths relative to it. Links (mode 120000) and submodules are left out. Any value of
+     * `recursive` makes GitHub recurse, so it is only sent when wanted.
+     *
+     * @return array{entries: list<array{path: string, type: 'blob'|'tree', sha: string, size: int}>, truncated: bool}
+     *
+     * @throws IncompleteListingException When the request budget is spent.
+     */
+    private function tree(string $repository, string $treeSha, bool $recursive, int &$budget): array
+    {
+        if ($budget-- <= 0) {
+            throw new IncompleteListingException('The directory has too many subdirectories to list.');
+        }
+
+        $response = $this->get($this->repositoryPath($repository).'/git/trees/'.rawurlencode($treeSha), $recursive ? ['recursive' => 1] : [])->json();
+
+        if (! is_array($response) || ! is_array($response['tree'] ?? null)) {
+            throw new UnexpectedValueException('GitHub did not return the tree of the directory.');
+        }
+
+        $entries = [];
+
+        foreach ($response['tree'] as $entry) {
+            if (is_array($entry) && is_string($entry['path'] ?? null) && is_string($entry['sha'] ?? null) && in_array($entry['type'] ?? null, ['blob', 'tree'], true)
+                && ($entry['mode'] ?? null) !== '120000') {
+                $entries[] = ['path' => $entry['path'], 'type' => $entry['type'], 'sha' => $entry['sha'], 'size' => (int) ($entry['size'] ?? 0)];
+            }
+        }
+
+        return ['entries' => $entries, 'truncated' => (bool) ($response['truncated'] ?? false)];
     }
 
     /**

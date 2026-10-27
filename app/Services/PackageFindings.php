@@ -13,7 +13,8 @@ use Illuminate\Support\Str;
 /**
  * Turns matched package versions into findings: one per deployment, package and advisory (handover 5.4: never the
  * version, so upgrading to a release that is still affected keeps the finding). Versions of the same package that
- * share an advisory, as npm can install, make one finding listing every version. The severity is the advisory's,
+ * share an advisory, as npm can install, make one finding listing every version and every lockfile holding one: a
+ * package in both a workspace root lockfile and a nested one is one finding. The severity is the advisory's,
  * raised when CISA KEV lists one of its CVE ids (see KnownExploitation).
  */
 class PackageFindings
@@ -65,6 +66,7 @@ class PackageFindings
         $isDev = $components->every(fn (Component $component): bool => $component->is_dev);
 
         $versions = $components->pluck('version')->unique()->sort(version_compare(...))->values();
+        $lockfiles = $components->pluck('lockfile_path')->unique()->sort()->values();
         $fixes = $components
             ->map(fn (Component $component): ?string => $advisory->fixedVersionFor($component->ecosystem, $component->name, $component->version))
             ->filter()
@@ -75,7 +77,7 @@ class PackageFindings
         $detail = collect([
             "{$component->name} {$versions->join(', ')}",
             $fixes->isEmpty() ? __('chưa có bản sửa', [], $locale) : __('nâng lên :version', ['version' => $fixes->join(', ')], $locale),
-            $component->lockfile_path,
+            $lockfiles->join(', '),
             $isDev ? __('chỉ dùng khi phát triển', [], $locale) : null,
         ])->filter()->join(' · ');
 
@@ -84,7 +86,8 @@ class PackageFindings
             'package' => $component->name,
             'version' => $versions->join(', '),
             'fixed' => $fixes->isEmpty() ? null : $fixes->join(', '),
-            'lockfile' => $component->lockfile_path,
+            'lockfile' => $lockfiles->first(),
+            'lockfiles' => $lockfiles->all(),
             'is_dev' => $isDev,
             'advisory' => $advisory->reference(),
             'advisory_title' => $advisory->title,

@@ -187,8 +187,8 @@ it('removes the lockfiles marked for removal', function () {
     actingAsAdmin();
     $service = Service::factory()->create();
     app(UpdateProductionInventory::class)->handle($service, [], [
-        ['name' => 'composer.lock', 'content' => lockfileFixture('composer.lock')],
-        ['name' => 'Gemfile.lock', 'content' => lockfileFixture('Gemfile.lock')],
+        ['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')],
+        ['path' => 'Gemfile.lock', 'content' => lockfileFixture('Gemfile.lock')],
     ]);
 
     post("/admin/services/{$service->id}", [
@@ -197,6 +197,76 @@ it('removes the lockfiles marked for removal', function () {
     ])->assertSessionHasNoErrors();
 
     expect($service->productionDeployment->lockfiles()->pluck('path')->all())->toBe(['composer.lock']);
+});
+
+it('uploads lockfiles of the same kind into subdirectories of the service', function () {
+    actingAsAdmin();
+
+    post('/admin/services', serviceForm([
+        'lockfile_uploads' => [
+            UploadedFile::fake()->createWithContent('package-lock.json', '{"lockfileVersion":3}'),
+            UploadedFile::fake()->createWithContent('package-lock.json', '{"lockfileVersion":3}'),
+            UploadedFile::fake()->createWithContent('composer.lock', '{"packages":[]}'),
+        ],
+        'lockfile_directories' => [' /frontend/ ', 'packages/@acme/admin', ''],
+    ]))->assertSessionHasNoErrors();
+
+    expect(Lockfile::orderBy('path')->get()->map(fn (Lockfile $lockfile): array => [$lockfile->path, $lockfile->ecosystem->value])->all())
+        ->toBe([['composer.lock', 'packagist'], ['frontend/package-lock.json', 'npm'], ['packages/@acme/admin/package-lock.json', 'npm']]);
+});
+
+it('rejects an upload directory outside the service directory or with odd characters', function (string $directory) {
+    actingAsAdmin();
+
+    post('/admin/services', serviceForm([
+        'lockfile_uploads' => [UploadedFile::fake()->createWithContent('composer.lock', '{}')],
+        'lockfile_directories' => [$directory],
+    ]))->assertSessionHasErrors(['lockfile_directories.0' => 'Thư mục chỉ gồm chữ, số và . _ @ + -, các cấp ngăn bằng "/", không có ".." (tối đa 255 ký tự).']);
+
+    expect(Lockfile::count())->toBe(0);
+})->with(['..', '../shared', 'apps/../..', './web', 'a//b', 'a\b', 'my app', "we\nb", "we\0b", str_repeat('a/', 124)]);
+
+it('rejects two uploads at the same path, and uploading a lockfile while removing it', function () {
+    actingAsAdmin();
+    $service = Service::factory()->create();
+    app(UpdateProductionInventory::class)->handle($service, [], [['path' => 'web/package-lock.json', 'content' => '{}']]);
+    $form = ['_method' => 'put', ...serviceForm(['project_id' => $service->project_id, 'name' => $service->name, 'slug' => $service->slug])];
+
+    post("/admin/services/{$service->id}", [
+        ...$form,
+        'lockfile_uploads' => [UploadedFile::fake()->createWithContent('package-lock.json', '{"a":1}'), UploadedFile::fake()->createWithContent('package-lock.json', '{"b":1}')],
+        'lockfile_directories' => ['api', 'api/'],
+    ])->assertSessionHasErrors(['lockfile_directories.1' => 'Đã chọn một file khác cho api/package-lock.json.']);
+
+    post("/admin/services/{$service->id}", [
+        ...$form,
+        'lockfile_uploads' => [UploadedFile::fake()->createWithContent('package-lock.json', '{"a":1}')],
+        'lockfile_directories' => ['web'],
+        'removed_lockfiles' => ['web/package-lock.json'],
+    ])->assertSessionHasErrors(['lockfile_directories.0' => 'Không vừa xóa vừa tải lên web/package-lock.json. Bỏ dấu xóa để thay file cũ.']);
+
+    post("/admin/services/{$service->id}", [...$form, 'removed_lockfiles' => ['package-lock.json']])
+        ->assertSessionHasErrors(['removed_lockfiles.0' => 'Service không có lockfile package-lock.json.']);
+
+    post("/admin/services/{$service->id}", [...$form, 'removed_lockfiles' => [['web/package-lock.json']]])
+        ->assertSessionHasErrors(['removed_lockfiles.0']);
+
+    expect($service->productionDeployment->lockfiles()->sole())->path->toBe('web/package-lock.json')->content->toBe('{}');
+});
+
+it('replaces the uploaded lockfile at the same path', function () {
+    actingAsAdmin();
+    $service = Service::factory()->create();
+    app(UpdateProductionInventory::class)->handle($service, [], [['path' => 'web/package-lock.json', 'content' => '{}'], ['path' => 'package-lock.json', 'content' => '{}']]);
+
+    post("/admin/services/{$service->id}", [
+        '_method' => 'put',
+        ...serviceForm(['project_id' => $service->project_id, 'name' => $service->name, 'slug' => $service->slug]),
+        'lockfile_uploads' => [UploadedFile::fake()->createWithContent('package-lock.json', '{"new":true}')],
+        'lockfile_directories' => ['web'],
+    ])->assertSessionHasNoErrors();
+
+    expect($service->productionDeployment->lockfiles()->orderBy('path')->pluck('content', 'path')->all())->toBe(['package-lock.json' => '{}', 'web/package-lock.json' => '{"new":true}']);
 });
 
 it('shows the package count and the vulnerable packages of each lockfile', function () {
@@ -208,8 +278,8 @@ it('shows the package count and the vulnerable packages of each lockfile', funct
     $unreadable = Service::factory()->create(['name' => 'shop-web']);
     $waiting = Service::factory()->create(['name' => 'shop-admin']);
     Service::factory()->create(['name' => 'shop-jobs']);
-    app(UpdateProductionInventory::class)->handle($scanned, [], [['name' => 'composer.lock', 'content' => lockfileFixture('composer.lock')], ['name' => 'Gemfile.lock', 'content' => lockfileFixture('Gemfile.lock')]]);
-    app(UpdateProductionInventory::class)->handle($unreadable, [], [['name' => 'package-lock.json', 'content' => 'not json']]);
+    app(UpdateProductionInventory::class)->handle($scanned, [], [['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')], ['path' => 'Gemfile.lock', 'content' => lockfileFixture('Gemfile.lock')]]);
+    app(UpdateProductionInventory::class)->handle($unreadable, [], [['path' => 'package-lock.json', 'content' => 'not json']]);
     Lockfile::factory()->for(Deployment::factory()->for($waiting))->create();
 
     get('/admin/services')->assertInertia(fn (Assert $page) => $page
@@ -225,6 +295,24 @@ it('shows the package count and the vulnerable packages of each lockfile', funct
         ->where('services.data.2.lockfiles', [])
         ->where('services.data.3.lockfiles.0.state.label', 'Không đọc được')
         ->where('services.data.3.lockfiles.0.error', 'Not valid JSON: Syntax error.'));
+});
+
+it('counts a vulnerable package for every lockfile holding it', function () {
+    $this->travelTo('2026-10-23 10:00:00');
+    actingAsAdmin();
+    fakePackagist();
+    $service = Service::factory()->create(['name' => 'shop-api']);
+    app(UpdateProductionInventory::class)->handle($service, [], [
+        ['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')],
+        ['path' => 'admin/composer.lock', 'content' => lockfileFixture('composer.lock')],
+    ]);
+
+    get('/admin/services')->assertInertia(fn (Assert $page) => $page
+        ->where('services.data.0.lockfiles.0.path', 'admin/composer.lock')
+        ->where('services.data.0.lockfiles.0.vulnerable.label', '3 có lỗ hổng')
+        ->where('services.data.0.lockfiles.1.path', 'composer.lock')
+        ->where('services.data.0.lockfiles.1.vulnerable.label', '3 có lỗ hổng')
+        ->where('services.data.0.open_findings_count', 4));
 });
 
 it('filters services by project', function () {
@@ -375,6 +463,43 @@ it('reads the lockfiles again when the service moves to another directory', func
     post("/admin/services/{$service->id}", [...$form, 'repository_path' => '/apps/api'])->assertSessionHasNoErrors();
     Queue::assertPushed(SyncServiceLockfilesJob::class, 1);
     expect($service->fresh()->lockfiles_commit_sha)->toBe(GITHUB_COMMIT);
+});
+
+it('saves the paths to leave out of the lockfile search and reads the lockfiles again', function () {
+    actingAsAdmin();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+    $service = Service::factory()->syncingLockfiles('acme/shop')->create(['repository_path' => '/']);
+    $form = serviceForm(['project_id' => $service->project_id, 'name' => $service->name, 'slug' => $service->slug, 'repository' => 'acme/shop', '_method' => 'put']);
+
+    post("/admin/services/{$service->id}", [...$form, 'lockfile_excludes' => "legacy/\n\n /tools/old/package-lock.json \nlegacy"])->assertSessionHasNoErrors();
+
+    expect($service->fresh()->lockfile_excludes)->toBe(['legacy', 'tools/old/package-lock.json']);
+    Queue::assertPushed(SyncServiceLockfilesJob::class, 1);
+
+    get("/admin/services/{$service->id}/edit")->assertInertia(fn (Assert $page) => $page
+        ->where('service.lockfile_excludes', "legacy\ntools/old/package-lock.json")
+        ->where('lockfileSkippedDirectories', config('psm.github.lockfile_search.skip_directories')));
+
+    post("/admin/services/{$service->id}", [...$form, 'lockfile_excludes' => ''])->assertSessionHasNoErrors();
+    expect($service->fresh()->lockfile_excludes)->toBeNull();
+});
+
+it('ignores the paths to leave out of a service that uploads its lockfiles', function () {
+    actingAsAdmin();
+
+    post('/admin/services', serviceForm(['lockfile_excludes' => '../old']))->assertSessionHasNoErrors();
+
+    expect(Service::sole()->lockfile_excludes)->toBeNull();
+});
+
+it('rejects a path to leave out that climbs out of the service directory', function () {
+    actingAsAdmin();
+    $service = Service::factory()->syncingLockfiles('acme/shop')->create();
+
+    post("/admin/services/{$service->id}", [
+        '_method' => 'put',
+        ...serviceForm(['project_id' => $service->project_id, 'name' => $service->name, 'slug' => $service->slug, 'repository' => 'acme/shop', 'lockfile_excludes' => "legacy\n../other"]),
+    ])->assertSessionHasErrors(['lockfile_excludes' => '"../other" không hợp lệ: mỗi dòng là một đường dẫn trong thư mục service, chỉ gồm chữ, số và . _ @ + -, không có "..".']);
 });
 
 it('forgets the last sync when the service moves to another repository', function () {

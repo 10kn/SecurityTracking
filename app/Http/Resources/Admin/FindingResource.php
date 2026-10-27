@@ -32,6 +32,7 @@ class FindingResource extends JsonResource
             'severity' => ['value' => $this->severity->value, 'label' => $this->severity->getLabel()],
             'title' => $this->localizedTitle(),
             'rule' => $this->rule->getLabel(),
+            'lockfiles' => $this->lockfilePaths(),
             'service' => ['id' => $service->id, 'name' => $service->name, 'project' => $service->project->name],
             'team' => $this->team->name,
             'first_seen' => $this->date($this->first_seen_at),

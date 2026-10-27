@@ -210,6 +210,12 @@ return [
     | Enterprise Server, set `host` and `api_url`. When GitHub has not answered successfully within
     | `stale_after_minutes` the admin is alerted; the lockfiles read last stay in use meanwhile.
     |
+    | Lockfiles are searched in the service directory and its subdirectories, at most `lockfile_search.max_depth`
+    | levels below it (frontend/package-lock.json is 1 level). Directories named in `skip_directories` are never
+    | entered: installed dependencies, and test fixtures, which are often vulnerable on purpose. A service adds its
+    | own exclusions in its form. Beyond `max_tree_requests`, `max_lockfiles` or `max_total_kilobytes` the sync stops,
+    | keeps the lockfiles read before and alerts the admin.
+    |
     */
 
     'github' => [
@@ -222,6 +228,14 @@ return [
         'sync_time' => env('PSM_GITHUB_SYNC_TIME', '06:30'),
         'timezone' => env('PSM_GITHUB_SYNC_TIMEZONE', 'Asia/Ho_Chi_Minh'),
         'stale_after_minutes' => (int) env('PSM_GITHUB_STALE_AFTER_MINUTES', 1500),
+
+        'lockfile_search' => [
+            'max_depth' => 4,
+            'max_tree_requests' => 50,
+            'max_lockfiles' => 20,
+            'max_total_kilobytes' => 102400,
+            'skip_directories' => ['node_modules', 'vendor', 'bower_components', '.git', '.yarn', 'test', 'tests', '__tests__', 'spec', 'fixtures', '__fixtures__', 'testdata'],
+        ],
     ],
 
     /*

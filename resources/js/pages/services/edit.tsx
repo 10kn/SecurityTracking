@@ -21,6 +21,8 @@ interface Props extends ServiceFormOptions {
         repository_path: string;
         repository: string | null;
         repository_branch: string | null;
+        /** One path per line. */
+        lockfile_excludes: string;
         project: { id: number; name: string; team: string };
         runtimes: { technology: string; raw_version: string }[];
         lockfiles: ExistingLockfile[];
@@ -39,8 +41,10 @@ export default function ServicesEdit({ service, ...options }: Props) {
         repository_path: service.repository_path,
         repository: service.repository,
         repository_branch: service.repository_branch ?? '',
+        lockfile_excludes: service.lockfile_excludes,
         runtimes: service.runtimes.map((runtime) => newRuntimeRow(runtime.technology, runtime.raw_version)),
         lockfile_uploads: [],
+        lockfile_directories: [],
         removed_lockfiles: [],
     });
 
@@ -61,8 +65,8 @@ export default function ServicesEdit({ service, ...options }: Props) {
                     form.post(update.url(service.id), {
                         preserveScroll: true,
                         onSuccess: () => {
-                            form.setDefaults({ ...form.data, lockfile_uploads: [], removed_lockfiles: [] });
-                            form.reset('lockfile_uploads', 'removed_lockfiles');
+                            form.setDefaults({ ...form.data, lockfile_uploads: [], lockfile_directories: [], removed_lockfiles: [] });
+                            form.reset('lockfile_uploads', 'lockfile_directories', 'removed_lockfiles');
                         },
                     });
                 }}

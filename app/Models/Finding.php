@@ -63,6 +63,20 @@ class Finding extends Model
     }
 
     /**
+     * The lockfiles holding the affected package versions, relative to the service directory, e.g.
+     * ["frontend/package-lock.json"]. Findings opened before lockfiles were searched in subdirectories have one.
+     *
+     * @return list<string>
+     */
+    public function lockfilePaths(): array
+    {
+        $context = $this->context ?? [];
+        $paths = $context['lockfiles'] ?? (isset($context['lockfile']) ? [$context['lockfile']] : []);
+
+        return array_values(array_filter($paths, is_string(...)));
+    }
+
+    /**
      * Whether an admin marked the finding as read since it opened or last rose in severity.
      */
     public function isAcknowledged(): bool

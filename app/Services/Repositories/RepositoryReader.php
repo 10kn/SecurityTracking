@@ -3,6 +3,7 @@
 namespace App\Services\Repositories;
 
 use App\Enums\LockfileSource;
+use Closure;
 use Throwable;
 
 /**
@@ -53,14 +54,19 @@ interface RepositoryReader
     public function latestCommitSha(string $repository, ?string $branch): string;
 
     /**
-     * The files directly in $directory ("" is the root) at the commit, with their size in bytes.
+     * The files named one of $names in $directory ("" is the root) or its subdirectories, at most $maxDepth levels
+     * below it, at the commit, with their size in bytes. Links and submodules are left out. The listing is complete or
+     * it throws: a file missing from it does not exist.
      *
-     * @return array<string, int> By file name; directories and links are left out.
+     * @param  list<string>  $names  E.g. "composer.lock".
+     * @param  Closure(string): bool  $isExcluded  Whether a path relative to $directory, of a directory or a file, is left out; an excluded directory is not entered.
+     * @return array<string, int> By path relative to $directory, e.g. "frontend/package-lock.json".
      *
      * @throws RepositoryNotFoundException When the directory does not exist at the commit.
+     * @throws IncompleteListingException When the directory is too large to list.
      * @throws Throwable When the host could not be reached.
      */
-    public function filesIn(string $repository, string $directory, string $commitSha): array;
+    public function findFiles(string $repository, string $directory, string $commitSha, array $names, int $maxDepth, Closure $isExcluded): array;
 
     /**
      * The content of the file at $path at the commit.

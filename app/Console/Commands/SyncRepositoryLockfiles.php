@@ -7,6 +7,7 @@ use App\Models\Service;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Throwable;
 
 #[Signature('psm:sync-lockfiles')]
@@ -25,6 +26,8 @@ class SyncRepositoryLockfiles extends Command
         foreach ($services as $service) {
             try {
                 $syncServiceLockfiles->handle($service);
+            } catch (LockTimeoutException) {
+                $this->components->warn("{$service->project->name} / {$service->name}: another sync of this service is still running.");
             } catch (Throwable $exception) {
                 $failed = true;
                 report($exception);
