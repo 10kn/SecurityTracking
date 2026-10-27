@@ -15,9 +15,9 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Reads a service's lockfiles from its repository (handover D12): at the tip of the service's branch, the
- * composer.lock, Gemfile.lock and package-lock.json found directly in the service's directory. The repository is then
- * the only source of the service's lockfiles: one no longer in the directory is removed, uploaded or not.
+ * Reads a service's lockfiles from its repository (handover D12): at the tip of the service's branch, the lockfiles
+ * (LockfileFormat) found directly in the service's directory. The repository is then the only source of the
+ * service's lockfiles: one no longer in the directory is removed, uploaded or not.
  *
  * A service whose lockfiles changed is evaluated again (DeploymentInventoryChanged), as after an upload.
  */

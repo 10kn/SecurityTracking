@@ -205,7 +205,7 @@ class ServiceRequest extends FormRequest
     {
         return function (string $attribute, mixed $value, Closure $fail): void {
             if (! $value instanceof UploadedFile || Ecosystem::forLockfile($value->getClientOriginalName()) === null) {
-                $fail(__('Chỉ nhận composer.lock, Gemfile.lock hoặc package-lock.json.'));
+                $fail(__('Chỉ nhận composer.lock, Gemfile.lock, package-lock.json, pnpm-lock.yaml hoặc yarn.lock.'));
             }
         };
     }

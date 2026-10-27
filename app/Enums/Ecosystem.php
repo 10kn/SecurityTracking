@@ -2,11 +2,6 @@
 
 namespace App\Enums;
 
-use App\Services\Lockfiles\ComposerLockParser;
-use App\Services\Lockfiles\GemfileLockParser;
-use App\Services\Lockfiles\LockfileParser;
-use App\Services\Lockfiles\NpmLockParser;
-
 enum Ecosystem: string
 {
     case Packagist = 'packagist';
@@ -29,11 +24,7 @@ enum Ecosystem: string
      */
     public static function lockfileNames(): array
     {
-        return [
-            'composer.lock' => self::Packagist,
-            'Gemfile.lock' => self::Rubygems,
-            'package-lock.json' => self::Npm,
-        ];
+        return collect(LockfileFormat::cases())->mapWithKeys(fn (LockfileFormat $format): array => [$format->value => $format->ecosystem()])->all();
     }
 
     public static function forLockfile(string $filename): ?self
@@ -73,15 +64,6 @@ enum Ecosystem: string
             self::Packagist => 'composer',
             self::Rubygems => 'gem',
             self::Npm => 'npm',
-        };
-    }
-
-    public function lockfileParser(): LockfileParser
-    {
-        return match ($this) {
-            self::Packagist => app(ComposerLockParser::class),
-            self::Rubygems => app(GemfileLockParser::class),
-            self::Npm => app(NpmLockParser::class),
         };
     }
 }
