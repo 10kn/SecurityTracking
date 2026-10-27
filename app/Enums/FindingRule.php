@@ -32,20 +32,15 @@ enum FindingRule: string
      */
     public function title(array $context, ?string $locale = null): ?string
     {
-        $parts = match ($this) {
-            self::RuntimeEol => ['technology', 'branch'],
-            self::RuntimeOutdatedSecurity => ['technology', 'branch', 'latest'],
-            self::DependencyVulnerable => ['advisory', 'package'],
-            default => null,
-        };
+        $template = $this->titleTemplate();
 
-        if ($parts === null) {
+        if ($template === null) {
             return null;
         }
 
         $replace = [];
 
-        foreach ($parts as $part) {
+        foreach ($this->titleParts() as $part) {
             if (! is_string($context[$part] ?? null)) {
                 return null;
             }
@@ -53,10 +48,32 @@ enum FindingRule: string
             $replace[$part] = $context[$part];
         }
 
+        return __($template, $replace, $locale);
+    }
+
+    /**
+     * The translation key of the title, whose placeholders are context keys, e.g. ":technology :branch hết hỗ trợ".
+     * Null when the rule has no title of its own.
+     */
+    public function titleTemplate(): ?string
+    {
         return match ($this) {
-            self::RuntimeEol => __(':technology :branch hết hỗ trợ', $replace, $locale),
-            self::RuntimeOutdatedSecurity => __(':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest', $replace, $locale),
-            default => __(':advisory trong :package', $replace, $locale),
+            self::RuntimeEol => ':technology :branch hết hỗ trợ',
+            self::RuntimeOutdatedSecurity => ':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest',
+            self::DependencyVulnerable => ':advisory trong :package',
+            default => null,
         };
+    }
+
+    /**
+     * The context keys the title is built from, in the order of the template.
+     *
+     * @return list<string>
+     */
+    public function titleParts(): array
+    {
+        preg_match_all('/:(\w+)/', (string) $this->titleTemplate(), $matches);
+
+        return $matches[1];
     }
 }

@@ -87,6 +87,93 @@ it('shows titles in the admin language, keeping the stored one for Google Chat',
     expect($stored->fresh()->title)->toBe('PHP 8.1 hết hỗ trợ');
 });
 
+/**
+ * A finding of each rule that opens findings, the package one in a service of another team.
+ *
+ * @return array{package: Finding, outdated: Finding, eol: Finding}
+ */
+function createSearchableFindings(Deployment $deployment): array
+{
+    $booking = Deployment::factory()->for(Service::factory()->for(Project::factory()->for(Team::factory()->state(['name' => 'Travel']))->state(['name' => 'Booking']))->state(['name' => 'booking-web']))->create();
+
+    return [
+        'package' => Finding::factory()->for($booking)->create(['rule' => FindingRule::DependencyVulnerable, 'severity' => Severity::Critical, 'title' => 'GHSA-754f-8gm6-c4r2 trong symfony/http-kernel', 'context' => [
+            'ecosystem' => 'composer', 'package' => 'symfony/http-kernel', 'version' => '7.3.1', 'fixed' => '7.3.4', 'advisory' => 'GHSA-754f-8gm6-c4r2', 'advisory_title' => 'Session fixation', 'aliases' => ['CVE-2026-24739'],
+        ]]),
+        'outdated' => Finding::factory()->for($deployment)->create(['rule' => FindingRule::RuntimeOutdatedSecurity, 'severity' => Severity::High, 'title' => 'PHP 8.5 thiếu bản vá bảo mật, cần nâng lên 8.5.12', 'context' => ['technology' => 'PHP', 'branch' => '8.5', 'latest' => '8.5.12']]),
+        'eol' => Finding::factory()->for($deployment)->create(['rule' => FindingRule::RuntimeEol, 'severity' => Severity::Medium, 'title' => 'PHP 8.1 hết hỗ trợ', 'context' => ['technology' => 'PHP', 'branch' => '8.1']]),
+    ];
+}
+
+/**
+ * The rows the Findings page shows for this query string.
+ *
+ * @param  array<string, string>  $query
+ * @return list<array<string, mixed>>
+ */
+function findingRows(array $query): array
+{
+    return get('/admin/findings?'.http_build_query($query))->assertOk()->inertiaProps('findings.data');
+}
+
+it('searches in the words a japanese admin reads, and in the title copied from Google Chat', function (string $search, array $titles) {
+    actingAsAdmin()->update(['locale' => Locale::Japanese]);
+    createSearchableFindings($this->deployment);
+
+    $rows = findingRows(['search' => $search]);
+
+    expect(array_column($rows, 'title'))->toBe($titles);
+})->with([
+    'title words' => ['サポート終了', ['PHP 8.1 はサポート終了']],
+    'version and title words' => ['PHP 8.1 サポート終了', ['PHP 8.1 はサポート終了']],
+    'full-width space' => ['PHP　セキュリティパッチ', ['PHP 8.5 にセキュリティパッチ未適用、8.5.12 へ更新が必要']],
+    'rule label' => ['パッケージの脆弱性', ['symfony/http-kernel の GHSA-754f-8gm6-c4r2']],
+    'stored title' => ['hết hỗ trợ', ['PHP 8.1 はサポート終了']],
+]);
+
+it('searches in the words a vietnamese admin reads', function (string $search, array $titles) {
+    actingAsAdmin();
+    createSearchableFindings($this->deployment);
+
+    $rows = findingRows(['search' => $search]);
+
+    expect(array_column($rows, 'title'))->toBe($titles);
+})->with([
+    'title words' => ['PHP hết hỗ trợ', ['PHP 8.1 hết hỗ trợ']],
+    'rule label' => ['Runtime thiếu bản vá', ['PHP 8.5 thiếu bản vá bảo mật, cần nâng lên 8.5.12']],
+    'japanese words' => ['サポート終了', []],
+]);
+
+it('searches the parts of a finding that read the same in every language', function (string $search, array $found, Locale $locale) {
+    actingAsAdmin()->update(['locale' => $locale]);
+    $findings = createSearchableFindings($this->deployment);
+
+    $rows = findingRows(['search' => $search]);
+
+    expect(array_column($rows, 'id'))->toBe(array_map(fn (string $key): int => $findings[$key]->id, $found));
+})->with([
+    'package' => ['http-kernel', ['package']],
+    'cve alias' => ['cve-2026-24739', ['package']],
+    'fixed version' => ['7.3.4', ['package']],
+    'service' => ['shop-api', ['outdated', 'eol']],
+    'project' => ['Booking', ['package']],
+    'team and technology' => ['Commerce PHP', ['outdated', 'eol']],
+    'words of different findings' => ['PHP http-kernel', []],
+    'nothing' => ['wordpress', []],
+])->with([Locale::Vietnamese, Locale::Japanese]);
+
+it('sorts on the title the admin reads', function (Locale $locale, array $titles) {
+    actingAsAdmin()->update(['locale' => $locale]);
+    createSearchableFindings($this->deployment);
+
+    $rows = findingRows(['sort' => 'title']);
+
+    expect(array_column($rows, 'title'))->toBe($titles);
+})->with([
+    'vietnamese' => [Locale::Vietnamese, ['GHSA-754f-8gm6-c4r2 trong symfony/http-kernel', 'PHP 8.1 hết hỗ trợ', 'PHP 8.5 thiếu bản vá bảo mật, cần nâng lên 8.5.12']],
+    'japanese' => [Locale::Japanese, ['PHP 8.1 はサポート終了', 'PHP 8.5 にセキュリティパッチ未適用、8.5.12 へ更新が必要', 'symfony/http-kernel の GHSA-754f-8gm6-c4r2']],
+]);
+
 it('shows times in the digest timezone, as Google Chat does', function () {
     actingAsAdmin();
     Finding::factory()->for($this->deployment)->create(['first_seen_at' => '2026-10-23 18:00:00', 'sla_due_at' => '2026-10-27 20:00:00', 'acknowledged_at' => '2026-10-23 18:30:00']);
