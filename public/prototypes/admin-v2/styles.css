@@ -1626,6 +1626,184 @@ select.input {
     font-size: var(--fs-sm);
 }
 
+/* --------------------------------------------------------------- Overview */
+
+/* Sự cố giám sát: các callout xếp sát nhau, chỉ hiện khi có vấn đề. */
+.exceptions {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.exceptions .callout {
+    align-items: flex-start;
+    margin-bottom: 0;
+}
+
+.exceptions .callout > svg,
+.exceptions .callout > .state {
+    margin-top: 3px;
+}
+
+.callout > .state.unknown::before {
+    width: 12px;
+    height: 12px;
+}
+
+.callout-list {
+    display: grid;
+    gap: 4px;
+    margin: 6px 0 0;
+    padding: 0;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    list-style: none;
+}
+
+.callout-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 12px;
+}
+
+.callout-list .link,
+.callout-details summary {
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+}
+
+.callout-details {
+    margin-top: 4px;
+    font-size: var(--fs-sm);
+}
+
+.callout-details summary {
+    width: fit-content;
+    color: var(--link);
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.callout-details p {
+    margin-top: 4px;
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+}
+
+/* Hai danh sách việc cần xử lý: số đếm lớn bên phải tiêu đề, tối đa 3 mục. */
+.work {
+    display: flex;
+    flex-direction: column;
+}
+
+.work .card-header {
+    align-items: flex-start;
+    flex-wrap: nowrap;
+}
+
+.work-count {
+    font-size: var(--fs-h1);
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+}
+
+a.work-count:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.work-list {
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.work-list li {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.work-list li:last-child {
+    border-bottom: 0;
+}
+
+.work-list .badge {
+    justify-self: start;
+}
+
+.work-main {
+    min-width: 0;
+}
+
+.work-main .cell-title {
+    overflow-wrap: anywhere;
+}
+
+.kev {
+    color: var(--danger-text);
+    font-weight: 500;
+}
+
+.empty.compact {
+    flex: 1;
+    align-content: center;
+    padding: 32px 20px;
+}
+
+.empty.compact strong {
+    font-size: var(--fs-base);
+}
+
+/* Dòng bằng chứng cuối trang: chữ xám, không thành một khối riêng. */
+.evidence {
+    margin-top: 20px;
+    color: var(--text-3);
+    font-size: var(--fs-sm);
+}
+
+.evidence p {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 0;
+}
+
+.evidence p > span:not(.hidden) ~ span:not(.hidden)::before {
+    margin: 0 8px;
+    content: '·';
+}
+
+.evidence .overdue {
+    color: var(--danger-text);
+    font-weight: 500;
+}
+
+.evidence summary {
+    width: fit-content;
+    margin-top: 6px;
+    color: var(--text-2);
+    cursor: pointer;
+}
+
+.evidence .list {
+    max-width: 560px;
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.evidence .list li {
+    padding: 8px 16px;
+    font-size: var(--fs-sm);
+}
+
 /* ------------------------------------------------------------ Responsive */
 
 @media (max-width: 1080px) {
@@ -1722,8 +1900,49 @@ select.input {
     .card-header,
     .card-body,
     .card-footer,
-    .list li {
+    .list li,
+    .work-list li {
         padding-inline: 14px;
+    }
+
+    .work-list li {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .work-list .sla {
+        grid-row: 1;
+        grid-column: 2;
+    }
+
+    .work-list .work-main {
+        grid-column: 1 / -1;
+    }
+
+    .callout {
+        padding-inline: 14px;
+    }
+
+    .exceptions .callout {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 6px 12px;
+    }
+
+    .exceptions .callout > .link {
+        grid-column: 2;
+    }
+
+    .evidence p {
+        flex-direction: column;
+    }
+
+    .evidence p > span:not(.hidden) ~ span:not(.hidden)::before {
+        content: none;
+    }
+
+    .evidence .list li {
+        flex-wrap: wrap;
+        gap: 0 12px;
     }
 
     .proto {
