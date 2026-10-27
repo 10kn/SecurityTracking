@@ -70,7 +70,7 @@ it('scans the packages of an uploaded lockfile and resolves their findings when 
     fakeOsv();
     $service = Service::factory()->create();
 
-    app(UpdateProductionInventory::class)->handle($service, [], [['name' => 'package-lock.json', 'content' => lockfileFixture('package-lock.json')]]);
+    app(UpdateProductionInventory::class)->handle($service, [], [['path' => 'package-lock.json', 'content' => lockfileFixture('package-lock.json')]]);
 
     expect(Finding::open()->where('rule', FindingRule::DependencyVulnerable)->count())->toBe(7);
 
@@ -90,7 +90,7 @@ it('still evaluates the runtimes and sends their alerts when the package source 
     $service = Service::factory()->create();
     $service->project->team->update(['google_chat_webhook_url' => chatWebhook('COMMERCE')]);
 
-    app(UpdateProductionInventory::class)->handle($service, [$php->value => '8.3.35'], [['name' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]]);
+    app(UpdateProductionInventory::class)->handle($service, [$php->value => '8.3.35'], [['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]]);
 
     expect(Finding::sole()->rule)->toBe(FindingRule::RuntimeOutdatedSecurity)
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(1)

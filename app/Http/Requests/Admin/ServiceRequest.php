@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Services\Repositories\RepositoryReader;
+use App\Support\LockfilePath;
 use App\Support\Slug;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -59,11 +60,15 @@ class ServiceRequest extends FormRequest
                 Rule::when($this->input('repository') !== ($service instanceof Service ? $service->repository : null), [Rule::exists(AccessibleRepository::class, 'full_name')]),
             ],
             'repository_branch' => ['nullable', 'string', 'max:255', 'regex:'.Service::REPOSITORY_BRANCH_PATTERN, 'not_regex:/\.\./'],
+            // Only a service reading its lockfiles from GitHub searches for them.
+            'lockfile_excludes' => [Rule::excludeIf(! $syncsLockfiles), 'nullable', 'string', 'max:5000', $this->lockfileExcludesRule()],
             'runtimes' => ['array'],
             'runtimes.*.technology' => ['required', 'distinct', Rule::enum(Technology::class)],
             'runtimes.*.raw_version' => ['required', 'string', 'max:'.Runtime::RAW_VERSION_MAX_LENGTH, 'regex:'.Runtime::RAW_VERSION_PATTERN],
             'lockfile_uploads' => ['array', Rule::prohibitedIf($syncsLockfiles)],
             'lockfile_uploads.*' => ['file', 'max:'.Lockfile::MAX_UPLOAD_KILOBYTES, $this->lockfileNameRule()],
+            'lockfile_directories' => ['array'],
+            'lockfile_directories.*' => ['nullable', 'string', 'max:'.LockfilePath::MAX_LENGTH],
             'removed_lockfiles' => ['array', Rule::prohibitedIf($syncsLockfiles)],
             'removed_lockfiles.*' => ['string'],
         ];
@@ -115,6 +120,35 @@ class ServiceRequest extends FormRequest
                     $validator->errors()->add('repository_branch', __('Không thấy branch :branch trong :repository.', ['branch' => $branch, 'repository' => $repository]));
                 }
             },
+            function (Validator $validator): void {
+                if ($validator->errors()->hasAny(['lockfile_uploads', 'lockfile_uploads.*', 'lockfile_directories', 'lockfile_directories.*', 'removed_lockfiles', 'removed_lockfiles.*'])) {
+                    return;
+                }
+
+                $service = $this->route('service');
+                $existingPaths = $service instanceof Service ? $service->productionDeployment?->lockfiles()->pluck('path')->all() ?? [] : [];
+                $removedPaths = Arr::wrap($this->input('removed_lockfiles', []));
+
+                foreach (array_diff($removedPaths, $existingPaths) as $index => $path) {
+                    $validator->errors()->add("removed_lockfiles.{$index}", __('Service không có lockfile :file.', ['file' => $path]));
+                }
+
+                $paths = [];
+
+                foreach (array_keys(Arr::wrap($this->file('lockfile_uploads', []))) as $index) {
+                    $path = $this->uploadedLockfilePath($index);
+
+                    if (! LockfilePath::isValid($path)) {
+                        $validator->errors()->add("lockfile_directories.{$index}", __('Thư mục chỉ gồm chữ, số và . _ @ + -, các cấp ngăn bằng "/", không có ".." (tối đa 255 ký tự).'));
+                    } elseif (in_array($path, $paths, true)) {
+                        $validator->errors()->add("lockfile_directories.{$index}", __('Đã chọn một file khác cho :file.', ['file' => $path]));
+                    } elseif (in_array($path, $removedPaths, true)) {
+                        $validator->errors()->add("lockfile_directories.{$index}", __('Không vừa xóa vừa tải lên :file. Bỏ dấu xóa để thay file cũ.', ['file' => $path]));
+                    }
+
+                    $paths[] = $path;
+                }
+            },
         ];
     }
 
@@ -135,6 +169,8 @@ class ServiceRequest extends FormRequest
             'runtimes.*.technology' => __('Công nghệ'),
             'runtimes.*.raw_version' => __('Version'),
             'lockfile_uploads.*' => __('Lockfile'),
+            'lockfile_directories.*' => __('Thư mục'),
+            'lockfile_excludes' => __('Bỏ qua khi tìm lockfile'),
         ];
     }
 
@@ -164,11 +200,13 @@ class ServiceRequest extends FormRequest
     public function serviceAttributes(): array
     {
         $attributes = Arr::only($this->validated(), ['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path', 'repository', 'repository_branch']);
+        $excludes = self::lines($this->validated('lockfile_excludes'));
 
         return [
             ...$attributes,
             'repository' => $attributes['repository'] ?? null,
             'repository_branch' => isset($attributes['repository']) ? ($attributes['repository_branch'] ?? null) : null,
+            'lockfile_excludes' => isset($attributes['repository']) && $excludes !== [] ? $excludes : null,
         ];
     }
 
@@ -183,14 +221,18 @@ class ServiceRequest extends FormRequest
     }
 
     /**
-     * @return list<array{name: string, content: string}>
+     * Each upload sits at its directory (`lockfile_directories` at the same index) under the service directory.
+     *
+     * @return list<array{path: string, content: string}>
      */
     public function uploadedLockfiles(): array
     {
-        return array_values(array_map(
-            fn (UploadedFile $file): array => ['name' => $file->getClientOriginalName(), 'content' => (string) $file->get()],
-            Arr::wrap($this->file('lockfile_uploads', [])),
-        ));
+        $files = Arr::wrap($this->file('lockfile_uploads', []));
+
+        return array_map(
+            fn (int|string $index): array => ['path' => $this->uploadedLockfilePath($index), 'content' => (string) $files[$index]->get()],
+            array_keys($files),
+        );
     }
 
     /**
@@ -199,6 +241,52 @@ class ServiceRequest extends FormRequest
     public function removedLockfilePaths(): array
     {
         return array_values($this->validated('removed_lockfiles', []));
+    }
+
+    /**
+     * E.g. "frontend/package-lock.json" for package-lock.json uploaded with the directory "frontend".
+     */
+    private function uploadedLockfilePath(int|string $index): string
+    {
+        $file = Arr::wrap($this->file('lockfile_uploads', []))[$index] ?? null;
+        $directory = Arr::wrap($this->input('lockfile_directories', []))[$index] ?? null;
+
+        return LockfilePath::join(is_string($directory) ? $directory : null, $file instanceof UploadedFile ? $file->getClientOriginalName() : '');
+    }
+
+    /**
+     * The non-blank lines of a textarea, without slashes around them, each once.
+     *
+     * @return list<string>
+     */
+    private static function lines(mixed $text): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(fn (string $line): string => trim(trim($line), '/'), preg_split('/\R/', is_string($text) ? $text : '') ?: []),
+            fn (string $line): bool => $line !== '',
+        )));
+    }
+
+    /**
+     * One path per line, relative to the service directory, following the rules of lockfile paths (any name).
+     */
+    private function lockfileExcludesRule(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            foreach (self::lines($value) as $line) {
+                $segments = explode('/', $line);
+
+                if (mb_strlen($line) > LockfilePath::MAX_LENGTH || array_filter($segments, fn (string $segment): bool => in_array($segment, ['.', '..'], true) || preg_match(LockfilePath::SEGMENT_PATTERN, $segment) !== 1) !== []) {
+                    $fail(__('":path" không hợp lệ: mỗi dòng là một đường dẫn trong thư mục service, chỉ gồm chữ, số và . _ @ + -, không có "..".', ['path' => $line]));
+
+                    return;
+                }
+            }
+
+            if (count(self::lines($value)) > 50) {
+                $fail(__('Tối đa 50 đường dẫn.'));
+            }
+        };
     }
 
     private function lockfileNameRule(): Closure

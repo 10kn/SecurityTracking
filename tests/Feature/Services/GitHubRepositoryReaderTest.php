@@ -2,6 +2,7 @@
 
 use App\Services\Repositories\GitHubRepository;
 use App\Services\Repositories\GitHubRepositoryReader;
+use App\Services\Repositories\IncompleteListingException;
 use App\Services\Repositories\RepositoryNotFoundException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
@@ -11,6 +12,17 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
 const SHOP_REPOSITORY = 'acme/shop';
+
+/**
+ * @return array<string, int>
+ */
+function findLockfiles(GitHubRepositoryReader $reader, string $directory, int $maxDepth = 4): array
+{
+    $files = $reader->findFiles(SHOP_REPOSITORY, $directory, GITHUB_COMMIT, ['composer.lock', 'package-lock.json'], $maxDepth, fn (string $path): bool => false);
+    ksort($files);
+
+    return $files;
+}
 
 beforeEach(function () {
     $this->travelTo('2026-10-24 06:30:00');
@@ -26,7 +38,7 @@ it('signs in as the github app and reuses the installation token', function () {
     $reader = app(GitHubRepositoryReader::class);
 
     $reader->latestCommitSha(SHOP_REPOSITORY, null);
-    $reader->filesIn(SHOP_REPOSITORY, '', GITHUB_COMMIT);
+    findLockfiles($reader, '');
 
     $tokenRequests = gitHubRequests('app/installations/678/access_tokens');
     expect($tokenRequests)->toHaveCount(1)
@@ -64,30 +76,46 @@ it('reads the tip of the branch, or of the default branch', function (?string $b
     'default branch' => [null, ['per_page' => '1']],
 ]);
 
-it('lists the files of a directory at the commit, without subdirectories', function () {
-    fakeGitHub(['apps/api/composer.lock' => '{"packages":[]}', 'apps/api/src/Kernel.php' => '<?php', 'package-lock.json' => '{}']);
+it('finds the files with the given names in a directory and its subdirectories at the commit', function () {
+    fakeGitHub(['apps/api/composer.lock' => '{"packages":[]}', 'apps/api/src/Kernel.php' => '<?php', 'apps/api/web/package-lock.json' => '{}', 'package-lock.json' => '{}']);
     $reader = app(GitHubRepositoryReader::class);
 
-    expect($reader->filesIn(SHOP_REPOSITORY, 'apps/api', GITHUB_COMMIT))->toBe(['composer.lock' => 15])
-        ->and($reader->filesIn(SHOP_REPOSITORY, '', GITHUB_COMMIT))->toBe(['package-lock.json' => 2])
+    expect(findLockfiles($reader, 'apps/api'))->toBe(['composer.lock' => 15, 'web/package-lock.json' => 2])
+        ->and(findLockfiles($reader, '/apps/api/', maxDepth: 0))->toBe(['composer.lock' => 15])
+        ->and(findLockfiles($reader, ''))->toBe(['apps/api/composer.lock' => 15, 'apps/api/web/package-lock.json' => 2, 'package-lock.json' => 2])
         ->and($reader->read(SHOP_REPOSITORY, 'apps/api/composer.lock', GITHUB_COMMIT))->toBe('{"packages":[]}');
+});
 
-    expect(gitHubRequests('repos/acme/shop/contents/apps/api?ref='.GITHUB_COMMIT))->toHaveCount(1)
-        ->and(gitHubRequests('repos/acme/shop/contents?ref='.GITHUB_COMMIT))->toHaveCount(1);
+it('leaves out links and submodules', function () {
+    Http::fake(['https://api.github.com/repos/*/git/trees/*' => Http::response(['sha' => GITHUB_COMMIT, 'truncated' => false, 'tree' => [
+        ['path' => 'composer.lock', 'mode' => '100644', 'type' => 'blob', 'sha' => sha1('a'), 'size' => 2],
+        ['path' => 'web/package-lock.json', 'mode' => '120000', 'type' => 'blob', 'sha' => sha1('b'), 'size' => 20],
+        ['path' => 'shared', 'mode' => '160000', 'type' => 'commit', 'sha' => sha1('c')],
+    ]])]);
+    fakeGitHub();
+
+    expect(findLockfiles(app(GitHubRepositoryReader::class), ''))->toBe(['composer.lock' => 2]);
 });
 
 it('reports a missing repository, branch or directory without retrying', function () {
-    fakeGitHub();
+    fakeGitHub(['apps/web/composer.lock' => '{}']);
 
-    expect(fn () => app(GitHubRepositoryReader::class)->filesIn(SHOP_REPOSITORY, 'apps/api', GITHUB_COMMIT))->toThrow(RepositoryNotFoundException::class);
+    expect(fn () => findLockfiles(app(GitHubRepositoryReader::class), 'apps/api'))->toThrow(RepositoryNotFoundException::class);
 
-    expect(gitHubRequests('repos/'))->toHaveCount(1);
+    expect(gitHubRequests('repos/'))->toHaveCount(2);
+});
+
+it('does not take a directory missing from a level GitHub cut short for a missing one', function () {
+    Http::fake(['https://api.github.com/repos/*/git/trees/'.GITHUB_COMMIT => Http::response(['sha' => GITHUB_COMMIT, 'tree' => [], 'truncated' => true])]);
+    fakeGitHub(['apps/api/composer.lock' => '{}']);
+
+    expect(fn () => findLockfiles(app(GitHubRepositoryReader::class), 'apps/api'))->toThrow(IncompleteListingException::class);
 });
 
 it('rejects a directory that climbs out of the repository', function () {
     fakeGitHub();
 
-    expect(fn () => app(GitHubRepositoryReader::class)->filesIn(SHOP_REPOSITORY, 'apps/../..', GITHUB_COMMIT))->toThrow(InvalidArgumentException::class);
+    expect(fn () => findLockfiles(app(GitHubRepositoryReader::class), 'apps/../..'))->toThrow(InvalidArgumentException::class);
 
     expect(gitHubRequests('repos/'))->toHaveCount(0);
 });

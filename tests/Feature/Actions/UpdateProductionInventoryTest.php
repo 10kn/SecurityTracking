@@ -30,7 +30,7 @@ it('creates the production deployment with one unknown runtime per entered techn
 it('does not dispatch a re-evaluation when the same inventory is saved again', function () {
     $service = Service::factory()->create();
     $php = Technology::Php;
-    $lockfile = ['name' => 'composer.lock', 'content' => '{"packages": []}'];
+    $lockfile = ['path' => 'composer.lock', 'content' => '{"packages": []}'];
     app(UpdateProductionInventory::class)->handle($service, [$php->value => '8.3.12'], [$lockfile]);
     Event::fake([DeploymentInventoryChanged::class]);
 
@@ -77,7 +77,7 @@ it('replaces a lockfile with the same name when its content changes', function (
     $deployment = Deployment::factory()->create();
     $lockfile = Lockfile::factory()->for($deployment)->create(['path' => 'composer.lock', 'uploaded_at' => now()->subDay()]);
 
-    app(UpdateProductionInventory::class)->handle($deployment->service, [], [['name' => 'composer.lock', 'content' => '{"packages": [1]}']]);
+    app(UpdateProductionInventory::class)->handle($deployment->service, [], [['path' => 'composer.lock', 'content' => '{"packages": [1]}']]);
 
     expect($lockfile->refresh())
         ->content->toBe('{"packages": [1]}')
@@ -88,7 +88,7 @@ it('replaces a lockfile with the same name when its content changes', function (
 it('detects the ecosystem from the lockfile name', function (string $name, Ecosystem $ecosystem) {
     $service = Service::factory()->create();
 
-    $deployment = app(UpdateProductionInventory::class)->handle($service, [], [['name' => $name, 'content' => 'x']]);
+    $deployment = app(UpdateProductionInventory::class)->handle($service, [], [['path' => $name, 'content' => 'x']]);
 
     expect($deployment->lockfiles()->sole()->ecosystem)->toBe($ecosystem);
 })->with([
@@ -111,6 +111,6 @@ it('deletes the lockfiles the admin removed', function () {
 it('rejects an unsupported lockfile name', function () {
     $service = Service::factory()->create();
 
-    expect(fn () => app(UpdateProductionInventory::class)->handle($service, [], [['name' => 'yarn.lock', 'content' => 'x']]))
+    expect(fn () => app(UpdateProductionInventory::class)->handle($service, [], [['path' => 'yarn.lock', 'content' => 'x']]))
         ->toThrow(InvalidArgumentException::class);
 });

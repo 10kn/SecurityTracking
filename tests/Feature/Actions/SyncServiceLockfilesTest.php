@@ -2,6 +2,7 @@
 
 use App\Actions\SyncServiceLockfiles;
 use App\Enums\ChatNotificationKind;
+use App\Enums\Ecosystem;
 use App\Enums\LockfileSource;
 use App\Events\DeploymentInventoryChanged;
 use App\Models\ChatNotification;
@@ -10,10 +11,14 @@ use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\SourceHeartbeat;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     $this->travelTo('2026-10-24 06:30:00');
@@ -76,6 +81,152 @@ it('reads each service from its own repository and the default branch when none 
 
     parse_str((string) parse_url(gitHubRequests('repos/acme/storefront/commits')[0]->url(), PHP_URL_QUERY), $query);
     expect($query)->not->toHaveKey('sha');
+});
+
+it('finds the lockfiles in subdirectories of the service, by their path in the service directory', function () {
+    fakeGitHub([
+        'apps/api/composer.lock' => '{"packages":[]}',
+        'apps/api/frontend/package-lock.json' => '{"lockfileVersion":3}',
+        'apps/api/tools/ruby/Gemfile.lock' => 'GEM',
+        'apps/api/a/b/c/d/package-lock.json' => '{}',
+        'apps/api/a/b/c/d/e/package-lock.json' => '{}',
+        'apps/web/package-lock.json' => '{}',
+    ]);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['a/b/c/d/package-lock.json', 'composer.lock', 'frontend/package-lock.json', 'tools/ruby/Gemfile.lock'])
+        ->and(Lockfile::where('path', 'frontend/package-lock.json')->sole()->ecosystem)->toBe(Ecosystem::Npm)
+        ->and(Lockfile::where('path', 'tools/ruby/Gemfile.lock')->sole()->ecosystem)->toBe(Ecosystem::Rubygems)
+        ->and(gitHubRequests('repos/acme/shop/contents/apps/api/frontend/package-lock.json'))->toHaveCount(1)
+        ->and($this->service->fresh()->lockfiles_sync_error)->toBeNull();
+
+    expect(gitHubRequests('repos/acme/shop/git/trees/')->map(fn (Request $request): string => Str::after(urldecode($request->url()), 'git/trees/'))->all())
+        ->toBe([GITHUB_COMMIT, fakeTreeSha('apps'), fakeTreeSha('apps/api').'?recursive=1']);
+});
+
+it('leaves out installed dependencies, test fixtures and the paths the service excludes', function () {
+    $this->service->update(['lockfile_excludes' => ['legacy', 'tools/old/package-lock.json']]);
+    fakeGitHub([
+        'apps/api/composer.lock' => '{}',
+        'apps/api/node_modules/left-pad/package-lock.json' => '{}',
+        'apps/api/vendor/acme/lib/composer.lock' => '{}',
+        'apps/api/tests/Fixtures/composer.lock' => '{}',
+        'apps/api/legacy/package-lock.json' => '{}',
+        'apps/api/legacy-ui/package-lock.json' => '{}',
+        'apps/api/tools/old/package-lock.json' => '{}',
+        'apps/api/tools/new/package-lock.json' => '{}',
+        'apps/api/.github/actions/notify/package-lock.json' => '{}',
+    ]);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['.github/actions/notify/package-lock.json', 'composer.lock', 'legacy-ui/package-lock.json', 'tools/new/package-lock.json']);
+});
+
+it('lists a directory GitHub cuts short level by level, without entering skipped directories', function () {
+    fakeGitHub([
+        'apps/api/composer.lock' => '{}',
+        'apps/api/frontend/package-lock.json' => '{}',
+        'apps/api/node_modules/left-pad/package-lock.json' => '{}',
+    ], truncatedTrees: ['apps/api']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['composer.lock', 'frontend/package-lock.json'])
+        ->and(gitHubRequests('repos/acme/shop/git/trees/'.fakeTreeSha('apps/api/frontend')))->toHaveCount(1)
+        ->and(gitHubRequests('repos/acme/shop/git/trees/'.fakeTreeSha('apps/api/node_modules')))->toHaveCount(0);
+
+    gitHubRequests('repos/acme/shop/git/trees/'.fakeTreeSha('apps/api/frontend'))
+        ->each(fn (Request $request) => expect($request->url())->not->toContain('recursive'));
+});
+
+it('keeps every lockfile and alerts the admin once when the directory is too large to list', function (array $limits, string $error) {
+    config(['psm.github.lockfile_search' => [...config('psm.github.lockfile_search'), ...$limits]]);
+    $deployment = Deployment::factory()->for($this->service)->create();
+    Lockfile::factory()->for($deployment)->fromGitHub(str_repeat('a', 40))->withContent('legacy/package-lock.json', '{}')->create();
+    fakeGitHub([
+        'apps/api/composer.lock' => '{}',
+        'apps/api/a/package-lock.json' => '{}',
+        'apps/api/b/package-lock.json' => '{}',
+    ], truncatedTrees: ['apps/api']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['legacy/package-lock.json'])
+        ->and($this->service->fresh()->lockfiles_sync_error)->toContain($error)
+        ->and(adminAlerts())->toBe(1);
+    Event::assertNotDispatched(DeploymentInventoryChanged::class);
+})->with([
+    'too many trees' => [['max_tree_requests' => 4], 'quá nhiều file để tìm hết lockfile tại commit 3f78685'],
+    'too many lockfiles' => [['max_lockfiles' => 2], 'Tìm thấy 3 lockfile (1 MB) tại commit 3f78685, quá giới hạn 2 lockfile'],
+    'too large' => [['max_total_kilobytes' => 0], 'quá giới hạn 20 lockfile / 0 MB'],
+]);
+
+it('stops when a level of the walk is cut short too', function () {
+    Http::fake(['https://api.github.com/repos/*/git/trees/'.fakeTreeSha('apps/api/a') => Http::response(['sha' => fakeTreeSha('apps/api/a'), 'tree' => [], 'truncated' => true])]);
+    fakeGitHub(['apps/api/composer.lock' => '{}', 'apps/api/a/package-lock.json' => '{}'], truncatedTrees: ['apps/api']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(lockfilesOf($this->service))->toBe([])
+        ->and($this->service->fresh()->lockfiles_sync_error)->toContain('quá nhiều file');
+});
+
+it('reports a lockfile at a path the hub does not take and reads the others', function () {
+    fakeGitHub(['apps/api/composer.lock' => '{}', 'apps/api/my app/package-lock.json' => '{}']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['composer.lock'])
+        ->and($this->service->fresh()->lockfiles_sync_error)->toStartWith('Bỏ qua my app/package-lock.json');
+});
+
+it('keeps nothing it read when the settings of the service changed meanwhile', function () {
+    Http::fake(['https://api.github.com/repos/*/contents/apps/api/composer.lock*' => function () {
+        Service::whereKey($this->service->id)->update(['repository_path' => '/apps/web']);
+
+        return Http::response('{}');
+    }]);
+    fakeGitHub(['apps/api/composer.lock' => '{}']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(lockfilesOf($this->service))->toBe([])
+        ->and($this->service->fresh())->lockfiles_commit_sha->toBeNull()->lockfiles_synced_at->toBeNull();
+    Event::assertNotDispatched(DeploymentInventoryChanged::class);
+});
+
+it('writes nothing once another sync took its expired lock', function () {
+    Http::fake(['https://api.github.com/repos/*/contents/apps/api/composer.lock*' => function () {
+        Cache::lock("lockfile-sync:service-{$this->service->id}")->forceRelease();
+        Cache::lock("lockfile-sync:service-{$this->service->id}", 600)->get();
+
+        return Http::response('{}');
+    }]);
+    fakeGitHub(['apps/api/composer.lock' => '{}']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(lockfilesOf($this->service))->toBe([])
+        ->and($this->service->fresh())->lockfiles_commit_sha->toBeNull()->lockfiles_synced_at->toBeNull();
+    Event::assertNotDispatched(DeploymentInventoryChanged::class);
+});
+
+it('waits for another sync of the same service', function () {
+    Sleep::fake(syncWithCarbon: true);
+    fakeGitHub(['apps/api/composer.lock' => '{}']);
+    $lock = Cache::lock("lockfile-sync:service-{$this->service->id}", 600);
+    $lock->get();
+
+    expect(fn () => app(SyncServiceLockfiles::class)->handle($this->service))->toThrow(LockTimeoutException::class)
+        ->and(gitHubRequests('repos/'))->toHaveCount(0);
+
+    $lock->release();
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['composer.lock']);
 });
 
 it('evaluates nothing again when the lockfiles did not change', function () {

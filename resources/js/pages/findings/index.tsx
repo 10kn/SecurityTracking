@@ -22,6 +22,8 @@ interface FindingRow {
     severity: { value: string; label: string };
     title: string;
     rule: string;
+    /** Where the affected package is, relative to the service directory, e.g. "frontend/package-lock.json". */
+    lockfiles: string[];
     service: { id: number; name: string; project: string };
     team: string;
     first_seen: string | null;
@@ -140,7 +142,15 @@ export default function FindingsIndex({ findings, table, teams, statuses }: Prop
                                         <SeverityBadge severity={finding.severity} />
                                     </Td>
                                     <Td>
-                                        <CellTitle title={finding.title} sub={finding.rule} />
+                                        <CellTitle
+                                            title={finding.title}
+                                            sub={
+                                                <>
+                                                    {finding.rule}
+                                                    {finding.lockfiles.length > 0 && <span className="font-mono"> · {finding.lockfiles.join(', ')}</span>}
+                                                </>
+                                            }
+                                        />
                                     </Td>
                                     <Td>
                                         <CellTitle title={finding.service.name} sub={`${finding.service.project} · ${finding.team}`} href={editService.url(finding.service.id)} />

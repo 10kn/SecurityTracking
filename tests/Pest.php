@@ -419,12 +419,15 @@ function configureGitHubApp(): string
 
 /**
  * Configures the GitHub App and fakes the GitHub API: an installation token, every branch at $commitSha, and the
- * files of every repository at that commit, by path. Directories are read from the paths; anything else is 404, as on
- * GitHub. Register outages and other fakes before it: the first fake that answers wins.
+ * files of every repository at that commit, by path. Directories are read from the paths; a commit names the root
+ * tree and fakeTreeSha() the others. Recursive listings of the directories in $truncatedTrees are cut short, as GitHub
+ * does above 100,000 entries. Anything else is 404, as on GitHub. Register outages and other fakes before it: the
+ * first fake that answers wins.
  *
  * @param  array<string, string>  $files
+ * @param  list<string>  $truncatedTrees  Directories by path, "" for the root.
  */
-function fakeGitHub(array $files = [], string $commitSha = GITHUB_COMMIT): void
+function fakeGitHub(array $files = [], string $commitSha = GITHUB_COMMIT, array $truncatedTrees = []): void
 {
     configureGitHubApp();
 
@@ -432,6 +435,32 @@ function fakeGitHub(array $files = [], string $commitSha = GITHUB_COMMIT): void
     Http::fake([
         'https://api.github.com/app/installations/*/access_tokens' => Http::response(['token' => 'ghs_test', 'expires_at' => now()->addHour()->toIso8601String()], 201),
         'https://api.github.com/repos/*/commits*' => Http::response([['sha' => $commitSha]]),
+        'https://api.github.com/repos/*/git/trees/*' => function (Request $request) use ($files, $truncatedTrees) {
+            $directories = collect($files)->keys()
+                ->flatMap(function (string $file): array {
+                    $segments = explode('/', $file);
+
+                    return count($segments) < 2 ? [] : array_map(fn (int $length): string => implode('/', array_slice($segments, 0, $length)), range(1, count($segments) - 1));
+                })
+                ->filter()
+                ->unique();
+            $treeSha = rawurldecode(Str::afterLast((string) parse_url($request->url(), PHP_URL_PATH), '/'));
+            // Any other SHA is a commit, which names the root tree.
+            $directory = $directories->first(fn (string $directory): bool => fakeTreeSha($directory) === $treeSha) ?? '';
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+            $isRecursive = array_key_exists('recursive', $query);
+            $prefix = $directory === '' ? '' : "{$directory}/";
+            $isListed = fn (string $path): bool => str_starts_with($path, $prefix) && ($isRecursive || ! str_contains(substr($path, strlen($prefix)), '/'));
+
+            $entries = [
+                ...$directories->filter($isListed)->map(fn (string $path): array => ['path' => substr($path, strlen($prefix)), 'mode' => '040000', 'type' => 'tree', 'sha' => fakeTreeSha($path)]),
+                ...collect($files)->filter(fn (string $content, string $path): bool => $isListed($path))
+                    ->map(fn (string $content, string $path): array => ['path' => substr($path, strlen($prefix)), 'mode' => '100644', 'type' => 'blob', 'sha' => sha1($content), 'size' => strlen($content)]),
+            ];
+            $isTruncated = $isRecursive && in_array($directory, $truncatedTrees, true);
+
+            return Http::response(['sha' => $treeSha, 'tree' => $isTruncated ? array_slice(array_values($entries), 0, 1) : array_values($entries), 'truncated' => $isTruncated]);
+        },
         'https://api.github.com/repos/*/contents*' => function (Request $request) use ($files) {
             $path = trim(rawurldecode((string) preg_replace('#^/repos/[^/]+/[^/]+/contents#', '', (string) parse_url($request->url(), PHP_URL_PATH))), '/');
 
@@ -455,6 +484,14 @@ function fakeGitHub(array $files = [], string $commitSha = GITHUB_COMMIT): void
             return $entries->isEmpty() && $path !== '' ? Http::response(['message' => 'Not Found'], 404) : Http::response($entries->all());
         },
     ]);
+}
+
+/**
+ * The tree SHA fakeGitHub() gives a directory, e.g. "apps/api".
+ */
+function fakeTreeSha(string $directory): string
+{
+    return sha1("tree:{$directory}");
 }
 
 /**

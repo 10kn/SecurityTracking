@@ -93,8 +93,9 @@ class ServiceResource extends JsonResource
     }
 
     /**
-     * One entry per lockfile with its package count and how many of its packages have an open vulnerability. A
-     * lockfile not read yet, or one that cannot be read, shows as missing data.
+     * One entry per lockfile with its package count and how many of its packages have an open vulnerability; a finding
+     * counts for every lockfile holding the package. A lockfile not read yet, or one that cannot be read, shows as
+     * missing data.
      *
      * @param  Collection<int, Lockfile>  $lockfiles
      * @param  Collection<int, Finding>  $openPackageFindings
@@ -103,8 +104,9 @@ class ServiceResource extends JsonResource
     private function lockfiles(Collection $lockfiles, Collection $openPackageFindings): array
     {
         $vulnerablePackages = $openPackageFindings
-            ->groupBy(fn (Finding $finding): string => (string) ($finding->context['lockfile'] ?? ''))
-            ->map(fn (Collection $findings): int => $findings->unique(fn (Finding $finding): string => (string) ($finding->context['package'] ?? ''))->count());
+            ->flatMap(fn (Finding $finding): array => array_map(fn (string $path): array => ['path' => $path, 'package' => (string) ($finding->context['package'] ?? '')], $finding->lockfilePaths()))
+            ->groupBy('path')
+            ->map(fn (Collection $packages): int => $packages->unique('package')->count());
 
         return $lockfiles
             ->sortBy('path')

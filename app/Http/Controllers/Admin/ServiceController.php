@@ -108,6 +108,7 @@ class ServiceController extends Controller
                     ])
                     ->values()
                     ->all(),
+                'lockfile_excludes' => implode("\n", $service->lockfile_excludes ?? []),
                 'lockfile_sync' => $this->lockfileSync($service),
             ],
         ]);
@@ -153,12 +154,12 @@ class ServiceController extends Controller
     }
 
     /**
-     * A service that reads its lockfiles from GitHub gets them right away when it is created or its repository, branch
-     * or directory changed, instead of at the next daily sync.
+     * A service that reads its lockfiles from GitHub gets them right away when it is created or its repository, branch,
+     * directory or lockfile exclusions changed, instead of at the next daily sync.
      */
     private function syncLockfilesWhenRepositoryChanged(Service $service): void
     {
-        if ($service->syncsLockfiles() && ($service->wasRecentlyCreated || $service->wasChanged(['repository', 'repository_branch', 'repository_path']))) {
+        if ($service->syncsLockfiles() && ($service->wasRecentlyCreated || $service->wasChanged(['repository', 'repository_branch', 'repository_path', 'lockfile_excludes']))) {
             SyncServiceLockfilesJob::dispatch($service);
         }
     }
@@ -199,6 +200,7 @@ class ServiceController extends Controller
             'repositories' => $this->repositoryOptions(),
             'repositoriesSyncedAt' => AccessibleRepository::latest('updated_at')->first()?->updated_at?->translatedFormat(__('d/m/Y H:i')),
             'gitHubConfigured' => $this->repositoryReader->isConfigured(),
+            'lockfileSkippedDirectories' => config('psm.github.lockfile_search.skip_directories'),
             'kinds' => array_map(fn (ServiceKind $kind): array => ['value' => $kind->value, 'label' => $kind->getLabel()], ServiceKind::cases()),
             'exposures' => array_map(fn (Exposure $exposure): array => ['value' => $exposure->value, 'label' => $exposure->getLabel()], Exposure::cases()),
             'technologies' => collect(Technology::cases())

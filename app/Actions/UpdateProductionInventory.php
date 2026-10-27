@@ -20,7 +20,7 @@ class UpdateProductionInventory
      * Dispatches DeploymentInventoryChanged only when something changed, so re-saving the same form does not trigger a new evaluation.
      *
      * @param  array<string, string|null>  $runtimeVersions  Raw versions keyed by technology, e.g. "php"; a missing or blank version removes the runtime.
-     * @param  list<array{name: string, content: string}>  $uploadedLockfiles
+     * @param  list<array{path: string, content: string}>  $uploadedLockfiles
      * @param  list<string>  $removedLockfilePaths
      */
     public function handle(Service $service, array $runtimeVersions, array $uploadedLockfiles = [], array $removedLockfilePaths = []): Deployment

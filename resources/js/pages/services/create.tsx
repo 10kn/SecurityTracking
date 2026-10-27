@@ -19,8 +19,10 @@ export default function ServicesCreate({ defaultProjectId, ...options }: Service
         repository_path: '/',
         repository: null,
         repository_branch: '',
+        lockfile_excludes: '',
         runtimes: [],
         lockfile_uploads: [],
+        lockfile_directories: [],
         removed_lockfiles: [],
     });
 

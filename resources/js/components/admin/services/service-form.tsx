@@ -9,7 +9,7 @@ import { Field, FormFields, FormSection } from '@/components/admin/form-section'
 import { StatusDot } from '@/components/admin/status-dot';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { Input, inputClassName } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useRuntimeEvaluation } from '@/hooks/use-runtime-evaluation';
 import { useSlugFromName } from '@/hooks/use-slug-from-name';
@@ -46,8 +46,12 @@ export interface ServiceFormData {
     /** E.g. "acme/shop"; null when lockfiles are uploaded by hand. */
     repository: string | null;
     repository_branch: string;
+    /** Paths relative to the service directory that are not searched for lockfiles, one per line. */
+    lockfile_excludes: string;
     runtimes: RuntimeRow[];
     lockfile_uploads: File[];
+    /** The directory of the upload at the same index, relative to the service directory; "" is the directory itself. */
+    lockfile_directories: string[];
     removed_lockfiles: string[];
 }
 
@@ -61,12 +65,15 @@ export interface ServiceFormOptions {
     repositories: RepositoryOption[];
     repositoriesSyncedAt: string | null;
     gitHubConfigured: boolean;
+    /** Directory names never searched for lockfiles (psm.github.lockfile_search.skip_directories). */
+    lockfileSkippedDirectories: string[];
     kinds: Option<string>[];
     exposures: Option<string>[];
     technologies: TechnologyOption[];
 }
 
 export interface ExistingLockfile {
+    /** Relative to the service directory, e.g. "frontend/package-lock.json". */
     path: string;
     source: 'upload' | 'github';
     commit: string | null;
@@ -182,7 +189,7 @@ export function ServiceFields({
                 title={t('Môi trường production')}
                 description={
                     syncsLockfiles
-                        ? t('Chọn công nghệ và nhập version đang chạy. Lockfile lấy từ GitHub mỗi ngày, trong thư mục của service. Lưu xong, hệ thống đánh giá lại service này.')
+                        ? t('Chọn công nghệ và nhập version đang chạy. Lockfile lấy từ GitHub mỗi ngày, trong thư mục của service và các thư mục con. Lưu xong, hệ thống đánh giá lại service này.')
                         : t('Chọn công nghệ, nhập version đang chạy và tải lockfile. Lưu xong, hệ thống đánh giá lại service này.')
                 }
             >
@@ -197,7 +204,7 @@ export function ServiceFields({
                             help={t('Service lấy lockfile từ GitHub thì không tải lên hay xóa tay được.')}
                         >
                             {existingLockfiles.length === 0 ? (
-                                <p className="text-muted-foreground">{savedService?.repository === form.data.repository ? t('Chưa có lockfile nào trong thư mục của service.') : t('Lấy ngay sau khi lưu.')}</p>
+                                <p className="text-muted-foreground">{savedService?.repository === form.data.repository ? t('Chưa có lockfile nào trong thư mục của service và các thư mục con.') : t('Lấy ngay sau khi lưu.')}</p>
                             ) : (
                                 <ul className="grid gap-2">
                                     {existingLockfiles.map((lockfile) => (
@@ -284,7 +291,7 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
     return (
         <FormSection
             title={t('Repository')}
-            description={t('Chọn repository GitHub để mỗi ngày hệ thống tự đọc composer.lock, Gemfile.lock và package-lock.json trong thư mục của service, tại commit mới nhất của branch. GitHub App chỉ có quyền đọc.')}
+            description={t('Chọn repository GitHub để mỗi ngày hệ thống tự đọc composer.lock, Gemfile.lock và package-lock.json trong thư mục của service và các thư mục con, tại commit mới nhất của branch. GitHub App chỉ có quyền đọc.')}
         >
             <FormFields columns={2}>
                 <Field label={t('Repository GitHub')} htmlFor="repository" error={form.errors.repository} help={listHelp} className="sm:col-span-2">
@@ -305,7 +312,7 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
                                 form.setData(
                                     picked === null
                                         ? { ...form.data, repository: null, repository_branch: '' }
-                                        : { ...form.data, repository: picked, repository_branch: '', lockfile_uploads: [], removed_lockfiles: [] },
+                                        : { ...form.data, repository: picked, repository_branch: '', lockfile_uploads: [], lockfile_directories: [], removed_lockfiles: [] },
                                 );
                             }}
                             placeholder={t('Chọn repository')}
@@ -356,6 +363,27 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
                         aria-invalid={form.errors.repository_path !== undefined}
                     />
                 </Field>
+                {repository !== null && (
+                    <Field
+                        label={t('Bỏ qua khi tìm lockfile')}
+                        htmlFor="lockfile_excludes"
+                        error={form.errors.lockfile_excludes}
+                        help={t(
+                            'Mỗi dòng một thư mục hoặc file, tính từ thư mục của service (vd. legacy, tools/old/package-lock.json). Luôn bỏ qua các thư mục tên :directories. Lockfile bị bỏ qua sẽ bị xóa khỏi service và finding của nó tự đóng.',
+                            { directories: options.lockfileSkippedDirectories.join(', ') },
+                        )}
+                        className="sm:col-span-2"
+                    >
+                        <textarea
+                            id="lockfile_excludes"
+                            rows={3}
+                            value={form.data.lockfile_excludes}
+                            onChange={(event) => form.setData('lockfile_excludes', event.target.value)}
+                            aria-invalid={form.errors.lockfile_excludes !== undefined}
+                            className={cn(inputClassName, 'h-auto py-2 font-mono text-[calc(var(--fs-sm)-0.5px)]')}
+                        />
+                    </Field>
+                )}
                 {isSaved && savedService.lockfile_sync && (
                     <Field label={t('Lần đồng bộ gần nhất')} className="sm:col-span-2">
                         <LockfileSyncState serviceId={savedService.id} sync={savedService.lockfile_sync} />
@@ -527,23 +555,35 @@ function RuntimeRowFields({
 }
 
 /**
- * Drop or pick lockfiles. A file with the name of an existing one replaces it. Names and sizes are checked here so a
- * wrong file is flagged before uploading; the server checks again.
+ * Drop or pick lockfiles, each with its directory under the service directory, e.g. "frontend" for
+ * frontend/package-lock.json. A file at the path of an existing one replaces it. Names and sizes are checked here so a
+ * wrong file is flagged before uploading; the server checks again, the directory too.
  */
 function LockfileUpload({ form, errors }: { form: InertiaFormProps<ServiceFormData>; errors: Record<string, string | undefined> }) {
     const t = useTranslation();
     const inputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const files = form.data.lockfile_uploads;
+    const directories = form.data.lockfile_directories;
 
+    // A file picked again for the service directory itself replaces the one picked before.
     const addFiles = (list: FileList | null) => {
         if (list === null) {
             return;
         }
 
         const added = Array.from(list);
-        form.setData('lockfile_uploads', [...files.filter((file) => !added.some((other) => other.name === file.name)), ...added]);
+        const kept = files.map((file, index) => ({ file, directory: directories[index] ?? '' })).filter(({ file, directory }) => directory !== '' || !added.some((other) => other.name === file.name));
+
+        form.setData({ ...form.data, lockfile_uploads: [...kept.map(({ file }) => file), ...added], lockfile_directories: [...kept.map(({ directory }) => directory), ...added.map(() => '')] });
     };
+
+    const removeFile = (removed: number) =>
+        form.setData({
+            ...form.data,
+            lockfile_uploads: files.filter((_, index) => index !== removed),
+            lockfile_directories: directories.filter((_, index) => index !== removed),
+        });
 
     const fileProblem = (file: File): string | undefined => {
         if (!LOCKFILE_NAMES.includes(file.name)) {
@@ -558,7 +598,10 @@ function LockfileUpload({ form, errors }: { form: InertiaFormProps<ServiceFormDa
     };
 
     return (
-        <Field label={t('Tải lockfile')} help={t('composer.lock, Gemfile.lock hoặc package-lock.json. File cùng tên thay file cũ.')}>
+        <Field
+            label={t('Tải lockfile')}
+            help={t('composer.lock, Gemfile.lock hoặc package-lock.json. Lockfile ở thư mục con thì ghi thư mục, vd. frontend. File cùng đường dẫn thay file cũ.')}
+        >
             <div
                 onDragOver={(event) => {
                     event.preventDefault();
@@ -595,27 +638,28 @@ function LockfileUpload({ form, errors }: { form: InertiaFormProps<ServiceFormDa
             {files.length > 0 && (
                 <ul className="mt-2 grid gap-1.5">
                     {files.map((file, index) => {
-                        const problem = fileProblem(file) ?? errors[`lockfile_uploads.${index}`];
+                        const problem = fileProblem(file) ?? errors[`lockfile_uploads.${index}`] ?? errors[`lockfile_directories.${index}`];
 
                         return (
-                            <li key={file.name} className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+                            <li key={`${index}:${file.name}`} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2">
                                 <FileIcon className="size-4 shrink-0 text-faint" aria-hidden />
-                                <span className="font-mono text-sm">{file.name}</span>
-                                <span className="text-sm text-faint">{t(':size KB', { size: Math.ceil(file.size / 1024) })}</span>
-                                {problem && <span className="text-sm text-danger-text">{problem}</span>}
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    className="ml-auto"
-                                    aria-label={t('Bỏ file')}
-                                    onClick={() =>
+                                <Input
+                                    className="h-8 w-44 font-mono text-[calc(var(--fs-sm)-0.5px)]"
+                                    placeholder={t('Thư mục (để trống nếu ở gốc)')}
+                                    aria-label={t('Thư mục của :file', { file: file.name })}
+                                    value={directories[index] ?? ''}
+                                    onChange={(event) =>
                                         form.setData(
-                                            'lockfile_uploads',
-                                            files.filter((other) => other !== file),
+                                            'lockfile_directories',
+                                            files.map((_, other) => (other === index ? event.target.value : (directories[other] ?? ''))),
                                         )
                                     }
-                                >
+                                    aria-invalid={errors[`lockfile_directories.${index}`] !== undefined}
+                                />
+                                <span className="font-mono text-sm">/{file.name}</span>
+                                <span className="text-sm text-faint">{t(':size KB', { size: Math.ceil(file.size / 1024) })}</span>
+                                {problem && <span className="text-sm text-danger-text">{problem}</span>}
+                                <Button type="button" variant="ghost" size="icon-sm" className="ml-auto" aria-label={t('Bỏ file')} onClick={() => removeFile(index)}>
                                     <XIcon />
                                 </Button>
                             </li>
