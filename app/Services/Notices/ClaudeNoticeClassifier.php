@@ -22,10 +22,13 @@ class ClaudeNoticeClassifier implements NoticeClassifier
         production. The team is warned of every entry you mark as security news, before the fixed versions exist.
 
         - is_security_news: true when the entry announces, pre-announces or describes a security vulnerability or a
-          security release of the technology. Conferences, feature releases and other news are false, even when they
-          mention security in passing.
-        - severity: the rating the vendor gives, or the one its CVSS score implies (9.0+ critical, 7.0+ high, 4.0+
-          medium, else low). Use unknown when the entry gives neither. Do not guess.
+          security release of the technology, including a feature release or release candidate that says it fixes
+          one. Conferences, calls for papers, other releases and other news are false, even when they mention security
+          in passing, e.g. a conference looking for "high-quality sessions" on "testing, performance, security and
+          more".
+        - severity: the rating the vendor gives a vulnerability, or the one its CVSS score implies (9.0+ critical, 7.0+
+          high, 4.0+ medium, else low). Words such as "high-quality", "high performance" or "mission-critical" are no
+          rating. Use unknown when the entry gives neither, and for entries that are not security news. Do not guess.
         - planned_release_at: when the vendor says the fixes will be published, as an ISO 8601 time in UTC. Null when
           the entry gives no time, or the fixes are already out.
         - affected_branches: the release branches the entry names as affected, as major.minor numbers such as "8.3".

@@ -81,9 +81,10 @@ class SendPreNoticeAlerts
      * incident whose alert fingerprint (see fingerprint()) is the one stored by the last full run is skipped: nothing it
      * reads changed, so it has nothing new to send.
      *
-     * @param  bool  $holdUnclassified  Leaves out pre-notices below Critical the classifier has not read yet: they wait
-     *                                  for it, as it may raise them, while Critical ones go out right away. Such a run
-     *                                  sends a part of what a full run would, so it never stores a fingerprint.
+     * @param  bool  $holdUnclassified  Leaves out pre-notices the classifier has not read yet: they wait for it, as it
+     *                                  may rate or dismiss them, while the ones its CVSS score or a KEV listing makes
+     *                                  Critical go out right away (see isCriticalBeyondWords()). Such a run sends a part
+     *                                  of what a full run would, so it never stores a fingerprint.
      * @return int The number of messages queued.
      */
     public function handle(bool $holdUnclassified = false): int
@@ -503,8 +504,20 @@ class SendPreNoticeAlerts
     private function countingNotices(Collection $notices, bool $holdUnclassified): Collection
     {
         return $notices
-            ->reject(fn (Advisory $notice): bool => $holdUnclassified && $notice->severity !== Severity::Critical && $notice->classified_by === null)
+            ->reject(fn (Advisory $notice): bool => $holdUnclassified && $notice->classified_by === null && ! $this->isCriticalBeyondWords($notice))
             ->values();
+    }
+
+    /**
+     * Critical by its CVSS score or a KEV listing, which the classifier cannot lower, rather than by the vendor's
+     * words alone, which it replaces once it has read them (see SyncNoticeFeed).
+     */
+    private function isCriticalBeyondWords(Advisory $notice): bool
+    {
+        return $notice->severity === Severity::Critical
+            && ($notice->severity_basis !== SeverityBasis::Vendor
+                || ($notice->cvss_score !== null && Severity::fromCvss((float) $notice->cvss_score) === Severity::Critical)
+                || $notice->isKnownExploited());
     }
 
     /**

@@ -63,6 +63,16 @@ final readonly class NoticeEntry
     private const string PREDICATE_END = '/[.!?;:](?=\s|$)|,|\b(?:but|however|although|though|whereas|while|and|or|nor)\b/i';
 
     /**
+     * How a vendor rates a vulnerability in words, `%s` being the level: "two critical vulnerabilities", "Upcoming
+     * Critical PHP Security Release", "a high-severity flaw", "Severity: High". The level said of anything else is no
+     * rating: "high-quality sessions", "mission-critical systems", "high performance".
+     */
+    private const array RATINGS = [
+        '/(?<![\w-])%s(?:-(?:severity|risk|impact|priority)\b|(?:\s+\w+){0,2}?\s+(?:severity|security|vulnerab\w*|issues?|flaws?|bugs?|risks?|impact|advisor(?:y|ies)|cve-\d+|exploit\w*|remote\s+code|rce)\b)/i',
+        '/\b(?:severity|rated|rating|priority|impact)\b[\s:=]*(?:(?:level|of|is|as|a|an)\s+){0,2}%s\b(?!-)/i',
+    ];
+
+    /**
      * @param  list<string>  $links
      */
     public function __construct(
@@ -83,17 +93,29 @@ final readonly class NoticeEntry
     }
 
     /**
-     * Critical when the vendor calls it critical, High when it says high, otherwise unknown.
+     * Critical when the vendor rates a vulnerability critical, High when it rates one high (see RATINGS), otherwise
+     * unknown. Only a guess from the words: the classifier, once it has read the entry, replaces it (see SyncNoticeFeed).
      */
     public function severity(): Severity
     {
-        $text = "{$this->title} {$this->text}";
-
         return match (true) {
-            preg_match('/\bcritical\b/i', $text) === 1 => Severity::Critical,
-            preg_match('/\bhigh\b/i', $text) === 1 => Severity::High,
+            $this->rates('critical') => Severity::Critical,
+            $this->rates('high') => Severity::High,
             default => Severity::Unknown,
         };
+    }
+
+    private function rates(string $level): bool
+    {
+        $text = "{$this->title} {$this->text}";
+
+        foreach (self::RATINGS as $pattern) {
+            if (preg_match(sprintf($pattern, $level), $text) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

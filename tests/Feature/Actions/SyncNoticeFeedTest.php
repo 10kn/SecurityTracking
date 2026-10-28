@@ -229,7 +229,7 @@ it('records a failed poll on the feed heartbeat and rethrows', function () {
         ->and(Advisory::count())->toBe(0);
 });
 
-it('classifies the fresh entries it keeps and stores what the classifier read', function () {
+it('classifies the entries it keeps, the history of the feed included, and stores what the classifier read', function () {
     fakeNoticeFeeds();
     $classified = classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(
         isSecurityNews: true,
@@ -244,6 +244,7 @@ it('classifies the fresh entries it keeps and stores what the classifier read', 
     expect($classified->getArrayCopy())->toEqualCanonicalizing([
         'Security advisory: Critical remote code execution vulnerabilities, update now',
         'Upcoming Critical PHP Security Release',
+        'PHPKonf 2025 Baku',
     ])->and(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
         ->classified_by->toBe('claude-haiku-5-5')
         ->classified_severity->toBe(Severity::Critical)
@@ -252,7 +253,8 @@ it('classifies the fresh entries it keeps and stores what the classifier read', 
         ->localized_summary->toBe('PHP sẽ vá hai lỗ hổng nghiêm trọng.')
         ->is_dismissed->toBeFalse()
         ->and(Advisory::where('title', 'PHPKonf 2025 Baku')->sole())
-        ->classified_by->toBeNull();
+        ->classified_by->toBe('claude-haiku-5-5')
+        ->is_backfill->toBeTrue();
 });
 
 it('classifies an entry again only when the vendor edits it', function () {
@@ -267,38 +269,70 @@ it('classifies an entry again only when the vendor edits it', function () {
     $this->travel(15)->minutes();
     $advisories = app(SyncNoticeFeed::class)->handle($php);
 
-    expect($classified)->toHaveCount(2)
+    expect($classified)->toHaveCount(3)
         ->and(collect($advisories)->contains(fn (Advisory $advisory): bool => $advisory->wasRecentlyCreated || $advisory->wasChanged()))->toBeFalse();
 
     $feed = str_replace('scheduled for Wednesday, 21 October 2026 at 14:00 UTC', 'scheduled for Thursday, 22 October 2026 at 14:00 UTC', $feed);
     app(SyncNoticeFeed::class)->handle($php);
 
-    expect($classified)->toHaveCount(3)
-        ->and($classified[2])->toBe('Upcoming Critical PHP Security Release');
+    expect($classified)->toHaveCount(4)
+        ->and($classified[3])->toBe('Upcoming Critical PHP Security Release');
 });
 
-it('lets the classifier raise the keyword severity but not lower it', function () {
+it('lets the classifier replace the severity the vendor\'s words gave, but not lower the CVSS score', function () {
     fakeNoticeFeeds();
     classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(
         isSecurityNews: true,
-        severity: str_starts_with($entry->title, 'Upcoming') ? Severity::Low : Severity::Critical,
+        severity: str_starts_with($entry->title, 'PHPKonf') ? Severity::Critical : Severity::Low,
     ));
-    config(['psm.notices.relevant_days' => 1000]);
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
 
-    expect(Advisory::where('title', 'Upcoming Critical PHP Security Release')->value('severity'))->toBe(Severity::Critical)
+    expect(Advisory::where('title', 'Security advisory: Critical remote code execution vulnerabilities, update now')->sole())
+        ->severity->toBe(Severity::Low)
+        ->severity_basis->toBe(SeverityBasis::Classifier)
+        ->and(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
+        ->severity->toBe(Severity::Critical)
+        ->severity_basis->toBe(SeverityBasis::Cvss)
         ->and(Advisory::where('title', 'PHPKonf 2025 Baku')->value('severity'))->toBe(Severity::Critical);
 });
 
-it('dismisses an entry the classifier finds is not security news only when the keywords found no severity in it', function () {
+it('rates an entry by the vendor\'s words again once the vendor edits it, until the classifier reads the new text', function () {
+    Exceptions::fake();
+    $feed = noticeFixture('php-feed.atom');
+    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+        return Http::response($feed);
+    }]);
+    $fails = false;
+    classifyNoticesWith(function () use (&$fails): NoticeClassification {
+        return $fails ? throw new RuntimeException('Overloaded') : new NoticeClassification(isSecurityNews: true, severity: Severity::Low);
+    });
+    $title = 'Security advisory: Critical remote code execution vulnerabilities, update now';
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::where('title', $title)->value('severity'))->toBe(Severity::Low);
+
+    $fails = true;
+    $feed = str_replace('update now</title>', 'update today</title>', $feed);
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::where('title', 'Security advisory: Critical remote code execution vulnerabilities, update today')->sole())
+        ->severity->toBe(Severity::Critical)
+        ->severity_basis->toBe(SeverityBasis::Vendor);
+});
+
+it('dismisses an entry the classifier finds is not security news whatever its words, unless its CVSS score says otherwise', function () {
     fakeNoticeFeeds();
     classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: false, severity: Severity::Unknown));
-    config(['psm.notices.relevant_days' => 1000]);
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
 
-    expect(Advisory::where('is_dismissed', true)->pluck('title')->all())->toBe(['PHPKonf 2025 Baku']);
+    expect(Advisory::where('is_dismissed', true)->pluck('title')->all())->toEqualCanonicalizing([
+        'Security advisory: Critical remote code execution vulnerabilities, update now',
+        'PHPKonf 2025 Baku',
+    ])->and(Advisory::where('title', 'PHPKonf 2025 Baku')->sole())
+        ->severity->toBe(Severity::Unknown)
+        ->severity_basis->toBeNull();
 });
 
 it('keeps the keyword result when the classifier fails, and classifies the entry on the next poll', function () {
@@ -322,8 +356,8 @@ it('keeps the keyword result when the classifier fails, and classifies the entry
     $this->travel(15)->minutes();
     app(SyncNoticeFeed::class)->handle($php);
 
-    expect($classified)->toHaveCount(4)
-        ->and(Advisory::whereNotNull('classified_by')->count())->toBe(2);
+    expect($classified)->toHaveCount(6)
+        ->and(Advisory::whereNotNull('classified_by')->count())->toBe(3);
 });
 
 it('does not call the classifier when no API key is configured', function () {
@@ -335,7 +369,7 @@ it('does not call the classifier when no API key is configured', function () {
         ->and(Advisory::count())->toBe(3);
 });
 
-it('classifies an edited or never classified old pre-notice when a team was sent a card about its incident', function (bool $wasSent, ?string $contentHash, array $classified, ?array $branches) {
+it('classifies an old pre-notice that was never classified, and an edited one when a team was sent a card about its incident', function (bool $wasSent, ?string $contentHash, array $classified, array $branches) {
     $this->travelTo('2026-11-30 10:00:00');
     $feed = noticeFixture('php-feed.atom');
     Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
@@ -343,6 +377,7 @@ it('classifies an edited or never classified old pre-notice when a team was sent
     }]);
     $titles = classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical, affectedBranches: ['8.3']));
     app(SyncNoticeFeed::class)->handle(Technology::Php);
+    $titles->exchangeArray([]);
     $notice = Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole();
     $notice->update(['content_hash' => $contentHash]);
 
@@ -360,5 +395,6 @@ it('classifies an edited or never classified old pre-notice when a team was sent
 })->with([
     'told, edited' => [true, 'classified when it was fresh', ['Upcoming Critical PHP Security Release'], ['8.3']],
     'told, never classified' => [true, null, ['Upcoming Critical PHP Security Release'], ['8.3']],
-    'never told' => [false, 'classified when it was fresh', [], null],
+    'never told, edited' => [false, 'classified when it was fresh', [], ['8.3']],
+    'never told, never classified' => [false, null, ['Upcoming Critical PHP Security Release'], ['8.3']],
 ]);

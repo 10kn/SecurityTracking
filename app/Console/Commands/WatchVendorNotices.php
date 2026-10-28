@@ -17,9 +17,9 @@ class WatchVendorNotices extends Command
     /**
      * Handover 5.2: the feed of every technology is polled every 15 minutes. A failing feed does not stop the others.
      *
-     * The classifier never delays a Critical alert: every feed is polled and what the vendor's words or the CVSS score
-     * make Critical is sent first. Then the classifier reads the new and edited entries, and the rest is sent with what
-     * it read (see SendPreNoticeAlerts).
+     * The classifier never delays an alert it could not change: every feed is polled and what the CVSS score or a KEV
+     * listing makes Critical is sent first. Then the classifier reads the new and edited entries, and the rest is sent
+     * with what it read, the vendor's words standing in for it where it failed (see SendPreNoticeAlerts).
      */
     public function handle(SyncNoticeFeed $syncNoticeFeed, SendPreNoticeAlerts $sendPreNoticeAlerts): int
     {

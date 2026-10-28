@@ -24,8 +24,8 @@ use Throwable;
  * advisories, keyed by feed and entry id so polling again changes nothing. Every attempt is recorded on the feed's
  * source heartbeat. When the notice classifier is configured, it reads each fresh entry (see `psm.notices`).
  *
- * Storing and classifying are two steps, so a caller can send what the vendor's words and the CVSS score already
- * make Critical or High before waiting for the classifier (see WatchVendorNotices).
+ * Storing and classifying are two steps, so a caller can send what the CVSS score or a KEV listing already makes
+ * Critical before waiting for the classifier (see WatchVendorNotices).
  */
 class SyncNoticeFeed
 {
@@ -149,18 +149,18 @@ class SyncNoticeFeed
 
     /**
      * Entries are classified once, and again when the vendor edits them, along with the recent incidents of the
-     * technology the entry may be about. Entries older than `psm.notices.relevant_days` are not, unless they belong to
-     * an incident a team was sent a card about, when they are new, edited or were never classified (e.g. the
-     * classifier was down until they aged out): a newly confirmed branch or exploitation still reaches that team (see
-     * SendPreNoticeAlerts). A classifier error is reported and the entry is tried again on the next
-     * poll; `classification_failed_at` keeps when the errors started, for psm:check-sources. A dismissal was made on
-     * the earlier text, so it no longer holds for the new one.
+     * technology the entry may be about. Entries older than `psm.notices.relevant_days`, e.g. the history a feed lists
+     * on its first poll, are classified once too, so the classifier rather than the words rates them, but their edits
+     * are not, unless they belong to an incident a team was sent a card about: a newly confirmed branch or exploitation
+     * still reaches that team (see SendPreNoticeAlerts). A classifier error is reported and the entry is tried again
+     * on the next poll; `classification_failed_at` keeps when the errors started, for psm:check-sources. A dismissal
+     * was made on the earlier text, so it no longer holds for the new one.
      */
     private function classification(Technology $technology, NoticeEntry $entry, Advisory $advisory): ?NoticeClassification
     {
         if (! $this->classifier->isEnabled()
             || $advisory->content_hash === $this->contentHash($entry)
-            || (! $this->isFresh($entry) && ! $this->isOfToldIncident($advisory))) {
+            || (! $this->isFresh($entry) && $advisory->content_hash !== null && ! $this->isOfToldIncident($advisory))) {
             return null;
         }
 
@@ -179,10 +179,12 @@ class SyncNoticeFeed
     }
 
     /**
-     * The severity is the highest of the vendor's words, the CVSS score the entry gives, the classifier, which can
-     * dismiss an entry as not security news only when neither of the others found a severity in it, and CISA KEV
-     * listing one of its CVE ids (see MatchKnownExploited). Without a new classification, the previous one is kept. The
-     * KEV evidence is kept apart from what the entry's words say (`is_exploited`), so polling again never drops it.
+     * The severity is the highest of the classifier, the CVSS score the entry gives and CISA KEV listing one of its CVE
+     * ids (see MatchKnownExploited). The vendor's words (see NoticeEntry::severity()) only stand in for the classifier
+     * while it has not read the current text: not configured, failing, or the vendor edited the entry since. The
+     * classifier dismisses an entry as not security news unless its CVSS score or a KEV listing says otherwise. Without
+     * a new classification, the previous one is kept. The KEV evidence is kept apart from what the entry's words say
+     * (`is_exploited`), so polling again never drops it.
      *
      * The pre-notice is put in its incident when it is new, and checked again for other incidents when what ties it to
      * them changes (see AssignNoticeToIncident).
@@ -216,8 +218,9 @@ class SyncNoticeFeed
         $this->matchKnownExploited->fill($advisory);
 
         $cvssScore = $entry->cvssScore();
+        $isClassified = $advisory->classified_by !== null && $advisory->content_hash === $this->contentHash($entry);
         $ratings = [
-            SeverityBasis::Vendor->value => $entry->severity(),
+            SeverityBasis::Vendor->value => $isClassified ? Severity::Unknown : $entry->severity(),
             SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
             SeverityBasis::Classifier->value => $advisory->classified_severity ?? Severity::Unknown,
             SeverityBasis::Kev->value => $advisory->isKnownExploited() ? $this->knownExploitation->severity() : Severity::Unknown,

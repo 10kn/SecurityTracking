@@ -185,9 +185,11 @@ it('reads the severity of cards sent before it was part of the dedupe key from t
     'sent without a severity' => ['Upcoming Critical PHP Security Release', 1],
 ]);
 
-it('holds pre-notices below critical the classifier has not read yet, when asked', function () {
+it('holds pre-notices the classifier has not read yet, unless their CVSS score makes them critical, when asked', function () {
     runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['severity_basis' => SeverityBasis::Vendor]);
     $high = Advisory::factory()->preNotice($this->php)->create(['severity' => Severity::High, 'published_at' => now()->subHour()]);
+    $criticalInWords = Advisory::factory()->preNotice($this->php)->create(['title' => 'Critical PHP security release', 'severity_basis' => SeverityBasis::Vendor, 'published_at' => now()->subHour()]);
 
     expect(app(SendPreNoticeAlerts::class)->handle(holdUnclassified: true))->toBe(1)
         ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release');
@@ -195,6 +197,25 @@ it('holds pre-notices below critical the classifier has not read yet, when asked
     $high->update(['classified_by' => 'claude-haiku-5-5']);
 
     expect(app(SendPreNoticeAlerts::class)->handle(holdUnclassified: true))->toBe(1);
+
+    $criticalInWords->update(['classified_by' => 'claude-haiku-5-5']);
+
+    expect(app(SendPreNoticeAlerts::class)->handle(holdUnclassified: true))->toBe(1);
+});
+
+it('sends a pre-notice a KEV listing makes critical without waiting for the classifier', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['cvss_score' => null, 'severity_basis' => SeverityBasis::Vendor, 'known_exploited' => [['cve' => 'CVE-2026-109618', 'name' => 'PHP RCE', 'date_added' => '2026-10-20', 'due_date' => null, 'listed' => true]]]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle(holdUnclassified: true))->toBe(1);
+});
+
+it('holds a pre-notice only the vendor\'s words make critical until the classifier reads it', function () {
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['cvss_score' => null, 'severity_basis' => SeverityBasis::Vendor]);
+
+    expect(app(SendPreNoticeAlerts::class)->handle(holdUnclassified: true))->toBe(0)
+        ->and(app(SendPreNoticeAlerts::class)->handle())->toBe(1);
 });
 
 it('shows what gave the severity', function () {

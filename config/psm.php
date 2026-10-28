@@ -82,8 +82,9 @@ return [
     | 15 minutes. An entry is kept when its title or text contains one of `keywords` (case does
     | not matter; a feed that only publishes security news keeps every entry), unless its title matches one of
     | `ignored_title_patterns`: release announcements are left to the hourly catalog sync, which already alerts on
-    | each security release with the exact version to upgrade to. Its severity is the highest of the vendor's words
-    | ("critical", "high"), its CVSS score (9.0+ Critical, 7.0+ High, 4.0+ Medium) and the classifier.
+    | each security release with the exact version to upgrade to. Its severity is the highest of the classifier, its
+    | CVSS score (9.0+ Critical, 7.0+ High, 4.0+ Medium) and a KEV listing; the vendor's words ("critical
+    | vulnerabilities", "Severity: High") stand in for the classifier until it has read the entry.
     |
     | Pre-notices published within `relevant_days` are sent right away to every team running the technology when they
     | are Critical, High or of unknown severity (vendors often give none), one card per incident (see `incidents`);
@@ -91,12 +92,13 @@ return [
     | ones still within `relevant_days`. A feed that has not been polled successfully within `stale_after_minutes`
     | alerts the admin.
     |
-    | When `classifier.api_key` is set, Claude (`classifier.model`) reads each kept entry younger than
-    | `relevant_days` once, and again when the vendor edits it: the planned release time, the affected branches and
-    | a summary in the alert locale. Its severity can only raise the others, and it can drop an entry as not security
-    | news only when neither the keywords nor a CVSS score gave a severity. When the API fails, the entry keeps the
-    | other results, is sent marked as not classified, and is classified on a later poll. psm:check-sources tells the
-    | admin about an entry still not classified after `classifier.alert_after_minutes`.
+    | When `classifier.api_key` is set, Claude (`classifier.model`) reads each kept entry once, older ones included,
+    | and again when the vendor edits one younger than `relevant_days`: the severity, the planned release time, the
+    | affected branches and a summary in the alert locale. It can drop an entry as not security news unless a CVSS
+    | score or a KEV listing says otherwise. Entries wait for it, except those a CVSS score or a KEV listing makes
+    | Critical. When the API fails, the entry keeps the other results, is sent marked as not classified, and is
+    | classified on a later poll. psm:check-sources tells the admin about an entry still not classified after
+    | `classifier.alert_after_minutes`.
     |
     */
 
