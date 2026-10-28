@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\IncidentMergeController;
 use App\Http\Controllers\Admin\IncidentSuggestionDecisionController;
 use App\Http\Controllers\Admin\IncidentUpdateController;
 use App\Http\Controllers\Admin\NoticeSplitController;
+use App\Http\Controllers\Admin\OverviewController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
@@ -39,7 +40,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware(['auth', 'admin'])->group(function () {
         Route::post('logout', [SessionController::class, 'destroy'])->name('logout');
 
-        Route::redirect('/', '/admin/projects')->name('home');
+        Route::get('/', OverviewController::class)->name('home');
 
         Route::put('preferences', [PreferenceController::class, 'update'])->name('preferences.update');
         Route::get('search', SearchController::class)->name('search');

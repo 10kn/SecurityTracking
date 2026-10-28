@@ -161,7 +161,7 @@ class IncidentController extends Controller
     {
         $incident = $state['incident'];
         $notices = $state['notices'];
-        $lead = $notices->where('is_dismissed', false)->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first() ?? $notices->first();
+        $lead = $this->overview->lead($state);
         $fixes = $state['fixes'];
         $fixed = collect($fixes)->whereNotNull('version')->count();
 

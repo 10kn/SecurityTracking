@@ -35,7 +35,7 @@ interface FindingRow {
 
 interface Props {
     findings: Paginated<FindingRow>;
-    table: TableState & { team: number | null; status: string | null; ids: string | null };
+    table: TableState & { team: number | null; status: string | null; priority: number | null; ids: string | null };
     teams: Option<number>[];
     statuses: Option<string>[];
 }
@@ -45,7 +45,7 @@ export default function FindingsIndex({ findings, table, teams, statuses }: Prop
     const query = useTableQuery(table, ['findings']);
     const [selected, setSelected] = useState<number[]>([]);
     const [isSaving, setIsSaving] = useState(false);
-    const isFiltered = table.search !== '' || table.team !== null || table.status !== null || table.ids !== null;
+    const isFiltered = table.search !== '' || table.team !== null || table.status !== null || table.priority !== null || table.ids !== null;
     const unread = findings.data.filter((finding) => finding.acknowledged === null);
     const isAllSelected = unread.length > 0 && unread.every((finding) => selected.includes(finding.id));
 
@@ -81,6 +81,13 @@ export default function FindingsIndex({ findings, table, teams, statuses }: Prop
                         <TableSearch value={table.search} placeholder={t('Tìm finding')} onSearch={(search) => query({ search })} />
                         <TableFilter value={table.team} label={t('Team')} allLabel={t('Mọi team')} options={teams} onChange={(team) => query({ team })} />
                         <TableFilter value={table.status} label={t('Trạng thái')} allLabel={t('Mọi trạng thái')} options={statuses} onChange={(status) => query({ status })} />
+                        <TableFilter
+                            value={table.priority}
+                            label={t('Ưu tiên')}
+                            allLabel={t('Mọi mức ưu tiên')}
+                            options={[{ value: 1, label: t('Finding ưu tiên') }]}
+                            onChange={(priority) => query({ priority })}
+                        />
                         {table.ids !== null && (
                             <Button variant="secondary" size="sm" onClick={() => query({ ids: null })}>
                                 {t('Chỉ một cảnh báo')}

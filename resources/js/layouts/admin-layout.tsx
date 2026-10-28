@@ -1,10 +1,11 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { CpuIcon, FolderIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import { CpuIcon, FolderIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, UsersIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { index as incidentsIndex } from '@/actions/App/Http/Controllers/Admin/IncidentController';
+import OverviewController from '@/actions/App/Http/Controllers/Admin/OverviewController';
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { destroy as logout } from '@/actions/App/Http/Controllers/Admin/SessionController';
@@ -24,6 +25,8 @@ interface NavigationItem {
     label: string;
     href: string;
     icon: LucideIcon;
+    /** Active on its own page only, not on the pages below it (the Overview is /admin). */
+    isExact?: boolean;
 }
 
 function showToast(flash: { toast?: Toast } | undefined) {
@@ -41,7 +44,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const page = usePage();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-    const groups: { label: string; items: NavigationItem[] }[] = [
+    const groups: { label?: string; items: NavigationItem[] }[] = [
+        {
+            items: [{ label: t('Tổng quan'), href: OverviewController.url(), icon: LayoutDashboardIcon, isExact: true }],
+        },
         {
             label: t('Giám sát'),
             items: [
@@ -85,7 +91,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     isSidebarOpen && 'max-[860px]:translate-x-0',
                 )}
             >
-                <Link href={projectsIndex.url()} className="flex h-topbar items-center gap-2.5 px-5 text-base font-semibold tracking-[-0.01em]">
+                <Link href={OverviewController.url()} className="flex h-topbar items-center gap-2.5 px-5 text-base font-semibold tracking-[-0.01em]">
                     <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
                         <ShieldIcon className="size-3.5" strokeWidth={1.8} />
                     </span>
@@ -93,10 +99,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 </Link>
                 <nav className="flex-1 overflow-y-auto px-3 pt-2 pb-4" aria-label={t('Điều hướng')}>
                     {groups.map((group) => (
-                        <div key={group.label} className="mt-[18px] first:mt-1">
-                            <p className="mx-2 mb-1.5 text-xs font-medium text-faint">{group.label}</p>
+                        <div key={group.label ?? ''} className="mt-[18px] first:mt-1">
+                            {group.label && <p className="mx-2 mb-1.5 text-xs font-medium text-faint">{group.label}</p>}
                             {group.items.map((item) => {
-                                const isActive = path === item.href || path.startsWith(`${item.href}/`);
+                                const isActive = path === item.href || (!item.isExact && path.startsWith(`${item.href}/`));
 
                                 return (
                                     <Link

@@ -36,11 +36,13 @@ class ServiceController extends Controller
     {
         $table = TableQuery::fromRequest($request, ['name', 'project', 'open_findings_count'], 'name');
         $projectId = $request->integer('project') ?: null;
+        $isAttention = $request->boolean('attention');
 
         $services = $table->search(Service::query(), ['name', 'slug'])
             ->with(['project.team', ...ServiceResource::EAGER_LOADS])
             ->withCount(['findings as open_findings_count' => fn (Builder $query) => $query->where('state', FindingState::Open)])
             ->when($projectId !== null, fn (Builder $query) => $query->where('project_id', $projectId))
+            ->when($isAttention, fn (Builder $query) => $query->notFullyEvaluated())
             ->when(
                 $table->sort === 'project',
                 fn (Builder $query) => $query->orderBy(Project::select('name')->whereColumn('projects.id', 'services.project_id'), $table->direction()),
@@ -52,7 +54,7 @@ class ServiceController extends Controller
 
         return Inertia::render('services/index', [
             'services' => ServiceResource::collection($services),
-            'table' => [...$table->toArray(), 'project' => $projectId],
+            'table' => [...$table->toArray(), 'project' => $projectId, 'attention' => $isAttention ? 1 : null],
             'projects' => $this->projectOptions(),
         ]);
     }

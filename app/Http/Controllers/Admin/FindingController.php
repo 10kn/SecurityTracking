@@ -17,7 +17,8 @@ use Inertia\Response;
 
 /**
  * The open findings, where an admin marks them as read ("Đã đọc") to stop their daily reminder. The links in the
- * Google Chat cards open it filtered on one team, and on the findings of one card (`ids`) for an immediate alert.
+ * Google Chat cards open it filtered on one team, and on the findings of one card (`ids`) for an immediate alert. The
+ * Overview opens it on the priority findings (`priority`, see Finding::priority()).
  */
 class FindingController extends Controller
 {
@@ -31,6 +32,7 @@ class FindingController extends Controller
         $table = TableQuery::fromRequest($request, ['severity', 'title', 'sla_due_at', 'first_seen_at'], 'severity');
         $teamId = $request->integer('team') ?: null;
         $status = in_array($request->string('status')->toString(), self::STATUSES, true) ? $request->string('status')->toString() : null;
+        $isPriority = $request->boolean('priority');
         $ids = collect(explode(',', $request->string('ids')->toString()))->filter(fn (string $id): bool => ctype_digit($id))->map(fn (string $id): int => (int) $id)->take(200)->values()->all();
 
         $findings = FindingSearch::apply(Finding::open(), $table->search)
@@ -38,6 +40,7 @@ class FindingController extends Controller
             ->withMax(['events as version' => fn (Builder $query) => $query->whereIn('type', AcknowledgeFindings::VERSION_EVENTS)], 'id')
             ->when($teamId !== null, fn (Builder $query) => $query->where('team_id', $teamId))
             ->when($ids !== [], fn (Builder $query) => $query->whereKey($ids))
+            ->when($isPriority, fn (Builder $query) => $query->priority())
             ->when($status === 'unread', fn (Builder $query) => $query->whereNull('acknowledged_at'))
             ->when($status === 'read', fn (Builder $query) => $query->whereNotNull('acknowledged_at'))
             ->when($status === 'overdue', fn (Builder $query) => $query->where('sla_due_at', '<', now()))
@@ -53,7 +56,7 @@ class FindingController extends Controller
 
         return Inertia::render('findings/index', [
             'findings' => FindingResource::collection($findings),
-            'table' => [...$table->toArray(), 'team' => $teamId, 'status' => $status, 'ids' => $ids === [] ? null : implode(',', $ids)],
+            'table' => [...$table->toArray(), 'team' => $teamId, 'status' => $status, 'priority' => $isPriority ? 1 : null, 'ids' => $ids === [] ? null : implode(',', $ids)],
             'teams' => Team::orderBy('name')->get()->map(fn (Team $team): array => ['value' => $team->id, 'label' => $team->name])->all(),
             'statuses' => [
                 ['value' => 'unread', 'label' => __('Chưa đọc')],
