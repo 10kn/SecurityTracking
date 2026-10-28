@@ -1,6 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import { CircleAlertIcon, MessageSquareWarningIcon } from 'lucide-react';
-import { Fragment, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { index as incidentsIndex, show as showIncident } from '@/actions/App/Http/Controllers/Admin/IncidentController';
@@ -361,16 +361,15 @@ function DestinationItem({ destination }: { destination: Destination }) {
                         </p>
                     )}
                     {commands.length > 0 && (
-                        <p>
-                            {t('Gửi lại sau khi sửa:')}{' '}
-                            {commands.map((command, index) => (
-                                <Fragment key={command}>
-                                    {index > 0 && ', '}
-                                    <span className="font-mono">{command}</span>
-                                </Fragment>
-                            ))}
-                            {destination.resend_hidden_count > 0 && ` ${t('… và :count mục khác', { count: destination.resend_hidden_count })}`}
-                        </p>
+                        <div>
+                            <p>{t('Gửi lại sau khi sửa:')}</p>
+                            <ul className="mt-1 grid gap-0.5 font-mono text-foreground">
+                                {commands.map((command) => (
+                                    <li key={command}>{command}</li>
+                                ))}
+                            </ul>
+                            {destination.resend_hidden_count > 0 && <p className="mt-0.5">{t('… và :count mục khác', { count: destination.resend_hidden_count })}</p>}
+                        </div>
                     )}
                 </CalloutDetails>
             )}
