@@ -13,6 +13,8 @@ export interface ServiceRow {
     project?: { id: number; name: string; team: string | null };
     runtimes: { name: string; status: StatusDotData; reason: string }[];
     lockfiles: { path: string; state: StatusDotData | null; packages: string | null; vulnerable: StatusDotData | null; error: string | null }[];
+    /** Why the last lockfile sync from the repository failed; the lockfiles below are then those of an earlier sync. */
+    lockfiles_sync_error: string | null;
     open_findings_count: number;
     updated_at: string | null;
 }
@@ -63,16 +65,26 @@ export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] })
     );
 }
 
-/** One line per lockfile: its package count, how many packages have an open vulnerability, and why it cannot be read. */
-export function LockfilesCell({ lockfiles }: { lockfiles: ServiceRow['lockfiles'] }) {
+/**
+ * One line per lockfile: its package count, how many packages have an open vulnerability, and why it cannot be read.
+ * A failed sync from the repository comes first, so a service listed as not fully evaluated says why.
+ */
+export function LockfilesCell({ lockfiles, syncError }: { lockfiles: ServiceRow['lockfiles']; syncError: string | null }) {
     const t = useTranslation();
-
-    if (lockfiles.length === 0) {
-        return <Missing reason={t('Chưa có lockfile')} />;
-    }
 
     return (
         <div className="grid gap-1">
+            {syncError !== null && (
+                <div>
+                    <StatusDot status={{ label: t('Lần đồng bộ gần nhất lỗi'), tone: 'warning' }} />
+                    <span className="block max-w-[320px] text-sm text-muted-foreground">{syncError}</span>
+                </div>
+            )}
+            {lockfiles.length === 0 && (
+                <div>
+                    <Missing reason={t('Chưa có lockfile')} />
+                </div>
+            )}
             {lockfiles.map((lockfile) => (
                 <div key={lockfile.path}>
                     <div className="flex flex-wrap items-center gap-x-2">

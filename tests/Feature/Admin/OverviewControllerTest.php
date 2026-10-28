@@ -160,7 +160,8 @@ it('counts the services not fully evaluated, and lists them on the services page
 
     get('/admin/services?attention=1')->assertInertia(fn (Assert $page) => $page
         ->where('table.attention', 1)
-        ->where('services.data', fn ($services) => collect($services)->pluck('name')->sort()->values()->all() === ['stale-catalog', 'sync-error', 'unknown-runtime', 'unreadable-lockfile']));
+        ->where('services.data', fn ($services) => collect($services)->pluck('name')->sort()->values()->all() === ['stale-catalog', 'sync-error', 'unknown-runtime', 'unreadable-lockfile'])
+        ->where('services.data', fn ($services) => collect($services)->pluck('lockfiles_sync_error', 'name')->filter()->all() === ['sync-error' => 'Không đọc được repository.']));
 });
 
 it('lists the priority findings: CISA KEV, then overdue, then unread Critical, then unread High', function () {

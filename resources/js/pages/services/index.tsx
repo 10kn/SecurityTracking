@@ -96,7 +96,7 @@ export default function ServicesIndex({ services, table, projects }: { services:
                                         <RuntimesCell runtimes={service.runtimes} />
                                     </Td>
                                     <Td>
-                                        <LockfilesCell lockfiles={service.lockfiles} />
+                                        <LockfilesCell lockfiles={service.lockfiles} syncError={service.lockfiles_sync_error} />
                                     </Td>
                                     <Td align="right">
                                         <OpenFindingsCell count={service.open_findings_count} />

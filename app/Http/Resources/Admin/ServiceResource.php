@@ -53,6 +53,7 @@ class ServiceResource extends JsonResource
             ]),
             'runtimes' => $this->runtimes($deployment->runtimes ?? collect(), self::evaluatorFor($request)),
             'lockfiles' => $this->lockfiles($deployment->lockfiles ?? collect(), $deployment->openPackageFindings ?? collect()),
+            'lockfiles_sync_error' => $this->lockfiles_sync_error,
             'open_findings_count' => $this->open_findings_count,
             'updated_at' => $deployment?->updated_at?->diffForHumans(),
         ];
