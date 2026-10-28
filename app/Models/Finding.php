@@ -21,6 +21,11 @@ class Finding extends Model
     use HasFactory;
 
     /**
+     * The CISA KEV evidence of the context lists at least one entry; false when it is missing, null or empty.
+     */
+    private const string KNOWN_EXPLOITED_SQL = "coalesce(findings.context->'known_exploited' @> '[{}]', false)";
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -51,6 +56,46 @@ class Finding extends Model
     protected function open(Builder $query): Builder
     {
         return $query->where('state', FindingState::Open);
+    }
+
+    /**
+     * The findings an admin should start with (the Overview, and `priority=1` of the findings list): CISA KEV lists a
+     * CVE of them, their deadline passed, or they are Critical or High and nobody marked them as read.
+     *
+     * @param  Builder<Finding>  $query
+     * @return Builder<Finding>
+     */
+    #[Scope]
+    protected function priority(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $query) => $query
+            ->whereRaw(self::KNOWN_EXPLOITED_SQL)
+            ->orWhere('sla_due_at', '<', now())
+            ->orWhere(fn (Builder $query) => $query->whereNull('acknowledged_at')->whereIn('severity', [Severity::Critical, Severity::High])));
+    }
+
+    /**
+     * Priority findings in the order to handle them: CISA KEV, then overdue, then unread Critical, then unread High;
+     * the nearest deadline first within each.
+     *
+     * @param  Builder<Finding>  $query
+     * @return Builder<Finding>
+     */
+    #[Scope]
+    protected function orderByPriority(Builder $query): Builder
+    {
+        return $query
+            ->orderByRaw('case when '.self::KNOWN_EXPLOITED_SQL.' then 0 when sla_due_at < ? then 1 when severity = ? then 2 else 3 end', [now(), Severity::Critical->value])
+            ->orderBy('sla_due_at')
+            ->orderBy('id');
+    }
+
+    /**
+     * Whether CISA KEV lists a CVE of the finding (see KnownExploitation).
+     */
+    public function isKnownExploited(): bool
+    {
+        return filled($this->context['known_exploited'] ?? null);
     }
 
     /**

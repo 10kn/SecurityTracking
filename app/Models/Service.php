@@ -4,9 +4,13 @@ namespace App\Models;
 
 use App\Enums\Environment;
 use App\Enums\Exposure;
+use App\Enums\RuntimeStatus;
 use App\Enums\ServiceKind;
+use App\Enums\Technology;
 use Database\Factories\ServiceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -51,6 +55,29 @@ class Service extends Model
     public function syncsLockfiles(): bool
     {
         return $this->repository !== null;
+    }
+
+    /**
+     * The services not fully evaluated (the Overview, and `attention=1` of the services list), as the services list
+     * shows them: a production runtime evaluates as unknown, whether stored so or because its technology's catalog
+     * has not synced within its threshold (see RuntimeEvaluator), the lockfiles could not be read from the
+     * repository, or a lockfile cannot be read. None of them counts as "Đạt".
+     *
+     * @param  Builder<Service>  $query
+     * @return Builder<Service>
+     */
+    #[Scope]
+    protected function notFullyEvaluated(Builder $query): Builder
+    {
+        $catalogs = SourceHeartbeat::whereIn('source', array_map(fn (Technology $technology): string => $technology->catalogSourceKey(), Technology::cases()))->get()->keyBy('source');
+        $staleTechnologies = array_values(array_filter(Technology::cases(), fn (Technology $technology): bool => $catalogs->get($technology->catalogSourceKey())?->isStale() !== false));
+
+        return $query->where(fn (Builder $query) => $query
+            ->whereNotNull('lockfiles_sync_error')
+            ->orWhereHas('productionDeployment.runtimes', fn (Builder $query) => $query->where(fn (Builder $query) => $query
+                ->where('status', RuntimeStatus::Unknown)
+                ->orWhereIn('technology', $staleTechnologies)))
+            ->orWhereHas('productionDeployment.lockfiles', fn (Builder $query) => $query->whereColumn('parsed_hash', 'content_hash')->whereNotNull('parse_error')));
     }
 
     /**

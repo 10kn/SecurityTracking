@@ -1,4 +1,5 @@
 import { Link } from '@inertiajs/react';
+import { XIcon } from 'lucide-react';
 
 import { show as showProject } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { create, edit } from '@/actions/App/Http/Controllers/Admin/ServiceController';
@@ -11,10 +12,10 @@ import { useTableQuery } from '@/hooks/use-table-query';
 import { useTranslation } from '@/lib/i18n';
 import type { Option, Paginated, TableState } from '@/types';
 
-export default function ServicesIndex({ services, table, projects }: { services: Paginated<ServiceRow>; table: TableState & { project: number | null }; projects: Option<number>[] }) {
+export default function ServicesIndex({ services, table, projects }: { services: Paginated<ServiceRow>; table: TableState & { project: number | null; attention: number | null }; projects: Option<number>[] }) {
     const t = useTranslation();
     const query = useTableQuery(table, ['services']);
-    const isFiltered = table.search !== '' || table.project !== null;
+    const isFiltered = table.search !== '' || table.project !== null || table.attention !== null;
 
     return (
         <>
@@ -32,6 +33,19 @@ export default function ServicesIndex({ services, table, projects }: { services:
                     <div className="flex flex-1 flex-wrap items-center gap-2">
                         <TableSearch value={table.search} placeholder={t('Tìm service')} onSearch={(search) => query({ search })} />
                         <TableFilter value={table.project} label={t('Project')} allLabel={t('Mọi project')} options={projects} onChange={(project) => query({ project })} />
+                        <TableFilter
+                            value={table.attention}
+                            label={t('Đánh giá')}
+                            allLabel={t('Mọi service')}
+                            options={[{ value: 1, label: t('Chưa đánh giá đủ') }]}
+                            onChange={(attention) => query({ attention })}
+                        />
+                        {isFiltered && (
+                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, project: null, attention: null })}>
+                                {t('Bỏ lọc')}
+                                <XIcon />
+                            </Button>
+                        )}
                     </div>
                     <span className="text-sm text-faint max-sm:hidden">{t(':count service', { count: services.meta.total })}</span>
                 </CardHeader>

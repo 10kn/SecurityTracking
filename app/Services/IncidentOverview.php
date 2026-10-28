@@ -92,6 +92,18 @@ class IncidentOverview
     }
 
     /**
+     * The pre-notice an incident is listed by: its most severe one that is not dismissed, else its first one.
+     *
+     * @param  IncidentState  $state
+     */
+    public function lead(array $state): ?Advisory
+    {
+        $notices = $state['notices'];
+
+        return $notices->where('is_dismissed', false)->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first() ?? $notices->first();
+    }
+
+    /**
      * Whether an admin should look at the incident: it has a pending suggestion, or a team is reminded of it; with a
      * team, only that team counts.
      *

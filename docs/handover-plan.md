@@ -146,6 +146,15 @@ Code nằm ở nhánh `admin-v2-inertia` (CISA KEV — D15 — ở nhánh `claud
     - GHSA → CVE: `App\Actions\ResolveNoticeCves` (advisory package đã lưu, rồi `GET https://api.github.com/advisories/{ghsa}` không cần token, `psm.kev.ghsa_api_url`), lưu `{GHSA: {cves, source}}`; mỗi GHSA của mọi tin được tra 1 lần (kể cả tin đã cũ, vì CISA có thể thêm CVE rất lâu sau); GHSA GitHub chưa có CVE thì tra lại mỗi lần chạy, chỉ cho tin còn mới hoặc thuộc incident đã báo team; heartbeat `kev:ghsa`. Chỉ `psm:sync-kev` ghi nhận CVE bị CISA gỡ (để luôn có tin báo admin).
     - Admin UI: trang incident hiện "CISA KEV" (CVE, ngày CISA thêm, hạn CISA, "CISA đã gỡ") ở đầu trang và từng tin; màn Findings hiện "CISA KEV: CVE-…". Card finding ghi CVE, ngày thêm, hạn CISA, bản vá liên quan (runtime) và "Mức theo nguồn".
     - Migration `2026_10_27_105422_add_known_exploited_vulnerabilities`. Test: `tests/Feature/Actions/SyncKnownExploitedVulnerabilitiesTest.php`, `tests/Feature/Console/Commands/SyncKevCatalogTest.php` (fixture thật `tests/Fixtures/kev/`: 6 CVE của catalog 2026.10.26), thêm vào `SyncFindingsTest`, `IncidentAssessmentTest`, `MergeIncidentsTest`, `FindingControllerTest`, `IncidentControllerTest`. 771 test Pest xanh.
+  - **Màn Tổng quan (27/10):** trang chủ admin theo `public/prototypes/admin-v2/overview.html`. `/admin` mở trang này (trước đây chuyển sang Projects), sidebar có "Tổng quan" ở đầu, logo cũng về đây. `OverviewController` (invokable, `pages/overview/index.tsx`) chỉ trả lời hai câu: giám sát có đang im lặng vì lỗi không, và hôm nay bắt đầu từ đâu.
+    - Khối "Sự cố giám sát" chỉ hiện khi có vấn đề, tối đa 3 callout: (1) nguồn quá ngưỡng (`SourceHeartbeat::isStale()`), kèm hệ quả theo loại nguồn; "Chạy lại" chỉ cho catalog runtime (route `technologies/{technology}/sync`), nguồn khác có "Xem lỗi" mở tại chỗ (lỗi + lần thử lỗi gần nhất). Chưa có heartbeat nào → callout "Chưa ghi nhận nguồn dữ liệu nào". (2) Tin Google Chat chưa gửi, gom theo nơi nhận: space admin trước (cả khi chưa cấu hình `PSM_ADMIN_CHAT_WEBHOOK`), rồi team theo tên; tin tính là chưa gửi khi `failed_at` hoặc chờ quá `stuck_after_minutes`, **trừ khi** sau đó đã có tin tới cùng nơi nhận gửi thành công (webhook đã chạy lại; lỗi cũ đã được báo admin kèm lệnh gửi lại). Team chưa có webhook cũng được liệt kê. "Xem lỗi" hiện lỗi gần nhất và lệnh `php artisan psm:resend-notification {id}` (tối đa 5 id). Quá 5 nơi nhận → "+N nơi nhận khác" mở Teams. (3) Service chưa được đánh giá đầy đủ (chấm viền đứt) → `/admin/services?attention=1`.
+    - **Filter mới** `/admin/services?attention=1` (`Service::notFullyEvaluated()`): runtime production `unknown` (đã lưu, hoặc catalog của công nghệ đó quá ngưỡng — giống cách màn Services đánh giá lại), `lockfiles_sync_error`, hoặc lockfile đã đọc mà lỗi (`isUnreadable()`). Lockfile đang chờ quét không tính.
+    - "Finding ưu tiên": finding mở có CISA KEV (`context.known_exploited` không rỗng), HOẶC quá hạn, HOẶC Critical / High chưa đọc (`Finding::priority()`); 3 dòng theo thứ tự KEV → quá hạn → Critical chưa đọc → High chưa đọc, hạn gần trước (`Finding::orderByPriority()`); mỗi dòng mở `?ids=`. **Filter mới** `/admin/findings?priority=1`.
+    - "Incident cần xem": đúng logic `attention=1` (`IncidentOverview::mayNeedAttention()` + `needsAttention()`), mới nhất trước như màn Incidents, 3 dòng với lý do (team cần đánh giá / đánh giá lại ảnh hưởng, gợi ý gộp đang chờ). Tiêu đề incident lấy chung `IncidentOverview::lead()`.
+    - Dòng bằng chứng (chữ xám): giờ kiểm tra · có nguồn đã ghi nhận nào quá ngưỡng không · lần gửi Google Chat gần nhất (`MAX(sent_at)`); mở ra xem mọi heartbeat (tên theo ngôn ngữ người xem, `SourceHeartbeat::localizedName()`). Không suy ra scheduler có chạy từ `updated_at`.
+    - Mỗi khối đọc riêng (`rescue`): khối lỗi trả `null`, trang hiện "Không tải được…" / số đếm "—" (không bao giờ hiểu là 0 hay "Google Chat vẫn chạy"), khối khác vẫn hiện. Lỗi tải cả trang dùng trang lỗi mặc định của Inertia.
+    - Component mới `components/admin/callout.tsx` (callout, danh sách, "Xem lỗi", chấm viền đứt cỡ icon). Chuỗi JA thêm vào `lang/ja.json` (lấy từ `i18n.js` của mock). Giờ theo `psm.digest.timezone`.
+    - Kiểm tra: `tests/Feature/Admin/OverviewControllerTest.php` (10 test: chọn và thứ tự từng khối, ẩn callout khi ổn, lỗi space admin, khối lỗi, hai filter mới); 210 test của `tests/Feature/Admin`, `Models`, `Seeders` xanh; Pint, Larastan (file đã đổi), `tsc` sạch; `npm run build` chạy được. Đã xem bằng Brave headless (VI / JA, Graphite / Night, desktop / 375px) trên bản sao DB dev.
   - Kiểm tra (27/10): 735 test Pest xanh khi chạy cả bộ. `phpunit.xml` ép rỗng 3 biến `PSM_GITHUB_*` (như `ANTHROPIC_API_KEY`) để `.env` có GitHub App thật không làm hỏng test "chưa cấu hình"; test seeder chỉ còn kiểm tra tài khoản admin vì `DatabaseSeeder` không gọi `DemoSeeder` nữa.
 - Lịch (`routes/console.php`): `psm:sync-runtimes` mỗi giờ, `psm:sync-kev` mỗi giờ (phút 20), `psm:watch-notices` và `psm:check-sources` 15 phút (check-sources ping `PSM_SCHEDULER_HEARTBEAT_URL` nếu có), `psm:scan-packages` 6 giờ, `psm:evaluate-runtimes` 00:05, `psm:send-digest` theo `psm.digest`, `psm:sync-lockfiles` 06:30 theo `psm.github`. Lệnh chạy tay: `psm:resend-notification`, `psm:incident-update`.
 - Kiểm tra (M5): 297 test Pest xanh (gồm 6 kịch bản đầu cuối trong `tests/Feature/Scenarios/DetectionPipelineTest.php`), Larastan level 6 sạch, Pint sạch. Đã chạy thử với nguồn thật trên DB dev ngày 23/10/2026 (8 finding từ dữ liệu demo, 7 tin báo trước).
@@ -305,7 +314,7 @@ M5 có thể cắt nếu hết thời gian; M0–M4 đã đủ kiểm chứng đ
 
 | Tính năng | Ghi chú |
 |---|---|
-| Màn hình Findings (inbox, gom nhóm, phím tắt), trang chi tiết, dashboard, ma trận runtime, dòng thời gian nhánh | Làm bằng React (D2). Theo spec mục 10; màn Tổng quan trong prototype v2 là mẫu. ⌘K tìm project / service / team / công nghệ đã có. **Đã có (26/10):** danh sách finding mở, lọc theo team / trạng thái, "Đã đọc" hàng loạt, màn Incidents. Tìm và sắp xếp finding theo ngôn ngữ người xem (27/10). Còn lại: trang chi tiết finding, gom nhóm, dashboard. Không làm phím tắt (chốt 27/10). |
+| Màn hình Findings (inbox, gom nhóm, phím tắt), trang chi tiết, dashboard, ma trận runtime, dòng thời gian nhánh | Làm bằng React (D2). Theo spec mục 10; màn Tổng quan trong prototype v2 là mẫu. ⌘K tìm project / service / team / công nghệ đã có. **Đã có (26/10):** danh sách finding mở, lọc theo team / trạng thái, "Đã đọc" hàng loạt, màn Incidents. Tìm và sắp xếp finding theo ngôn ngữ người xem (27/10). Màn Tổng quan bản thu gọn (27/10, mục 3.1). Còn lại: trang chi tiết finding, gom nhóm. Không làm phím tắt (chốt 27/10). |
 | Cài đặt gửi tin theo từng team, email leo thang, tab thành viên của team | Có trong prototype v2 (mục 10.6) nhưng ngoài MVP: MVP dùng chính sách chung trong `config/psm.php` và chỉ admin đăng nhập. |
 | Vòng đời thủ công: Đã nhận, Đã vá, Đã xác minh theo instance, Không ảnh hưởng, Chấp nhận rủi ro; SLA | MVP chỉ `open` / `resolved` tự động. **Đã có (26–27/10):** hạn xử lý theo mức (`deadline_days`), "Đã đọc" cho finding, đánh giá ảnh hưởng Có / Không / Chưa rõ cho incident theo team. Vẫn chưa có trạng thái thủ công cho finding. |
 | Google SSO, policy theo team, dev đăng nhập xem team mình | MVP chỉ admin đăng nhập. |
@@ -366,7 +375,8 @@ Thêm công nghệ mới (D11): cần mã sản phẩm `https://endoflife.date/a
 | File | Nội dung |
 |---|---|
 | `index.html` | So sánh 4 theme trên cùng màn Tổng quan |
-| `dashboard.html` | Tổng quan (sau MVP) |
+| `overview.html` | Tổng quan bản thu gọn (đã làm bằng React, 27/10) |
+| `dashboard.html` | Tổng quan bản đầy đủ, chỉ giữ để so sánh |
 | `teams.html`, `team.html` | Danh sách team; sửa team gồm các tab Cài đặt / Thành viên / Projects |
 | `project.html` | Xem project; các tab Services / Deployments / Findings |
 | `styles.css` | Token màu theo theme, token cỡ chữ theo ngôn ngữ, component |
@@ -442,7 +452,8 @@ Chuyển ngôn ngữ bằng nút **VI / 日本語** trên topbar. Lựa chọn l
 | Khối thông tin nhãn – giá trị 3 cột | `<dl>` trong `pages/projects/show.tsx` | Có |
 | Modal có form, xác nhận xóa | `components/ui/dialog.tsx`, `components/admin/confirm-button.tsx` | Có |
 | Toast | sonner (`components/ui/sonner.tsx`) + `Inertia::flash('toast')` | Có |
-| Badge mức độ có icon, khối 4 số liệu, callout nguồn lỗi, toggle, j / k trong bảng | Chưa làm | Sau MVP |
+| Callout (nguồn lỗi, tin chưa gửi, thiếu dữ liệu) | `components/admin/callout.tsx` | Có (27/10, màn Tổng quan) |
+| Badge mức độ có icon, khối 4 số liệu, toggle, j / k trong bảng | Chưa làm | Sau MVP; j / k không làm |
 
 ### 10.6 Màn hình và phạm vi MVP
 
@@ -457,7 +468,7 @@ Chuyển ngôn ngữ bằng nút **VI / 日本語** trên topbar. Lựa chọn l
 | Xem project | Infolist (repository, team, kênh cảnh báo, ngày tạo) + tab Services | M1. Cột trạng thái runtime có từ M2, cột packages từ M5, cột finding mở từ M3. |
 | Project — Deployments | Commit, release, instance theo môi trường | MVP chỉ có `production` nhập tay (D8): hiện version runtime, lockfile, thời điểm cập nhật. Commit / instance để sau. |
 | Project — Findings | Mức, vấn đề, service, hạn, trạng thái | MVP chỉ `open` / `resolved` (D6). Không hiện hạn SLA. |
-| Tổng quan | Callout, 4 số liệu, bảng "Cần xử lý", nguồn dữ liệu, theo team | **Sau MVP** (D9). |
+| Tổng quan | `overview.html` (bản thu gọn, thay `dashboard.html`): callout sự cố giám sát (nguồn quá ngưỡng, tin Google Chat chưa gửi, service chưa được đánh giá đầy đủ), "Finding ưu tiên", "Incident cần xem", dòng bằng chứng | **Đã làm 27/10** (mục 3.1), là trang chủ `/admin`. Bỏ 4 số liệu, bảng "Cần xử lý", bảng theo team, danh sách nguồn khỏe. |
 
 ### 10.7 Trạng thái hiển thị
 
