@@ -60,6 +60,18 @@ class Incident extends Model
     }
 
     /**
+     * Incidents whose every pre-notice was dismissed as not security news (see SyncNoticeFeed).
+     *
+     * @param  Builder<Incident>  $query
+     * @return Builder<Incident>
+     */
+    #[Scope]
+    protected function dismissed(Builder $query): Builder
+    {
+        return $query->whereHas('notices')->whereDoesntHave('notices', fn (Builder $query) => $query->where('is_dismissed', false));
+    }
+
+    /**
      * @return HasMany<Advisory, $this>
      */
     public function notices(): HasMany

@@ -46,6 +46,9 @@ class IncidentController extends Controller
      * admin (see IncidentOverview::needsAttention()), for the filtered team only when there is one. The page is read
      * from the database first; only the attention filter reads the incidents the database cannot rule out, all at
      * once (see IncidentOverview::states()).
+     *
+     * Incidents whose every pre-notice was dismissed as not security news are left out, unless the list is filtered on
+     * them (`dismissed`) or on what needs an admin, which counts them as the Overview does.
      */
     public function index(Request $request): Response
     {
@@ -53,8 +56,11 @@ class IncidentController extends Controller
         $technology = Technology::tryFrom($request->string('technology')->toString());
         $teamId = $request->integer('team') ?: null;
         $isAttention = $request->boolean('attention');
+        $isDismissed = $request->boolean('dismissed');
 
         $query = $table->search(Incident::current(), ['title'])
+            ->when($isDismissed, fn (Builder $query) => $query->dismissed())
+            ->when(! $isDismissed && ! $isAttention, fn (Builder $query) => $query->whereNot(fn (Builder $query) => $query->dismissed()))
             ->when($technology !== null, fn (Builder $query) => $query->where('technology', $technology))
             ->when($teamId !== null, fn (Builder $query) => $query->whereIn('id', Advisory::whereKey(IncidentTeamNotice::noticeIdsSentTo($teamId))->whereNotNull('incident_id')->select('incident_id')))
             ->when(
@@ -79,7 +85,7 @@ class IncidentController extends Controller
 
         return Inertia::render('incidents/index', [
             'incidents' => JsonResource::collection($incidents),
-            'table' => [...$table->toArray(), 'technology' => $technology?->value, 'team' => $teamId, 'attention' => $isAttention ? 1 : null],
+            'table' => [...$table->toArray(), 'technology' => $technology?->value, 'team' => $teamId, 'attention' => $isAttention ? 1 : null, 'dismissed' => $isDismissed ? 1 : null],
             'technologies' => array_map(fn (Technology $technology): array => ['value' => $technology->value, 'label' => $technology->getLabel()], Technology::cases()),
             'teams' => Team::orderBy('name')->get()->map(fn (Team $team): array => ['value' => $team->id, 'label' => $team->name])->all(),
         ]);

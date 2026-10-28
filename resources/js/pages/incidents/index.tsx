@@ -14,7 +14,7 @@ import type { Option, Paginated, TableState } from '@/types';
 
 interface Props {
     incidents: Paginated<IncidentSummary>;
-    table: TableState & { technology: string | null; team: number | null; attention: number | null };
+    table: TableState & { technology: string | null; team: number | null; attention: number | null; dismissed: number | null };
     technologies: Option<string>[];
     teams: Option<number>[];
 }
@@ -22,7 +22,7 @@ interface Props {
 export default function IncidentsIndex({ incidents, table, technologies, teams }: Props) {
     const t = useTranslation();
     const query = useTableQuery(table, ['incidents']);
-    const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null;
+    const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.dismissed !== null;
 
     return (
         <>
@@ -43,8 +43,15 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                             options={[{ value: 1, label: t('Cần admin xử lý') }]}
                             onChange={(attention) => query({ attention })}
                         />
+                        <TableFilter
+                            value={table.dismissed}
+                            label={t('Loại tin')}
+                            allLabel={t('Tin bảo mật')}
+                            options={[{ value: 1, label: t('Không phải tin bảo mật') }]}
+                            onChange={(dismissed) => query({ dismissed })}
+                        />
                         {isFiltered && (
-                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, technology: null, team: null, attention: null })}>
+                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, technology: null, team: null, attention: null, dismissed: null })}>
                                 {t('Bỏ lọc')}
                                 <XIcon />
                             </Button>

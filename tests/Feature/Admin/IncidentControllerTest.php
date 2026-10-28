@@ -118,6 +118,30 @@ it('filters on a technology, a team told and what needs an admin', function () {
     get('/admin/incidents?attention=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
 });
 
+it('leaves out incidents whose every pre-notice is no security news, unless filtered on them', function () {
+    actingAsAdmin();
+    $conference = Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'Dutch PHP Conference 2023 - Call for Papers', 'severity' => Severity::Unknown, 'is_dismissed' => true, 'published_at' => '2023-05-23 10:52:58']);
+    $dismissed = Incident::factory()->create(['title' => $conference->title, 'first_published_at' => $conference->published_at]);
+    $conference->update(['incident_id' => $dismissed->id]);
+    Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'PHP 8.3 security notes', 'is_dismissed' => true, 'incident_id' => $this->incident->id]);
+    $empty = Incident::factory()->create(['title' => 'Incident without pre-notices', 'first_published_at' => now()->subDay()]);
+
+    get('/admin/incidents')->assertInertia(fn (Assert $page) => $page
+        ->where('incidents.data', fn ($incidents): bool => collect($incidents)->pluck('id')->all() === [$this->incident->id, $empty->id])
+        ->where('table.dismissed', null));
+    get('/admin/incidents?dismissed=1')->assertInertia(fn (Assert $page) => $page
+        ->where('incidents.data', fn ($incidents): bool => collect($incidents)->pluck('id')->all() === [$dismissed->id])
+        ->where('table.dismissed', 1));
+});
+
+it('counts incidents whose every pre-notice is no security news among those needing an admin, as the Overview does', function () {
+    actingAsAdmin();
+    $this->preNotice->update(['is_dismissed' => true]);
+
+    get('/admin/incidents')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
+    get('/admin/incidents?attention=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
+});
+
 it('filters on what needs an admin for the filtered team only', function () {
     actingAsAdmin();
     assessIncident($this->incident, $this->commerce, IncidentImpact::Yes);
