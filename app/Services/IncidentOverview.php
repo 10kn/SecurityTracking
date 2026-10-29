@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\BranchSupport;
 use App\Enums\IncidentSuggestionStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
@@ -11,6 +12,7 @@ use App\Models\IncidentSuggestion;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\Runtime;
+use App\Models\RuntimeBranch;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -22,11 +24,14 @@ use Illuminate\Support\Collection;
  * needs an admin when it has a pending suggestion, or a team is reminded of it every day (see the `needs_acknowledgement`
  * of a team): the same rule as the reminders of the daily digest (see SendDailyDigest::awaitingPatch()).
  *
+ * The fix of a branch, whether the catalog says the branch reached end of life and whether the incident is recent enough
+ * for reminders are kept as separate facts: none of them replaces another.
+ *
  * Everything is read for a set of incidents at once, in a number of queries that does not grow with the incidents or
  * the teams, so a list page costs the same whatever it shows.
  *
  * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_running: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool}
- * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null}>, pending_suggestions_count: int, teams: Collection<int, TeamState>}
+ * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
  */
 class IncidentOverview
 {
@@ -54,6 +59,7 @@ class IncidentOverview
             $technology,
             $notices->collapse()->where('technology', $technology)->flatMap(fn (Advisory $notice): array => $notice->patch_versions ?? [])->unique()->values()->all(),
         )]);
+        $eolBranches = $this->eolBranchesOf($technologies);
         $ledger = IncidentTeamNotice::ledgerFor($noticeIds);
         $rows = IncidentTeam::whereIn('incident_id', $incidentIds)
             ->with($withHistory ? ['acknowledgedBy', 'openingNotification', 'events.user'] : ['acknowledgedBy', 'openingNotification'])
@@ -65,7 +71,7 @@ class IncidentOverview
             ->orderBy('name')
             ->get();
 
-        return $incidents->mapWithKeys(function (Incident $incident) use ($notices, $runtimes, $releases, $ledger, $rows, $suggestions, $incidentOfNotice, $teams): array {
+        return $incidents->mapWithKeys(function (Incident $incident) use ($notices, $runtimes, $releases, $eolBranches, $ledger, $rows, $suggestions, $incidentOfNotice, $teams): array {
             $incidentNotices = $notices->get($incident->id) ?? new EloquentCollection;
             $patches = $incident->confirmedPatches($incidentNotices, $releases->get($incident->technology->value));
             $technologyRuntimes = $runtimes->get($incident->technology->value) ?? new EloquentCollection;
@@ -74,7 +80,8 @@ class IncidentOverview
             return [$incident->id => [
                 'incident' => $incident,
                 'notices' => $incidentNotices,
-                'fixes' => $this->fixes($incident, $technologyRuntimes, $patches),
+                'fixes' => $this->fixes($incident, $technologyRuntimes, $patches, $eolBranches->get($incident->technology->value) ?? []),
+                'is_within_reminder_window' => $this->isWithinReminderWindow($incident),
                 'pending_suggestions_count' => $suggestions->filter(fn (IncidentSuggestion $suggestion): bool => $suggestion->incident_id === $incident->id || (int) $incidentOfNotice->get($suggestion->advisory_id) === $incident->id)->count(),
                 'teams' => $this->teams($incident, $incidentNotices, $patches, $technologyRuntimes, $ledger->whereIn('advisory_id', $memberIds), $rows->get($incident->id) ?? new EloquentCollection, $teams),
             ]];
@@ -210,22 +217,24 @@ class IncidentOverview
 
     /**
      * The fix of each branch the incident concerns: the branches the vendor confirmed a fix for, and those any team
-     * runs that the vendor did not rule out, naturally sorted. `version` is null while a branch waits.
+     * runs that the vendor did not rule out, naturally sorted. `version` is null while a branch waits. `is_eol` when the
+     * catalog says the branch reached end of life; a branch the catalog does not list is not taken for one.
      *
      * @param  EloquentCollection<int, Runtime>  $runtimes
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
-     * @return list<array{branch: string, version: string|null}>
+     * @param  list<string>  $eolBranches  The branches of the technology the catalog says reached end of life.
+     * @return list<array{branch: string, version: string|null, is_eol: bool}>
      */
-    private function fixes(Incident $incident, EloquentCollection $runtimes, array $patches): array
+    private function fixes(Incident $incident, EloquentCollection $runtimes, array $patches, array $eolBranches): array
     {
         $fixes = [];
 
         foreach ($patches as $branch => $patch) {
-            $fixes[] = ['branch' => (string) $branch, 'version' => $patch['version']];
+            $fixes[] = ['branch' => (string) $branch, 'version' => $patch['version'], 'is_eol' => in_array((string) $branch, $eolBranches, true)];
         }
 
         foreach (IncidentTeamExposure::waitingBranches($incident, $runtimes, $patches) as $branch) {
-            $fixes[] = ['branch' => $branch, 'version' => null];
+            $fixes[] = ['branch' => $branch, 'version' => null, 'is_eol' => in_array($branch, $eolBranches, true)];
         }
 
         usort($fixes, fn (array $a, array $b): int => strnatcmp($a['branch'], $b['branch']));
@@ -250,6 +259,21 @@ class IncidentOverview
     private function isWithinReminderWindow(Incident $incident): bool
     {
         return $incident->first_published_at !== null && $incident->first_published_at->gte(now()->subDays(config('psm.incidents.awaiting_patch_days')));
+    }
+
+    /**
+     * The branches of each technology the catalog says reached end of life, by technology.
+     *
+     * @param  Collection<int, Technology>  $technologies
+     * @return Collection<string, list<string>>
+     */
+    private function eolBranchesOf(Collection $technologies): Collection
+    {
+        return RuntimeBranch::whereIn('technology', $technologies->values()->all())
+            ->get()
+            ->filter(fn (RuntimeBranch $branch): bool => $branch->support() === BranchSupport::Eol)
+            ->groupBy(fn (RuntimeBranch $branch): string => $branch->technology->value)
+            ->map(fn (Collection $branches): array => $branches->map(fn (RuntimeBranch $branch): string => (string) $branch->branch)->values()->all());
     }
 
     /**

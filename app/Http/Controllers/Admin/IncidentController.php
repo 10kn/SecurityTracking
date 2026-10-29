@@ -158,7 +158,9 @@ class IncidentController extends Controller
     }
 
     /**
-     * A row of the list, also the header of the incident page.
+     * A row of the list, also the header of the incident page. The fix status says what the vendor released, never
+     * whether a service was upgraded: a branch the vendor confirmed no fix for is missing information, not proof there
+     * is none. Whether the incident is too old for reminders is a mark of its own, beside the fix status.
      *
      * @param  IncidentState  $state  See IncidentOverview::states().
      * @return array<string, mixed>
@@ -169,7 +171,7 @@ class IncidentController extends Controller
         $notices = $state['notices'];
         $lead = $this->overview->lead($state);
         $fixes = $state['fixes'];
-        $fixed = collect($fixes)->whereNotNull('version')->count();
+        $confirmed = collect($fixes)->whereNotNull('version')->count();
 
         return [
             'id' => $incident->id,
@@ -182,10 +184,11 @@ class IncidentController extends Controller
             'teams_told_count' => $state['teams']->where('is_told', true)->count(),
             'fixes' => $fixes,
             'fix_status' => match (true) {
-                $fixes === [] || $fixed === 0 => ['label' => __('Chưa có bản vá'), 'tone' => 'warning'],
-                $fixed < count($fixes) => ['label' => __('Có bản vá một phần'), 'tone' => 'warning'],
-                default => ['label' => __('Đã có bản vá'), 'tone' => 'success'],
+                $confirmed === 0 => ['label' => __('Chưa có thông tin bản vá xác nhận'), 'tone' => 'unknown'],
+                $confirmed < count($fixes) => ['label' => __('Hãng có bản vá một phần'), 'tone' => 'warning'],
+                default => ['label' => __('Hãng đã có bản vá'), 'tone' => 'neutral'],
             },
+            'is_outside_reminder_window' => ! $state['is_within_reminder_window'],
             'pending_suggestions_count' => $state['pending_suggestions_count'],
             'teams_to_acknowledge_count' => $state['teams']->where('needs_acknowledgement', true)->count(),
         ];
