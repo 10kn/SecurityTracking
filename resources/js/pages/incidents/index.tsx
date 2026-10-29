@@ -94,7 +94,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                                                 <SeverityBadge severity={incident.severity} />
                                                 {incident.is_known_exploited && <StatusDot status={{ label: 'KEV', tone: 'danger' }} className="mt-1 flex" title={t('CISA KEV đang liệt kê CVE của sự kiện')} />}
                                             </Td>
-                                            <Td className="max-w-[420px]">
+                                            <Td className="min-w-[200px] max-w-[420px]">
                                                 <CellTitle
                                                     title={incident.lead ?? incident.title}
                                                     sub={`#${incident.id} · ${incident.technology.label}`}
@@ -106,7 +106,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                                             <Td align="right">
                                                 <DeliveryCell incident={incident} />
                                             </Td>
-                                            <Td>
+                                            <Td className="max-w-[260px]">
                                                 <FixStatus incident={incident} />
                                             </Td>
                                             <Td>
