@@ -2,13 +2,14 @@ import { Link, router, useForm } from '@inertiajs/react';
 import { CheckIcon, ExternalLinkIcon, GitMergeIcon, SendIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { store as acknowledge } from '@/actions/App/Http/Controllers/Admin/IncidentAcknowledgementController';
 import { index, show } from '@/actions/App/Http/Controllers/Admin/IncidentController';
 import { store as merge } from '@/actions/App/Http/Controllers/Admin/IncidentMergeController';
 import { store as decide } from '@/actions/App/Http/Controllers/Admin/IncidentSuggestionDecisionController';
 import { store as sendUpdate } from '@/actions/App/Http/Controllers/Admin/IncidentUpdateController';
 import { store as split } from '@/actions/App/Http/Controllers/Admin/NoticeSplitController';
-import { Card, CardBody, CardHeader, CardTitle } from '@/components/admin/card';
+import { Card, CardBody, CardFooter, CardHeader, CardTitle } from '@/components/admin/card';
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { EmptyState, Table, Td, Th, Tr } from '@/components/admin/data-table';
 import { Field } from '@/components/admin/form-section';
@@ -86,6 +87,21 @@ interface TeamRow {
     history: { id: number; type: string; detail: string; by: string | null; at: string | null }[];
 }
 
+interface RelatedFinding {
+    id: number;
+    title: string;
+    rule: string;
+    severity: Severity;
+    service: string | null;
+    team: string | null;
+    state: StatusDotData;
+    recorded_version: string | null;
+    recorded_at: string | null;
+    target_version: string | null;
+    incident_fix: string | null;
+    resolved: string | null;
+}
+
 interface Props {
     incident: IncidentSummary & {
         planned_release: string | null;
@@ -98,6 +114,7 @@ interface Props {
     notices: Notice[];
     suggestions: Suggestion[];
     teams: TeamRow[];
+    findings: { items: RelatedFinding[]; total: number; open_ids: number[] };
     focusTeam: number | null;
     mergeTargets: Option<number>[];
     update: { request_id: string; recipients: (Option<number> & { is_default: boolean })[] };
@@ -105,7 +122,7 @@ interface Props {
 
 type Draft = { impact: string; note: string };
 
-export default function IncidentsShow({ incident, notices, suggestions, teams, focusTeam, mergeTargets, update }: Props) {
+export default function IncidentsShow({ incident, notices, suggestions, teams, findings, focusTeam, mergeTargets, update }: Props) {
     const t = useTranslation();
     const title = incident.lead ?? incident.title;
 
@@ -149,6 +166,7 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
             </Card>
             {suggestions.length > 0 && <Suggestions incidentId={incident.id} suggestions={suggestions} />}
             <Teams incidentId={incident.id} teams={teams} focusTeam={focusTeam} />
+            <RelatedFindings findings={findings} />
             <Notices incidentId={incident.id} notices={notices} />
             <UrgentUpdate incidentId={incident.id} update={update} />
         </>
@@ -551,6 +569,88 @@ function Assessment({ team }: { team: TeamRow }) {
                 </>
             )}
         </>
+    );
+}
+
+/**
+ * The findings linked to the incident, open ones first. The versions are those of the finding's last evaluation, kept
+ * apart from the incident's own fix. The findings list shows open findings only, so resolved ones are only listed here.
+ */
+function RelatedFindings({ findings }: { findings: Props['findings'] }) {
+    const t = useTranslation();
+    const [isExpanded, setIsExpanded] = useState(false);
+    const shown = isExpanded ? findings.items : findings.items.slice(0, 5);
+
+    return (
+        <Card className="mb-6">
+            <CardHeader>
+                <CardTitle>
+                    {t('Finding liên quan')} <span className="ml-1 text-sm font-normal text-faint">{findings.total}</span>
+                </CardTitle>
+                {findings.open_ids.length > 0 && (
+                    <Link href={findingsIndex.url({ query: { ids: findings.open_ids.slice(0, 200).join(',') } })} className="text-sm font-medium text-link hover:underline">
+                        {t('Mở :count finding đang mở', { count: findings.open_ids.length })}
+                    </Link>
+                )}
+            </CardHeader>
+            {findings.items.length === 0 ? (
+                <EmptyState title={t('Chưa có finding nào gắn với sự kiện này')} description={t('Chỉ tính finding nhắc tới tin hoặc bản vá của sự kiện; không đoán theo công nghệ hay phiên bản.')} />
+            ) : (
+                <>
+                    <Table className="min-w-[860px]">
+                        <thead>
+                            <tr>
+                                <Th>{t('Service')}</Th>
+                                <Th>{t('Finding')}</Th>
+                                <Th>{t('Trạng thái')}</Th>
+                                <Th>{t('Phiên bản')}</Th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {shown.map((finding) => (
+                                <Tr key={finding.id} className="align-top">
+                                    <Td className="align-top text-sm">
+                                        <span className="font-medium">{finding.service ?? '—'}</span>
+                                        {finding.team && <span className="mt-0.5 block text-muted-foreground">{finding.team}</span>}
+                                    </Td>
+                                    <Td className="max-w-[380px] align-top text-sm">
+                                        <span className="font-medium">{finding.title}</span>
+                                        <span className="mt-0.5 block text-muted-foreground">
+                                            {finding.rule} · {finding.severity.label}
+                                        </span>
+                                    </Td>
+                                    <Td className="align-top text-sm whitespace-nowrap">
+                                        <StatusDot status={finding.state} />
+                                        {finding.resolved && <span className="mt-0.5 block text-muted-foreground tabular-nums">{finding.resolved}</span>}
+                                    </Td>
+                                    <Td className="align-top text-sm">
+                                        {finding.recorded_version && (
+                                            <span className="block">
+                                                <span className="font-mono">{finding.recorded_version}</span>{' '}
+                                                <span className="text-muted-foreground">{t('tại lần ghi nhận :time', { time: finding.recorded_at ?? '—' })}</span>
+                                            </span>
+                                        )}
+                                        {finding.target_version && <span className="mt-0.5 block text-muted-foreground">{t('Cần nâng lên :version', { version: finding.target_version })}</span>}
+                                        {finding.incident_fix && <span className="mt-0.5 block text-muted-foreground">{t('Bản vá của sự kiện: :version', { version: finding.incident_fix })}</span>}
+                                        {!finding.recorded_version && !finding.target_version && !finding.incident_fix && <span className="text-muted-foreground">—</span>}
+                                    </Td>
+                                </Tr>
+                            ))}
+                        </tbody>
+                    </Table>
+                    {(findings.items.length > 5 || findings.total > findings.items.length) && (
+                        <CardFooter>
+                            {findings.items.length > 5 && (
+                                <Button variant="link" size="sm" className="h-auto px-0 text-sm" onClick={() => setIsExpanded((expanded) => !expanded)}>
+                                    {isExpanded ? t('Thu gọn') : t('Xem thêm (:count)', { count: findings.items.length - 5 })}
+                                </Button>
+                            )}
+                            {findings.total > findings.items.length && <span>{t('Chỉ hiện :shown trên :total finding', { shown: findings.items.length, total: findings.total })}</span>}
+                        </CardFooter>
+                    )}
+                </>
+            )}
+        </Card>
     );
 }
 

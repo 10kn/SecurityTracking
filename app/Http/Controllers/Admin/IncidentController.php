@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\FindingState;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentScope;
 use App\Enums\IncidentTeamEventType;
@@ -10,12 +11,14 @@ use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Models\Advisory;
 use App\Models\ChatNotification;
+use App\Models\Finding;
 use App\Models\Incident;
 use App\Models\IncidentSuggestion;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamEvent;
 use App\Models\IncidentTeamNotice;
 use App\Models\Team;
+use App\Services\IncidentFindings;
 use App\Services\IncidentOverview;
 use App\Support\LocalTime;
 use App\Support\TableQuery;
@@ -39,7 +42,12 @@ use Inertia\Response;
  */
 class IncidentController extends Controller
 {
-    public function __construct(private IncidentOverview $overview) {}
+    /**
+     * The most related findings the incident page lists.
+     */
+    private const int FINDINGS_LIMIT = 50;
+
+    public function __construct(private IncidentOverview $overview, private IncidentFindings $findings) {}
 
     /**
      * Current incidents, newest first, filtered by technology, by a team told about them, and on those needing an
@@ -93,7 +101,8 @@ class IncidentController extends Controller
 
     /**
      * An incident with its pre-notices, the pending suggestions about it, each team told about it or running its
-     * technology, and what the merge and urgent update forms need. A merged incident opens the one it went into.
+     * technology, the findings linked to it (see IncidentFindings), and what the merge and urgent update forms need. A
+     * merged incident opens the one it went into.
      */
     public function show(Request $request, Incident $incident): Response|RedirectResponse
     {
@@ -109,6 +118,7 @@ class IncidentController extends Controller
         $notices = $state['notices'];
         $teams = $state['teams'];
         $teamId = $request->integer('team') ?: null;
+        $findings = $this->findings->of($incident, $notices);
 
         return Inertia::render('incidents/show', [
             'incident' => [
@@ -137,6 +147,11 @@ class IncidentController extends Controller
             ])->all(),
             'suggestions' => $this->suggestions($incident),
             'teams' => $teams->map(fn (array $team): array => $this->teamRow($incident, $team))->all(),
+            'findings' => [
+                'items' => $findings->take(self::FINDINGS_LIMIT)->map(fn (array $item): array => $this->findingRow($item['finding'], $item['incident_fix']))->values()->all(),
+                'total' => $findings->count(),
+                'open_ids' => $findings->pluck('finding')->where('state', FindingState::Open)->pluck('id')->values()->all(),
+            ],
             'focusTeam' => $teamId,
             'mergeTargets' => Incident::current()
                 ->where('technology', $incident->technology)
@@ -281,6 +296,39 @@ class IncidentController extends Controller
                 ])
                 ->values()
                 ->all(),
+        ];
+    }
+
+    /**
+     * A finding linked to the incident. The versions are those of its last evaluation (`context` is a snapshot): the
+     * one the service ran then and the one it asks to upgrade to, which may be later than this incident's fix, shown
+     * apart. Read stays open: only an evaluation resolves it.
+     *
+     * @param  string|null  $incidentFix  The fixed version of this incident the finding lists.
+     * @return array<string, mixed>
+     */
+    private function findingRow(Finding $finding, ?string $incidentFix): array
+    {
+        $context = $finding->context ?? [];
+        $target = $context['latest'] ?? $context['fixed'] ?? null;
+
+        return [
+            'id' => $finding->id,
+            'title' => $finding->localizedTitle(),
+            'rule' => $finding->rule->getLabel(),
+            'severity' => $this->severity($finding->severity),
+            'service' => $finding->deployment?->service?->name,
+            'team' => $finding->team?->name,
+            'state' => match (true) {
+                $finding->state === FindingState::Resolved => ['label' => __('Đã giải quyết'), 'tone' => 'neutral'],
+                $finding->isAcknowledged() => ['label' => __('Mở · Đã đọc'), 'tone' => 'warning'],
+                default => ['label' => __('Mở · Chưa đọc'), 'tone' => 'warning'],
+            },
+            'recorded_version' => is_string($context['version'] ?? null) ? $context['version'] : null,
+            'recorded_at' => LocalTime::format($finding->last_seen_at),
+            'target_version' => is_string($target) ? $target : null,
+            'incident_fix' => $incidentFix,
+            'resolved' => LocalTime::format($finding->resolved_at),
         ];
     }
 
