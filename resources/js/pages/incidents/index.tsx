@@ -14,7 +14,7 @@ import type { Option, Paginated, TableState } from '@/types';
 
 interface Props {
     incidents: Paginated<IncidentSummary>;
-    table: TableState & { technology: string | null; team: number | null; attention: number | null; dismissed: number | null };
+    table: TableState & { technology: string | null; team: number | null; attention: number | null; unknown: number | null; dismissed: number | null };
     technologies: Option<string>[];
     teams: Option<number>[];
 }
@@ -22,7 +22,7 @@ interface Props {
 export default function IncidentsIndex({ incidents, table, technologies, teams }: Props) {
     const t = useTranslation();
     const query = useTableQuery(table, ['incidents']);
-    const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.dismissed !== null;
+    const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.unknown !== null || table.dismissed !== null;
 
     return (
         <>
@@ -44,6 +44,13 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                             onChange={(attention) => query({ attention })}
                         />
                         <TableFilter
+                            value={table.unknown}
+                            label={t('Đánh giá')}
+                            allLabel={t('Mọi đánh giá')}
+                            options={[{ value: 1, label: t('Đã đánh giá: Chưa rõ') }]}
+                            onChange={(unknown) => query({ unknown })}
+                        />
+                        <TableFilter
                             value={table.dismissed}
                             label={t('Loại tin')}
                             allLabel={t('Tin bảo mật')}
@@ -51,7 +58,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                             onChange={(dismissed) => query({ dismissed })}
                         />
                         {isFiltered && (
-                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, technology: null, team: null, attention: null, dismissed: null })}>
+                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, technology: null, team: null, attention: null, unknown: null, dismissed: null })}>
                                 {t('Bỏ lọc')}
                                 <XIcon />
                             </Button>

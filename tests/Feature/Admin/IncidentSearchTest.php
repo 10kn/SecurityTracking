@@ -1,11 +1,14 @@
 <?php
 
 use App\Actions\SendPreNoticeAlerts;
+use App\Enums\IncidentImpact;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Incident;
+use App\Models\Runtime;
 use App\Models\Team;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -82,5 +85,74 @@ describe('the search', function () {
         searchIncidents('CVE-2026-1001', ['team' => $this->commerce->id])->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
         searchIncidents('CVE-2026-1001', ['team' => Team::where('name', 'Payments')->value('id')])->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
         searchIncidents('CVE-2026-1001', ['dismissed' => 1])->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $dismissed->id));
+    });
+});
+
+describe('the "Chưa rõ" filter', function () {
+    it('lists the incidents marked as read with "Chưa rõ" while that holds, however old, and keeps the filter in the page links', function () {
+        $old = Incident::factory()->create(['title' => 'Old PHP incident', 'first_published_at' => now()->subDays(90)]);
+        $affected = Incident::factory()->create(['title' => 'Affected PHP incident']);
+        assessIncident($this->incident, $this->commerce, IncidentImpact::Unknown);
+        assessIncident($old, $this->booking, IncidentImpact::Unknown);
+        assessIncident($affected, $this->commerce, IncidentImpact::Yes);
+
+        get('/admin/incidents?unknown=1')->assertInertia(fn (Assert $page) => $page
+            ->where('incidents.data', fn ($incidents) => collect($incidents)->pluck('id')->all() === [$this->incident->id, $old->id])
+            ->where('incidents.meta.total', 2)
+            ->where('incidents.meta.links.1.url', fn (string $url) => str_contains($url, 'unknown=1'))
+            ->where('table.unknown', 1));
+        get('/admin/incidents')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 3)->where('table.unknown', null));
+
+        $this->preNotice->update(['severity' => Severity::Critical]);
+
+        get('/admin/incidents?unknown=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $old->id));
+    });
+
+    it('counts only the filtered team', function () {
+        assessIncident($this->incident, $this->commerce, IncidentImpact::Unknown);
+        assessIncident($this->incident, $this->booking, IncidentImpact::Yes);
+
+        get("/admin/incidents?unknown=1&team={$this->commerce->id}")->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
+        get("/admin/incidents?unknown=1&team={$this->booking->id}")->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
+    });
+
+    it('keeps a team told about the incident that no longer runs its technology', function () {
+        assessIncident($this->incident, $this->commerce, IncidentImpact::Unknown);
+        Runtime::whereHas('deployment.service', fn ($query) => $query->where('name', 'shop-api'))->delete();
+
+        get('/admin/incidents?unknown=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
+    });
+
+    it('goes with the search and what needs an admin', function () {
+        $other = Incident::factory()->create(['title' => 'Another PHP incident']);
+        assessIncident($this->incident, $this->commerce, IncidentImpact::Unknown);
+        assessIncident($other, $this->commerce, IncidentImpact::Unknown);
+
+        searchIncidents('CVE-2026-1001', ['unknown' => 1])->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
+        get('/admin/incidents?unknown=1&attention=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
+
+        assessIncident($this->incident, $this->booking, IncidentImpact::Unknown);
+
+        get('/admin/incidents?unknown=1&attention=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
+    });
+
+    it('reads the list in a number of queries that does not grow with the incidents', function () {
+        assessIncident($this->incident, $this->commerce, IncidentImpact::Unknown);
+        $count = 0;
+        DB::listen(function () use (&$count): void {
+            $count++;
+        });
+
+        get('/admin/incidents?unknown=1')->assertOk();
+        $before = $count;
+
+        foreach (range(1, 3) as $index) {
+            assessIncident(Incident::factory()->create(['title' => "PHP incident {$index}"]), $this->booking, IncidentImpact::Unknown);
+        }
+
+        $count = 0;
+        get('/admin/incidents?unknown=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 4));
+
+        expect($count)->toBe($before);
     });
 });

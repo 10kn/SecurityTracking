@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\IncidentImpact;
 use App\Enums\IncidentSuggestionStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
@@ -130,6 +131,35 @@ class IncidentOverview
             ->whereIn('id', (clone $pending)->select('incident_id'))
             ->orWhereIn('id', Advisory::whereIn('id', (clone $pending)->select('advisory_id'))->whereNotNull('incident_id')->select('incident_id'))
             ->orWhere('first_published_at', '>=', now()->subDays(config('psm.incidents.awaiting_patch_days'))));
+    }
+
+    /**
+     * Whether an admin marked the incident as read with "Chưa rõ" for a team told about it or running its technology,
+     * and the assessment still holds (see IncidentTeam::hasValidAssessment()); with a team, only that team counts.
+     * Unlike needsAttention(), it does not depend on how recent the incident is, nor stop being true once the daily
+     * reminder stopped.
+     *
+     * @param  IncidentState  $state
+     */
+    public function hasUnknownImpact(array $state, ?int $teamId = null): bool
+    {
+        return $state['teams']->contains(fn (array $team): bool => $team['is_assessed']
+            && $team['row']?->impact === IncidentImpact::Unknown
+            && ($teamId === null || $team['team']->id === $teamId));
+    }
+
+    /**
+     * The incidents an admin marked as read with "Chưa rõ" for a team, for that team only when there is one, narrowed
+     * by the database; whether the assessment still holds is read by hasUnknownImpact().
+     *
+     * @param  Builder<Incident>  $query
+     * @return Builder<Incident>
+     */
+    public function mayHaveUnknownImpact(Builder $query, ?int $teamId = null): Builder
+    {
+        return $query->whereIn('id', IncidentTeam::where('impact', IncidentImpact::Unknown)
+            ->when($teamId !== null, fn (Builder $query) => $query->where('team_id', $teamId))
+            ->select('incident_id'));
     }
 
     /**
