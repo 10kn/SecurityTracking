@@ -11,7 +11,7 @@ import { useTranslation } from '@/lib/i18n';
 import type { Option } from '@/types';
 
 interface Props {
-    project: { id: number; team_id: number; name: string; slug: string; repository_url: string | null };
+    project: { id: number; team_id: number; name: string; slug: string };
     teams: Option<number>[];
 }
 
@@ -21,7 +21,6 @@ export default function ProjectsEdit({ project, teams }: Props) {
         team_id: project.team_id,
         name: project.name,
         slug: project.slug,
-        repository_url: project.repository_url ?? '',
     });
 
     return (

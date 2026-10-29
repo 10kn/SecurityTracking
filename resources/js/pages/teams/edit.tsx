@@ -21,7 +21,7 @@ import type { StatusDotData } from '@/types';
 interface Props {
     team: { id: number; name: string; slug: string };
     googleChat: { masked_webhook_url: string | null; status: StatusDotData; detail: string | null };
-    projects: { data: { id: number; name: string; slug: string; repository_url: string | null; services_count: number }[] };
+    projects: { data: { id: number; name: string; slug: string; services_count: number }[] };
 }
 
 export default function TeamsEdit({ team, googleChat, projects }: Props) {
@@ -130,7 +130,6 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
                             <thead>
                                 <tr>
                                     <Th>{t('Project')}</Th>
-                                    <Th>{t('Repository')}</Th>
                                     <Th align="right">{t('Services')}</Th>
                                 </tr>
                             </thead>
@@ -140,7 +139,6 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
                                         <Td>
                                             <CellTitle title={project.name} sub={project.slug} href={showProject.url(project.id)} />
                                         </Td>
-                                        <Td className="font-mono text-sm text-muted-foreground">{project.repository_url ?? '—'}</Td>
                                         <Td align="right">{project.services_count}</Td>
                                     </Tr>
                                 ))}

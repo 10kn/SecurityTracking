@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\TeamRequest;
 use App\Http\Resources\Admin\ProjectResource;
 use App\Http\Resources\Admin\TeamResource;
 use App\Models\Team;
+use App\Support\LocalTime;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -98,7 +99,7 @@ class TeamController extends Controller
     }
 
     /**
-     * E.g. "tin gần nhất 23/10/2026 08:00", or the error of the last failed delivery.
+     * E.g. "tin gần nhất 23/10/2026 08:00 GMT+7", or the error of the last failed delivery.
      */
     private function latestDeliveryDetail(Team $team): ?string
     {
@@ -109,7 +110,7 @@ class TeamController extends Controller
         }
 
         return $latest->failed_at !== null
-            ? __('lỗi lúc :time: :error', ['time' => $latest->failed_at->translatedFormat(__('d/m/Y H:i')), 'error' => $latest->last_error])
-            : __('tin gần nhất :time', ['time' => $latest->sent_at?->translatedFormat(__('d/m/Y H:i'))]);
+            ? __('lỗi lúc :time: :error', ['time' => LocalTime::format($latest->failed_at), 'error' => $latest->last_error])
+            : __('tin gần nhất :time', ['time' => LocalTime::format($latest->sent_at)]);
     }
 }

@@ -50,26 +50,16 @@ it('creates a project and opens it', function () {
     actingAsAdmin();
     $team = Team::factory()->create();
 
-    $response = post('/admin/projects', ['team_id' => $team->id, 'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@git.example.com:commerce/shop.git']);
+    $response = post('/admin/projects', ['team_id' => $team->id, 'name' => 'Shop', 'slug' => 'shop']);
 
     $project = Project::firstWhere('slug', 'shop');
     $response->assertRedirect("/admin/projects/{$project->id}");
     expect($project->team_id)->toBe($team->id);
 });
 
-it('rejects a repository url that is neither https nor a git remote', function (string $url) {
-    actingAsAdmin();
-
-    post('/admin/projects', ['team_id' => Team::factory()->create()->id, 'name' => 'Shop', 'slug' => 'shop', 'repository_url' => $url])
-        ->assertSessionHasErrors(['repository_url' => 'Dùng URL https:// hoặc git@host:org/repo.']);
-})->with([
-    'http' => 'http://git.example.com/shop',
-    'javascript' => 'javascript:alert(1)',
-]);
-
 it('shows a project with its services and what they run', function () {
     actingAsAdmin();
-    $project = Project::factory()->create(['repository_url' => 'https://git.example.com/commerce/shop']);
+    $project = Project::factory()->create();
     $service = Service::factory()->for($project)->create(['name' => 'shop-api']);
     $deployment = Deployment::factory()->for($service)->create();
     Runtime::factory()->for($deployment)->create(['raw_version' => '8.3.12']);
@@ -78,18 +68,10 @@ it('shows a project with its services and what they run', function () {
     get("/admin/projects/{$project->id}")
         ->assertInertia(fn (Assert $page) => $page
             ->component('projects/show')
-            ->where('project.repository_href', 'https://git.example.com/commerce/shop')
             ->where('services.data.0.name', 'shop-api')
             ->where('services.data.0.open_findings_count', 1)
             ->has('services.data.0.runtimes', 1)
             ->where('services.data.0.lockfiles', []));
-});
-
-it('links only https repositories', function () {
-    actingAsAdmin();
-    $project = Project::factory()->create(['repository_url' => 'git@git.example.com:commerce/shop.git']);
-
-    get("/admin/projects/{$project->id}")->assertInertia(fn (Assert $page) => $page->where('project.repository_href', null));
 });
 
 it('saves a project', function () {
@@ -97,7 +79,7 @@ it('saves a project', function () {
     $project = Project::factory()->create(['slug' => 'shop']);
     $team = Team::factory()->create();
 
-    put("/admin/projects/{$project->id}", ['team_id' => $team->id, 'name' => 'Shop', 'slug' => 'shop', 'repository_url' => null])
+    put("/admin/projects/{$project->id}", ['team_id' => $team->id, 'name' => 'Shop', 'slug' => 'shop'])
         ->assertSessionHasNoErrors()
         ->assertRedirect("/admin/projects/{$project->id}");
 

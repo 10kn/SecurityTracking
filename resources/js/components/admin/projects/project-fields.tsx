@@ -11,7 +11,6 @@ export interface ProjectFormData {
     team_id: number | null;
     name: string;
     slug: string;
-    repository_url: string;
 }
 
 export function ProjectFields({ form, teams, isCreating }: { form: InertiaFormProps<ProjectFormData>; teams: Option<number>[]; isCreating: boolean }) {
@@ -50,16 +49,6 @@ export function ProjectFields({ form, teams, isCreating }: { form: InertiaFormPr
                         value={form.data.slug}
                         onChange={(event) => slug.onSlugChange(event.target.value)}
                         aria-invalid={form.errors.slug !== undefined}
-                    />
-                </Field>
-                <Field label={t('Repository URL')} htmlFor="repository_url" error={form.errors.repository_url} className="sm:col-span-2">
-                    <Input
-                        id="repository_url"
-                        className="font-mono text-[calc(var(--fs-sm)-0.5px)]"
-                        placeholder="https://git.example.com/team/project"
-                        value={form.data.repository_url}
-                        onChange={(event) => form.setData('repository_url', event.target.value)}
-                        aria-invalid={form.errors.repository_url !== undefined}
                     />
                 </Field>
             </FormFields>

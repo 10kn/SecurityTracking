@@ -4,14 +4,15 @@ namespace App\Http\Resources\Admin;
 
 use App\Models\Finding;
 use App\Services\Kev\KnownExploitation;
+use App\Support\LocalTime;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * A row of the findings table. Load `deployment.service.project`, `team` and `acknowledgedBy`, and the latest opening
- * or rise in severity as `version` (see AcknowledgeFindings), first. Times are shown in the digest timezone, as in
- * Google Chat.
+ * or rise in severity as `version` (see AcknowledgeFindings), first. Times are shown as LocalTime shows them; the
+ * deadline is a day in the digest timezone, where it is decided.
  *
  * @mixin Finding
  *
@@ -35,24 +36,19 @@ class FindingResource extends JsonResource
             'lockfiles' => $this->lockfilePaths(),
             'service' => ['id' => $service->id, 'name' => $service->name, 'project' => $service->project->name],
             'team' => $this->team->name,
-            'first_seen' => $this->date($this->first_seen_at),
+            'first_seen' => LocalTime::date($this->first_seen_at),
             'deadline' => $this->date($this->sla_due_at),
             'is_overdue' => $this->sla_due_at?->isPast() ?? false,
             'known_exploited' => blank($this->context['known_exploited'] ?? null) ? null : KnownExploitation::cves($this->context['known_exploited']),
             'acknowledged' => $this->acknowledged_at === null ? null : [
                 'by' => $this->acknowledgedBy?->name,
-                'at' => $this->local($this->acknowledged_at)->translatedFormat(__('d/m/Y H:i')),
+                'at' => LocalTime::format($this->acknowledged_at),
             ],
         ];
     }
 
     private function date(?CarbonInterface $time): ?string
     {
-        return $time === null ? null : $this->local($time)->translatedFormat(__('d/m/Y'));
-    }
-
-    private function local(CarbonInterface $time): CarbonInterface
-    {
-        return $time->copy()->setTimezone(config('psm.digest.timezone'));
+        return $time?->copy()->setTimezone(config('psm.digest.timezone'))->translatedFormat(__('d/m/Y'));
     }
 }

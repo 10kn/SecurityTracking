@@ -63,7 +63,6 @@ class DemoSeeder extends Seeder
                 $project = Project::factory()->for($team)->create([
                     'name' => $projectName,
                     'slug' => Str::slug($projectName),
-                    'repository_url' => 'https://github.com/example/'.Str::slug($projectName),
                 ]);
 
                 foreach ($services as [$slug, $kind, $exposure, $technology, $version]) {

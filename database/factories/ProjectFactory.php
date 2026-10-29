@@ -25,7 +25,6 @@ class ProjectFactory extends Factory
             'team_id' => Team::factory(),
             'name' => Str::title($name),
             'slug' => Str::slug($name),
-            'repository_url' => 'https://github.com/example/'.Str::slug($name),
         ];
     }
 }

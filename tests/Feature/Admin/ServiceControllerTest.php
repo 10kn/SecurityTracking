@@ -555,7 +555,7 @@ it('shows the repository list, the last sync and where each lockfile came from',
 
     get("/admin/services/{$service->id}/edit")->assertInertia(fn (Assert $page) => $page
         ->where('repositories', [['value' => 'acme/shop', 'label' => 'acme/shop', 'description' => 'develop · private', 'default_branch' => 'develop']])
-        ->where('repositoriesSyncedAt', '25/10/2026 09:00')
+        ->where('repositoriesSyncedAt', '25/10/2026 16:00 GMT+7')
         ->where('gitHubConfigured', true)
         ->where('service.repository', 'acme/shop')
         ->where('service.lockfile_sync.status.label', 'Đã đồng bộ')

@@ -17,8 +17,8 @@ use App\Models\IncidentTeamEvent;
 use App\Models\IncidentTeamNotice;
 use App\Models\Team;
 use App\Services\IncidentOverview;
+use App\Support\LocalTime;
 use App\Support\TableQuery;
-use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -113,7 +113,7 @@ class IncidentController extends Controller
         return Inertia::render('incidents/show', [
             'incident' => [
                 ...$this->summary($state),
-                'planned_release' => $this->time($incident->planned_release_at),
+                'planned_release' => LocalTime::format($incident->planned_release_at),
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
@@ -125,7 +125,7 @@ class IncidentController extends Controller
                 'title' => $notice->title,
                 'url' => $notice->url,
                 'severity' => $this->severity($notice->severity),
-                'published' => $this->time($notice->published_at),
+                'published' => LocalTime::format($notice->published_at),
                 'affected_branches' => $notice->affected_branches ?? [],
                 'unaffected_branches' => $notice->unaffected_branches ?? [],
                 'patch_versions' => $notice->patch_versions ?? [],
@@ -177,7 +177,7 @@ class IncidentController extends Controller
             'lead' => $lead?->title,
             'technology' => ['value' => $incident->technology->value, 'label' => $incident->technology->getLabel()],
             'severity' => $this->severity($incident->severity),
-            'first_published' => $this->time($incident->first_published_at),
+            'first_published' => LocalTime::format($incident->first_published_at),
             'notices_count' => $notices->count(),
             'teams_told_count' => $state['teams']->where('is_told', true)->count(),
             'fixes' => $fixes,
@@ -213,11 +213,11 @@ class IncidentController extends Controller
                     'title' => $suggestion->notice->title,
                     'url' => $suggestion->notice->url,
                     'severity' => $this->severity($suggestion->notice->severity),
-                    'published' => $this->time($suggestion->notice->published_at),
+                    'published' => LocalTime::format($suggestion->notice->published_at),
                 ],
                 'source' => $suggestion->notice->incident === null ? null : ['id' => $suggestion->notice->incident->id, 'title' => $suggestion->notice->incident->title],
                 'target' => ['id' => $suggestion->incident->id, 'title' => $suggestion->incident->title, 'is_current' => $suggestion->incident->merged_into_id === null],
-                'created' => $this->time($suggestion->created_at),
+                'created' => LocalTime::format($suggestion->created_at),
             ])
             ->all();
     }
@@ -254,7 +254,7 @@ class IncidentController extends Controller
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
                 'note' => $row->impact_note,
                 'by' => $row->acknowledgedBy?->name,
-                'at' => $this->time($row->acknowledged_at),
+                'at' => LocalTime::format($row->acknowledged_at),
                 'is_valid' => $team['is_assessed'],
             ],
             'exposure_hash' => $team['exposure']->hash(),
@@ -274,7 +274,7 @@ class IncidentController extends Controller
                         IncidentTeamEventType::UpdateSent => Str::limit((string) ($event->data['message'] ?? ''), 120),
                     },
                     'by' => $event->user?->name,
-                    'at' => $this->time($event->created_at),
+                    'at' => LocalTime::format($event->created_at),
                 ])
                 ->values()
                 ->all(),
@@ -336,14 +336,6 @@ class IncidentController extends Controller
             'due' => $date($entry['due_date'] ?? null),
             'listed' => (bool) ($entry['listed'] ?? false),
         ], $evidence);
-    }
-
-    /**
-     * Times are shown in the digest timezone, as in Google Chat.
-     */
-    private function time(?CarbonInterface $time): ?string
-    {
-        return $time?->copy()->setTimezone(config('psm.digest.timezone'))->translatedFormat(__('d/m/Y H:i'));
     }
 
     /**

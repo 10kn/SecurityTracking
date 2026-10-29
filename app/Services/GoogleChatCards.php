@@ -11,6 +11,7 @@ use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
 use App\Services\Kev\KnownExploitation;
+use App\Support\LocalTime;
 use App\Support\Version;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -319,13 +320,13 @@ class GoogleChatCards
 
         $facts = array_filter([
             __('Nguồn: :source', ['source' => $advisory->technology->releaseSourceLabel()]),
-            $advisory->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $advisory->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
+            $advisory->published_at === null ? null : __('Đăng lúc :time', ['time' => LocalTime::format($advisory->published_at)]),
             $advisory->cvss_score === null ? null : "CVSS {$advisory->cvss_score}",
             $advisory->severity_basis?->getLabel(),
         ]);
 
         $plan = array_filter([
-            $plannedReleaseAt === null ? null : __('Dự kiến phát hành :time UTC', ['time' => $plannedReleaseAt->utc()->translatedFormat(__('d/m/Y H:i'))]),
+            $plannedReleaseAt === null ? null : __('Dự kiến phát hành :time', ['time' => LocalTime::format($plannedReleaseAt)]),
             blank($incident->affected_branches) ? null : __('Nhánh bị ảnh hưởng: :branches', ['branches' => implode(', ', $incident->affected_branches)]),
         ]);
         $summary = $advisory->localized_summary ?? $advisory->summary;
@@ -363,7 +364,7 @@ class GoogleChatCards
                 ->take($this->maxListedItems())
                 ->map(fn (Advisory $other): array => ['decoratedText' => array_filter([
                     'text' => e($this->severityTitle($other->severity, $other->title)),
-                    'bottomLabel' => $other->published_at === null ? null : __('Đăng lúc :time UTC', ['time' => $other->published_at->utc()->translatedFormat(__('d/m/Y H:i'))]),
+                    'bottomLabel' => $other->published_at === null ? null : __('Đăng lúc :time', ['time' => LocalTime::format($other->published_at)]),
                     'wrapText' => true,
                     'button' => filled($other->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $other->url]]] : null,
                 ])])

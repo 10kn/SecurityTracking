@@ -10,6 +10,7 @@ use App\Models\SourceHeartbeat;
 use App\Services\Repositories\IncompleteListingException;
 use App\Services\Repositories\RepositoryNotFoundException;
 use App\Services\Repositories\RepositoryReader;
+use App\Support\LocalTime;
 use App\Support\LockfilePath;
 use Closure;
 use Illuminate\Cache\Lock as CacheLock;
@@ -275,7 +276,7 @@ class SyncServiceLockfiles
             [
                 ...$errors,
                 __('Repository :repository, branch :branch.', ['repository' => $service->repository, 'branch' => $service->repository_branch ?? __('mặc định')]),
-                __('Thành công gần nhất: :time', ['time' => $service->lockfiles_synced_at?->translatedFormat(__('d/m/Y H:i')) ?? __('chưa có')]),
+                __('Thành công gần nhất: :time', ['time' => LocalTime::format($service->lockfiles_synced_at) ?? __('chưa có')]),
                 __('Hệ thống tiếp tục dùng lockfile đã lấy trước đó.'),
             ],
             [__('Mở service') => route('admin.services.edit', $service)],

@@ -11,7 +11,7 @@ import type { Option } from '@/types';
 
 export default function ProjectsCreate({ teams, defaultTeamId }: { teams: Option<number>[]; defaultTeamId: number | null }) {
     const t = useTranslation();
-    const form = useForm<ProjectFormData>({ team_id: defaultTeamId, name: '', slug: '', repository_url: '' });
+    const form = useForm<ProjectFormData>({ team_id: defaultTeamId, name: '', slug: '' });
 
     return (
         <>

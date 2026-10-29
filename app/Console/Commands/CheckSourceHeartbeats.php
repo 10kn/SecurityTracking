@@ -9,6 +9,7 @@ use App\Models\Advisory;
 use App\Models\ChatNotification;
 use App\Models\SourceHeartbeat;
 use App\Services\Notices\NoticeClassifier;
+use App\Support\LocalTime;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -31,7 +32,7 @@ class CheckSourceHeartbeats extends Command
                 "source-stale:{$heartbeat->source}:".($heartbeat->last_success_at?->getTimestamp() ?? 'never'),
                 __('Nguồn :source lỗi quá ngưỡng', ['source' => $heartbeat->name]),
                 [
-                    __('Thành công gần nhất: :time', ['time' => $heartbeat->last_success_at?->translatedFormat(__('d/m/Y H:i')) ?? __('chưa có')]),
+                    __('Thành công gần nhất: :time', ['time' => LocalTime::format($heartbeat->last_success_at) ?? __('chưa có')]),
                     __('Ngưỡng: :minutes phút', ['minutes' => $heartbeat->threshold_minutes]),
                     __('Lỗi gần nhất: :error', ['error' => $heartbeat->last_error ?? '—']),
                     __('Runtime và package phụ thuộc nguồn này được coi là Thiếu dữ liệu cho tới khi nguồn hoạt động lại.'),
@@ -85,7 +86,7 @@ class CheckSourceHeartbeats extends Command
             __('Tin Google Chat bị kẹt trong hàng đợi'),
             [
                 __(':count tin chưa gửi được sau :minutes phút.', ['count' => $stuck->count(), 'minutes' => config('psm.alerts.stuck_after_minutes')]),
-                __('Tin cũ nhất tạo lúc :time.', ['time' => $oldest->created_at->translatedFormat(__('d/m/Y H:i'))]),
+                __('Tin cũ nhất tạo lúc :time.', ['time' => LocalTime::format($oldest->created_at)]),
                 __('Kiểm tra queue worker (php artisan queue:work). Tin sẽ được gửi khi worker chạy lại.'),
             ],
             sendNow: true,

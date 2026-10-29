@@ -17,6 +17,7 @@ use App\Models\Team;
 use App\Services\IncidentOverview;
 use App\Services\Packages\VulnerabilityMatcher;
 use App\Services\Repositories\RepositoryReader;
+use App\Support\LocalTime;
 use Carbon\CarbonInterface;
 use Carbon\CarbonInterval;
 use Closure;
@@ -67,12 +68,12 @@ class OverviewController extends Controller
 
     public function __invoke(): Response
     {
-        $checkedAt = $this->local(now());
+        $checkedAt = LocalTime::of(now());
 
         return Inertia::render('overview/index', [
             'checked' => [
                 'date' => Str::ucfirst($checkedAt->translatedFormat(__('l, d/m/Y'))),
-                'time' => $checkedAt->format('H:i'),
+                'time' => LocalTime::timeOfDay($checkedAt),
             ],
             'sources' => $this->attempt(fn (): array => $this->sources()),
             'delivery' => $this->attempt(fn (): array => $this->delivery()),
@@ -99,7 +100,7 @@ class OverviewController extends Controller
                 'last_success' => $heartbeat->last_success_at?->diffForHumans(),
                 'threshold' => CarbonInterval::minutes($heartbeat->threshold_minutes)->cascade()->forHumans(),
                 'error' => $heartbeat->last_error,
-                'last_failure' => $this->time($heartbeat->last_failure_at),
+                'last_failure' => LocalTime::format($heartbeat->last_failure_at),
                 'consequence' => $this->consequence($heartbeat),
                 'technology' => $heartbeat->catalogTechnology()?->value,
             ])
@@ -164,7 +165,7 @@ class OverviewController extends Controller
         return [
             'destinations' => $destinations->take(self::DESTINATION_LIMIT)->all(),
             'hidden_count' => max(0, $destinations->count() - self::DESTINATION_LIMIT),
-            'last_sent' => $this->time(ChatNotification::whereNotNull('sent_at')->orderByDesc('sent_at')->value('sent_at')),
+            'last_sent' => LocalTime::format(ChatNotification::whereNotNull('sent_at')->orderByDesc('sent_at')->value('sent_at')),
         ];
     }
 
@@ -182,7 +183,7 @@ class OverviewController extends Controller
             'team' => $team === null ? null : ['id' => $team->id, 'name' => $team->name],
             'has_webhook' => $hasWebhook,
             'count' => $messages->count(),
-            'since' => $this->time($messages->first()?->created_at, __('d/m H:i')),
+            'since' => LocalTime::format($messages->first()?->created_at, __('d/m H:i')),
             'error' => $messages->whereNotNull('last_error')->last()?->last_error,
             'stuck_count' => $messages->whereNull('failed_at')->count(),
             'resend_ids' => $failedIds->take(self::RESEND_LIMIT)->values()->all(),
@@ -261,7 +262,7 @@ class OverviewController extends Controller
             'id' => $incident->id,
             'title' => $this->overview->lead($state)->title ?? $incident->title,
             'severity' => $this->severity($incident->severity),
-            'first_published' => $this->time($incident->first_published_at, __('d/m/Y')),
+            'first_published' => LocalTime::date($incident->first_published_at),
             'reasons' => array_values(array_filter([
                 $waiting->count() - $reassess > 0 ? __(':count team cần đánh giá ảnh hưởng', ['count' => $waiting->count() - $reassess]) : null,
                 $reassess > 0 ? __(':count team cần đánh giá lại ảnh hưởng', ['count' => $reassess]) : null,
@@ -289,18 +290,5 @@ class OverviewController extends Controller
     private function severity(Severity $severity): array
     {
         return ['value' => $severity->value, 'label' => $severity->getLabel()];
-    }
-
-    /**
-     * Times are shown in the digest timezone, as in Google Chat.
-     */
-    private function time(?CarbonInterface $time, ?string $format = null): ?string
-    {
-        return $time === null ? null : $this->local($time)->translatedFormat($format ?? __('d/m/Y H:i'));
-    }
-
-    private function local(CarbonInterface $time): CarbonInterface
-    {
-        return $time->copy()->setTimezone(config('psm.digest.timezone'));
     }
 }

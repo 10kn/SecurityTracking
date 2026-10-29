@@ -52,7 +52,7 @@ it('sends one card to each team running the technology, listing its services wit
         ->and(chatJson($card))->toContain(
             'Cảnh báo chuẩn bị · Commerce',
             'It addresses two critical vulnerabilities.',
-            'Nguồn: php.net · Đăng lúc 20/10/2026 20:32 UTC · CVSS 9.2',
+            'Nguồn: php.net · Đăng lúc 21/10/2026 03:32 GMT+7 · CVSS 9.2',
             '2 service đang chạy PHP',
             'shop-api', 'PHP 8.3.35', 'shop-admin', 'PHP 8.4.26', 'Mở service',
             'Mở nguồn tin', 'https://www.php.net/archive/2026.php#2026-10-20-1',
@@ -143,8 +143,18 @@ it('shows what the classifier read: the summary in the alert locale, the planned
     app(SendPreNoticeAlerts::class)->handle();
 
     expect(chatJson(chatMessagesTo('COMMERCE')->sole()))
-        ->toContain('PHP sẽ vá hai lỗ hổng nghiêm trọng.', 'Dự kiến phát hành 21/10/2026 14:00 UTC · Nhánh bị ảnh hưởng: 8.3, 8.4')
+        ->toContain('PHP sẽ vá hai lỗ hổng nghiêm trọng.', 'Dự kiến phát hành 21/10/2026 21:00 GMT+7 · Nhánh bị ảnh hưởng: 8.3, 8.4')
         ->not->toContain('It addresses two critical vulnerabilities.');
+});
+
+it('shows times in the timezone of the alert locale', function () {
+    config(['psm.alerts.locale' => 'ja']);
+    runtimeAt($this->commerce, 'shop-api', $this->php, '8.3.35');
+    $this->preNotice->update(['planned_release_at' => '2026-10-21 14:00:00']);
+
+    app(SendPreNoticeAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('公開日時 2026/10/21 05:32 JST', 'リリース予定 2026/10/21 23:00 JST');
 });
 
 it('does not send pre-notices the classifier dismissed', function () {

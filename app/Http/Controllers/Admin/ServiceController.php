@@ -17,6 +17,7 @@ use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Services\Repositories\RepositoryReader;
+use App\Support\LocalTime;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -106,7 +107,7 @@ class ServiceController extends Controller
                         'path' => $lockfile->path,
                         'source' => $lockfile->source->value,
                         'commit' => $lockfile->commit_sha === null ? null : substr($lockfile->commit_sha, 0, 7),
-                        'uploaded_at' => $lockfile->uploaded_at->translatedFormat(__('d/m/Y H:i')),
+                        'uploaded_at' => LocalTime::format($lockfile->uploaded_at),
                     ])
                     ->values()
                     ->all(),
@@ -185,7 +186,7 @@ class ServiceController extends Controller
                 $service->lockfiles_synced_at === null => ['label' => __('Chưa đồng bộ'), 'tone' => 'unknown'],
                 default => ['label' => __('Đã đồng bộ'), 'tone' => 'success'],
             },
-            'synced_at' => $service->lockfiles_synced_at?->translatedFormat(__('d/m/Y H:i')),
+            'synced_at' => LocalTime::format($service->lockfiles_synced_at),
             'commit' => $commitSha === null ? null : substr($commitSha, 0, 7),
             'commit_href' => $commitSha === null ? null : $this->repositoryReader->commitUrl((string) $service->repository, $commitSha),
             'error' => $service->lockfiles_sync_error,
@@ -200,7 +201,7 @@ class ServiceController extends Controller
         return [
             'projects' => $this->projectOptions(),
             'repositories' => $this->repositoryOptions(),
-            'repositoriesSyncedAt' => AccessibleRepository::latest('updated_at')->first()?->updated_at?->translatedFormat(__('d/m/Y H:i')),
+            'repositoriesSyncedAt' => LocalTime::format(AccessibleRepository::latest('updated_at')->first()?->updated_at),
             'gitHubConfigured' => $this->repositoryReader->isConfigured(),
             'lockfileSkippedDirectories' => config('psm.github.lockfile_search.skip_directories'),
             'kinds' => array_map(fn (ServiceKind $kind): array => ['value' => $kind->value, 'label' => $kind->getLabel()], ServiceKind::cases()),

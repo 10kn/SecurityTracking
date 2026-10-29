@@ -29,7 +29,6 @@ class ProjectRequest extends FormRequest
             'team_id' => ['required', 'integer', Rule::exists(Team::class, 'id')],
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'regex:'.Slug::PATTERN, Rule::unique(Project::class)->ignore($project instanceof Project ? $project : null)],
-            'repository_url' => ['nullable', 'string', 'max:255', 'regex:'.Project::REPOSITORY_URL_PATTERN],
         ];
     }
 
@@ -42,7 +41,6 @@ class ProjectRequest extends FormRequest
             'team_id' => __('Team sở hữu'),
             'name' => __('Tên project'),
             'slug' => __('Slug'),
-            'repository_url' => __('Repository URL'),
         ];
     }
 
@@ -53,7 +51,6 @@ class ProjectRequest extends FormRequest
     {
         return [
             'slug.regex' => __('Chỉ dùng chữ thường, số và dấu gạch ngang.'),
-            'repository_url.regex' => __('Dùng URL https:// hoặc git@host:org/repo.'),
         ];
     }
 }

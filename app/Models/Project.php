@@ -9,16 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['team_id', 'name', 'slug', 'repository_url'])]
+#[Fillable(['team_id', 'name', 'slug'])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
-
-    /**
-     * An https:// URL or an scp-style git remote such as git@host:org/repo.git.
-     */
-    public const string REPOSITORY_URL_PATTERN = '/^(https:\/\/\S+|git@[^\s:]+:\S+)$/';
 
     /**
      * @return BelongsTo<Team, $this>

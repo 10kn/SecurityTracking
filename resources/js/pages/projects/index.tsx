@@ -13,7 +13,6 @@ interface ProjectRow {
     id: number;
     name: string;
     slug: string;
-    repository_url: string | null;
     services_count: number;
     team: { id: number; name: string };
 }
@@ -66,7 +65,6 @@ export default function ProjectsIndex({ projects, table, teams }: { projects: Pa
                                 <SortableTh column="team" sort={table.sort} onSort={(sort) => query({ sort })}>
                                     {t('Team')}
                                 </SortableTh>
-                                <Th>{t('Repository')}</Th>
                                 <SortableTh column="services_count" sort={table.sort} onSort={(sort) => query({ sort })} align="right">
                                     {t('Services')}
                                 </SortableTh>
@@ -80,7 +78,6 @@ export default function ProjectsIndex({ projects, table, teams }: { projects: Pa
                                         <CellTitle title={project.name} sub={project.slug} href={show.url(project.id)} />
                                     </Td>
                                     <Td>{project.team.name}</Td>
-                                    <Td className="max-w-[320px] truncate font-mono text-sm text-muted-foreground">{project.repository_url ?? '—'}</Td>
                                     <Td align="right">{project.services_count}</Td>
                                     <Td align="right">
                                         <Button variant="ghost" size="sm" asChild>

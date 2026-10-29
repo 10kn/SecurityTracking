@@ -58,11 +58,11 @@ it('reports nothing to fix when monitoring works, and still says what it checked
     ChatNotification::factory()->for($commerce)->sent()->create(['sent_at' => '2026-10-24 01:00:00']);
 
     get('/admin')->assertInertia(fn (Assert $page) => $page
-        ->where('checked.time', '17:00')
+        ->where('checked.time', '17:00 GMT+7')
         ->has('sources', 3)
         ->where('sources.0.is_stale', false)
         ->where('delivery.destinations', [])
-        ->where('delivery.last_sent', '24/10/2026 08:00')
+        ->where('delivery.last_sent', '24/10/2026 08:00 GMT+7')
         ->where('coverage.count', 0)
         ->where('findings', ['count' => 0, 'items' => []])
         ->where('incidents', ['count' => 0, 'items' => []]));
@@ -103,7 +103,7 @@ it('shows the messages the admin space did not get, with their ids to resend', f
         ->where('delivery.destinations.0.team', null)
         ->where('delivery.destinations.0.has_webhook', false)
         ->where('delivery.destinations.0.count', 2)
-        ->where('delivery.destinations.0.since', '24/10 08:15')
+        ->where('delivery.destinations.0.since', '24/10 08:15 GMT+7')
         ->where('delivery.destinations.0.error', 'Chưa cấu hình PSM_ADMIN_CHAT_WEBHOOK.')
         ->where('delivery.destinations.0.resend_ids', [$first->id, $second->id])
         ->where('delivery.last_sent', null));
@@ -135,7 +135,7 @@ it('groups the messages teams did not get by team, with the teams without a webh
         ->where('delivery.destinations.0.team', ['id' => $booking->id, 'name' => 'Booking'])
         ->where('delivery.destinations.0.count', 2)
         ->where('delivery.destinations.0.stuck_count', 1)
-        ->where('delivery.destinations.0.since', '22/10 14:05')
+        ->where('delivery.destinations.0.since', '22/10 14:05 GMT+7')
         ->where('delivery.destinations.0.error', 'Google Chat trả lỗi HTTP 404.')
         ->where('delivery.destinations.0.resend_ids', [$failed->id])
         ->where('delivery.destinations.1.team', ['id' => $internal->id, 'name' => 'Internal Tools'])

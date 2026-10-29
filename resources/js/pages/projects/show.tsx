@@ -17,8 +17,6 @@ interface Props {
         id: number;
         name: string;
         slug: string;
-        repository_url: string | null;
-        repository_href: string | null;
         team: { id: number; name: string };
         alert_channel: StatusDotData;
         created_at: string | null;
@@ -58,18 +56,6 @@ export default function ProjectsShow({ project, services }: Props) {
             <Card className="mb-6">
                 <CardBody>
                     <dl className="grid grid-cols-3 gap-x-6 gap-y-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
-                        <div>
-                            <dt className="text-sm text-muted-foreground">{t('Repository')}</dt>
-                            <dd className="mt-1 font-mono text-sm [overflow-wrap:anywhere]">
-                                {project.repository_href ? (
-                                    <a href={project.repository_href} target="_blank" rel="noreferrer noopener" className="text-link hover:underline hover:underline-offset-3">
-                                        {project.repository_url}
-                                    </a>
-                                ) : (
-                                    (project.repository_url ?? '—')
-                                )}
-                            </dd>
-                        </div>
                         <div>
                             <dt className="text-sm text-muted-foreground">{t('Team sở hữu')}</dt>
                             <dd className="mt-1">

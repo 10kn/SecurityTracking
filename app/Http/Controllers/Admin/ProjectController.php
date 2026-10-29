@@ -9,6 +9,7 @@ use App\Http\Resources\Admin\ProjectResource;
 use App\Http\Resources\Admin\ServiceResource;
 use App\Models\Project;
 use App\Models\Team;
+use App\Support\LocalTime;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -77,11 +78,9 @@ class ProjectController extends Controller
                 'id' => $project->id,
                 'name' => $project->name,
                 'slug' => $project->slug,
-                'repository_url' => $project->repository_url,
-                'repository_href' => str_starts_with((string) $project->repository_url, 'https://') ? $project->repository_url : null,
                 'team' => ['id' => $project->team->id, 'name' => $project->team->name],
                 'alert_channel' => ['label' => __('Google Chat của team').' · '.$chatStatus->getLabel(), 'tone' => $chatStatus->dotTone()],
-                'created_at' => $project->created_at?->translatedFormat(__('d/m/Y')),
+                'created_at' => LocalTime::date($project->created_at),
             ],
             'services' => ServiceResource::collection($services),
         ]);
@@ -90,7 +89,7 @@ class ProjectController extends Controller
     public function edit(Project $project): Response
     {
         return Inertia::render('projects/edit', [
-            'project' => $project->only(['id', 'team_id', 'name', 'slug', 'repository_url']),
+            'project' => $project->only(['id', 'team_id', 'name', 'slug']),
             'teams' => $this->teamOptions(),
         ]);
     }

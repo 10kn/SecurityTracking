@@ -174,15 +174,18 @@ it('sorts on the title the admin reads', function (Locale $locale, array $titles
     'japanese' => [Locale::Japanese, ['PHP 8.1 はサポート終了', 'PHP 8.5 にセキュリティパッチ未適用、8.5.12 へ更新が必要', 'symfony/http-kernel の GHSA-754f-8gm6-c4r2']],
 ]);
 
-it('shows times in the digest timezone, as Google Chat does', function () {
-    actingAsAdmin();
-    Finding::factory()->for($this->deployment)->create(['first_seen_at' => '2026-10-23 18:00:00', 'sla_due_at' => '2026-10-27 20:00:00', 'acknowledged_at' => '2026-10-23 18:30:00']);
+it('shows times in the timezone of the admin\'s language, named, and the deadline as a day in the digest timezone', function (Locale $locale, array $expected) {
+    actingAsAdmin()->update(['locale' => $locale]);
+    Finding::factory()->for($this->deployment)->create(['first_seen_at' => '2026-10-23 18:00:00', 'sla_due_at' => '2026-10-27 16:30:00', 'acknowledged_at' => '2026-10-23 18:30:00']);
 
     get('/admin/findings')->assertInertia(fn (Assert $page) => $page
-        ->where('findings.data.0.first_seen', '24/10/2026')
-        ->where('findings.data.0.deadline', '28/10/2026')
-        ->where('findings.data.0.acknowledged.at', '24/10/2026 01:30'));
-});
+        ->where('findings.data.0.first_seen', $expected[0])
+        ->where('findings.data.0.deadline', $expected[1])
+        ->where('findings.data.0.acknowledged.at', $expected[2]));
+})->with([
+    'vietnamese' => [Locale::Vietnamese, ['24/10/2026', '27/10/2026', '24/10/2026 01:30 GMT+7']],
+    'japanese' => [Locale::Japanese, ['2026/10/24', '2026/10/27', '2026/10/24 03:30 JST']],
+]);
 
 /**
  * What the page sends for these findings: each with the version it shows.
