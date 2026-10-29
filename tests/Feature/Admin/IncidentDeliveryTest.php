@@ -149,19 +149,27 @@ it('reads no delivery of the old thread as soon as the team webhook changed, bef
         ->where('incidents.data.0.has_delivery_failures', false));
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('teams.0.delivery.opener', null)
-        ->where('teams.0.delivery.limit', 'Webhook của team đã đổi: các tin trước đã gửi tới webhook cũ, tin tiếp theo sẽ mở thread mới.'));
+        ->where('teams.0.thread.status.label', 'Thread của webhook cũ')
+        ->where('teams.0.thread.is_old', true)
+        ->where('teams.0.delivery.limit', 'Webhook của team đã đổi: dữ liệu thread cũ không tính cho webhook hiện tại; tin tiếp theo sẽ mở thread mới.'));
 
     expect($this->row->refresh()->generation)->toBe(1);
 });
 
-it('lists the first failures of a thread and counts them all', function () {
+it('lists the first failures of each thread and counts them all', function () {
     actingAsAdmin();
+    $booking = Team::factory()->create(['name' => 'Booking', 'google_chat_webhook_url' => chatWebhook('BOOKING')]);
+    runtimeAt($booking, 'booking-api', Technology::Php, '8.4.1');
+    [$bookingRow] = IncidentTeam::lockFor($this->incident, $booking);
     $failures = collect(range(1, 12))->map(fn () => threadReply($this->row, ['failed_at' => now(), 'last_error' => '500 Internal Server Error']));
+    $bookingFailures = collect(range(1, 11))->map(fn () => threadReply($bookingRow, ['failed_at' => now(), 'last_error' => '404 Not Found']));
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
-        ->where('teams.0.delivery.failures_count', 12)
-        ->has('teams.0.delivery.failures', 10)
-        ->where('teams.0.delivery.failures.0.id', $failures->first()->id));
+        ->where('teams.0.name', 'Booking')
+        ->where('teams.0.delivery.failures_count', 11)
+        ->where('teams.0.delivery.failures', fn ($items): bool => collect($items)->pluck('id')->all() === $bookingFailures->take(10)->pluck('id')->all())
+        ->where('teams.1.delivery.failures_count', 12)
+        ->where('teams.1.delivery.failures', fn ($items): bool => collect($items)->pluck('id')->all() === $failures->take(10)->pluck('id')->all()));
 });
 
 it('reads the thread a merged incident handed over', function () {

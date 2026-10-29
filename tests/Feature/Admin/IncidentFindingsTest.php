@@ -128,15 +128,13 @@ it('follows a pre-notice split off since the finding was evaluated to its new in
     get("/admin/incidents/{$split->id}")->assertInertia(fn (Assert $page) => $page->where('findings.total', 1)->where('findings.items.0.id', $finding->id));
 });
 
-it('sends at most 50 findings, with how many there are', function () {
+it('sends at most 50 findings and links at most 200 open ones, with how many there are', function () {
     actingAsAdmin();
-
-    foreach (range(1, 51) as $index) {
-        outdatedFinding($this->team, "service-{$index}", [['incident_id' => $this->incident->id, 'notice_id' => $this->notice->id]]);
-    }
+    $findings = collect(range(1, 201))->map(fn (int $index) => outdatedFinding($this->team, "service-{$index}", [['incident_id' => $this->incident->id, 'notice_id' => $this->notice->id]]));
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
-        ->where('findings.total', 51)
+        ->where('findings.total', 201)
         ->has('findings.items', 50)
-        ->has('findings.open_ids', 51));
+        ->where('findings.open_count', 201)
+        ->where('findings.open_ids', $findings->pluck('id')->take(200)->all()));
 });

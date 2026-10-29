@@ -314,7 +314,7 @@ class IncidentController extends Controller
             'is_running' => $team['is_running'],
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
-            'thread' => $this->thread($row),
+            'thread' => $this->thread($row, $team['delivery']['is_webhook_changed']),
             'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row) : null,
             'assessment' => $row?->impact === null ? null : [
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
@@ -382,22 +382,24 @@ class IncidentController extends Controller
     }
 
     /**
-     * The team's Google Chat thread of the incident, with a link once Google named it.
+     * The team's Google Chat thread of the incident, with a link once Google named it. A thread of the webhook the team
+     * no longer posts to is shown as the old one: the next message opens a new thread.
      *
-     * @return array{status: array{label: string, tone: string}, url: string|null}
+     * @return array{status: array{label: string, tone: string}, url: string|null, is_old: bool}
      */
-    private function thread(?IncidentTeam $row): array
+    private function thread(?IncidentTeam $row, bool $isWebhookChanged): array
     {
         $opener = $row?->openingNotification;
 
         $status = match (true) {
             $row === null || ! $row->hasThread() => ['label' => __('Chưa có thread'), 'tone' => 'unknown'],
+            $isWebhookChanged => ['label' => __('Thread của webhook cũ'), 'tone' => 'unknown'],
             $row->thread_name !== null => ['label' => __('Đã mở thread'), 'tone' => 'success'],
             $opener instanceof ChatNotification && $opener->failed_at !== null => ['label' => __('Gửi lỗi'), 'tone' => 'danger'],
             default => ['label' => __('Đang gửi'), 'tone' => 'warning'],
         };
 
-        return ['status' => $status, 'url' => $this->threadUrl($row?->thread_name)];
+        return ['status' => $status, 'url' => $this->threadUrl($row?->thread_name), 'is_old' => $isWebhookChanged && $row?->hasThread() === true];
     }
 
     /**
@@ -424,7 +426,7 @@ class IncidentController extends Controller
                 'command' => "php artisan psm:resend-notification {$notification->id}",
             ])->values()->all(),
             'limit' => match (true) {
-                $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: các tin trước đã gửi tới webhook cũ, tin tiếp theo sẽ mở thread mới.'),
+                $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: dữ liệu thread cũ không tính cho webhook hiện tại; tin tiếp theo sẽ mở thread mới.'),
                 $delivery['has_messages'] => null,
                 $delivery['is_legacy'] => __('Team được báo bằng tin trước khi có thread: không biết từ đây tin đó đã tới chưa.'),
                 ($row?->generation ?? 1) > 1 => __('Chưa có dữ liệu chuyển phát trong thread hiện tại (webhook của team đã đổi).'),

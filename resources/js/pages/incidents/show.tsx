@@ -93,7 +93,7 @@ interface TeamRow {
     is_running: boolean;
     is_actionable: boolean;
     needs_acknowledgement: boolean;
-    thread: { status: StatusDotData; url: string | null };
+    thread: { status: StatusDotData; url: string | null; is_old: boolean };
     delivery: Delivery | null;
     assessment: { impact: { value: string; label: string }; note: string | null; by: string | null; at: string | null; is_valid: boolean } | null;
     exposure_hash: string;
@@ -538,7 +538,7 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                                     <StatusDot status={team.thread.status} />
                                     {team.thread.url && (
                                         <span className="mt-0.5 block text-sm">
-                                            <ExternalLink href={team.thread.url}>{t('Mở thread')}</ExternalLink>
+                                            <ExternalLink href={team.thread.url}>{team.thread.is_old ? t('Mở thread cũ') : t('Mở thread')}</ExternalLink>
                                         </span>
                                     )}
                                     {team.delivery && <DeliveryStatus delivery={team.delivery} />}
