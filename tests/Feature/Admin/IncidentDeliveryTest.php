@@ -67,7 +67,7 @@ it('counts the teams Google Chat accepted a message for apart from those a card 
     get('/admin/incidents')->assertInertia(fn (Assert $page) => $page->where('incidents.data.0.teams_delivered_count', 1));
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('teams.0.delivery.opener', ['label' => 'Đã gửi', 'tone' => 'success', 'at' => '21/10/2026 04:00 GMT+7'])
-        ->where('teams.0.delivery.latest.label', 'Đã gửi')
+        ->where('teams.0.delivery.latest', null)
         ->where('teams.0.delivery.last_sent', '21/10/2026 04:00 GMT+7'));
 });
 

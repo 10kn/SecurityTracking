@@ -401,10 +401,10 @@ class IncidentController extends Controller
     }
 
     /**
-     * What Google Chat accepted of the team's current thread: its opener, the message queued last, the last one it
-     * accepted, and each message that failed and was not sent again, with the command that sends it again. "Đã gửi"
-     * says Google Chat accepted the message, not that anyone read it. A team told before incident threads, or with no
-     * message in its current thread, shows what cannot be told from here.
+     * What Google Chat accepted of the team's current thread: its opener, the message queued last (unless it is the
+     * opener), the last one it accepted, and each message that failed and was not sent again, with the command that
+     * sends it again. "Đã gửi" says Google Chat accepted the message, not that anyone read it. A team told before
+     * incident threads, or with no message in its current thread, shows what cannot be told from here.
      *
      * @param  Delivery  $delivery
      * @return array<string, mixed>
@@ -413,7 +413,7 @@ class IncidentController extends Controller
     {
         return [
             'opener' => $this->messageStatus($delivery['opener']),
-            'latest' => $this->messageStatus($delivery['latest']),
+            'latest' => $delivery['latest']?->id === $delivery['opener']?->id ? null : $this->messageStatus($delivery['latest']),
             'last_sent' => LocalTime::format($delivery['last_sent_at']),
             'failures_count' => $delivery['failures_count'],
             'pending_count' => $delivery['pending_count'],
