@@ -52,6 +52,7 @@ interface Notice {
     known_exploited: KnownExploited[];
     is_dismissed: boolean;
     basis: string | null;
+    severity_basis: string | null;
 }
 
 interface KnownExploited {
@@ -122,6 +123,12 @@ interface Props {
         is_exploited: boolean;
         known_exploited: KnownExploited[];
         merged_from: { id: number; title: string }[];
+        lead_notice: {
+            summary: { text: string; is_ai: boolean } | null;
+            severity_basis: string | null;
+            url: string | null;
+            classifier: StatusDotData;
+        } | null;
     };
     notices: Notice[];
     suggestions: Suggestion[];
@@ -148,6 +155,7 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
             />
             <Card className="mb-6">
                 <CardBody>
+                    {incident.lead_notice && <LeadNotice notice={incident.lead_notice} />}
                     <dl className="grid grid-cols-3 gap-x-6 gap-y-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
                         <Detail label={t('Mức cao nhất')}>
                             <SeverityBadge severity={incident.severity} />
@@ -182,6 +190,29 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
             <Notices incidentId={incident.id} notices={notices} />
             <UrgentUpdate incidentId={incident.id} update={update} />
         </>
+    );
+}
+
+/**
+ * The lead pre-notice explained: the AI summary or the source's, labelled as such, what gave it its severity (not why it
+ * is that severe), its source and where the classifier stands.
+ */
+function LeadNotice({ notice }: { notice: NonNullable<Props['incident']['lead_notice']> }) {
+    const t = useTranslation();
+
+    return (
+        <div className="mb-5 border-b border-border pb-5">
+            <p className="text-sm text-muted-foreground">{notice.summary === null ? t('Chưa có tóm tắt') : notice.summary.is_ai ? t('Tóm tắt do AI tạo') : t('Tóm tắt của nguồn')}</p>
+            {notice.summary && <p className="mt-1 max-w-[80ch] whitespace-pre-line">{notice.summary.text}</p>}
+            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span>
+                    <span className="text-muted-foreground">{t('Nguồn mức độ')}: </span>
+                    {notice.severity_basis ?? t('Chưa xác định')}
+                </span>
+                <StatusDot status={notice.classifier} />
+                {notice.url && <ExternalLink href={notice.url}>{t('Xem nguồn')}</ExternalLink>}
+            </p>
+        </div>
     );
 }
 
@@ -742,7 +773,9 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                             </Td>
                             <Td className="max-w-[380px] align-top">
                                 {notice.url ? <ExternalLink href={notice.url}>{notice.title}</ExternalLink> : <span className="font-medium">{notice.title}</span>}
-                                <span className="mt-0.5 block text-sm text-muted-foreground">{[notice.basis, notice.is_dismissed ? t('Không phải tin bảo mật') : null].filter(Boolean).join(' · ')}</span>
+                                <span className="mt-0.5 block text-sm text-muted-foreground">
+                                    {[notice.basis, notice.severity_basis, notice.is_dismissed ? t('Không phải tin bảo mật') : null].filter(Boolean).join(' · ')}
+                                </span>
                                 {notice.is_exploited && (
                                     <span className="mt-0.5 block text-sm">
                                         <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} />

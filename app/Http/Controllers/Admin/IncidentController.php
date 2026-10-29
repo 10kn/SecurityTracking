@@ -103,7 +103,7 @@ class IncidentController extends Controller
     /**
      * An incident with its pre-notices, the pending suggestions about it, each team told about it or running its
      * technology, the findings linked to it (see IncidentFindings), and what the merge and urgent update forms need. A
-     * merged incident opens the one it went into.
+     * merged incident opens the one it went into. The header explains the lead pre-notice (see leadNotice()).
      */
     public function show(Request $request, Incident $incident): Response|RedirectResponse
     {
@@ -130,6 +130,7 @@ class IncidentController extends Controller
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
                 'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
+                'lead_notice' => $this->leadNotice($this->overview->lead($state)),
             ],
             'notices' => $notices->map(fn (Advisory $notice): array => [
                 'id' => $notice->id,
@@ -145,6 +146,7 @@ class IncidentController extends Controller
                 'known_exploited' => $this->knownExploited($notice->known_exploited ?? []),
                 'is_dismissed' => $notice->is_dismissed,
                 'basis' => $notice->incident_basis?->getLabel(),
+                'severity_basis' => $notice->severity_basis?->getLabel(),
             ])->all(),
             'suggestions' => $this->suggestions($incident),
             'teams' => $teams->map(fn (array $team): array => $this->teamRow($incident, $team))->all(),
@@ -212,6 +214,36 @@ class IncidentController extends Controller
             'is_outside_reminder_window' => ! $state['is_within_reminder_window'],
             'pending_suggestions_count' => $state['pending_suggestions_count'],
             'teams_to_acknowledge_count' => $state['teams']->where('needs_acknowledgement', true)->count(),
+        ];
+    }
+
+    /**
+     * The lead pre-notice explained: its summary, the AI one (written in the alerts language, not the viewer's) else
+     * the source's; what gave it its severity; its source; and where the classifier stands. A classifier that failed
+     * keeps an earlier result only when it had one; one that classified the entry may have read an earlier text.
+     *
+     * @return array{summary: array{text: string, is_ai: bool}|null, severity_basis: string|null, url: string|null, classifier: array{label: string, tone: string}}|null
+     */
+    private function leadNotice(?Advisory $notice): ?array
+    {
+        if ($notice === null) {
+            return null;
+        }
+
+        return [
+            'summary' => match (true) {
+                filled($notice->localized_summary) => ['text' => (string) $notice->localized_summary, 'is_ai' => true],
+                filled($notice->summary) => ['text' => (string) $notice->summary, 'is_ai' => false],
+                default => null,
+            },
+            'severity_basis' => $notice->severity_basis?->getLabel(),
+            'url' => $notice->url,
+            'classifier' => match (true) {
+                $notice->classification_failed_at !== null && $notice->classified_by !== null => ['label' => __('Phân loại AI lỗi; kết quả AI trước được giữ lại'), 'tone' => 'danger'],
+                $notice->classification_failed_at !== null => ['label' => __('Phân loại AI lỗi'), 'tone' => 'danger'],
+                $notice->classified_by === null => ['label' => __('AI chưa phân loại'), 'tone' => 'unknown'],
+                default => ['label' => __('AI đã từng phân loại'), 'tone' => 'neutral'],
+            },
         ];
     }
 
