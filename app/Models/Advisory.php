@@ -112,6 +112,31 @@ class Advisory extends Model
     }
 
     /**
+     * Advisories whose title or one of whose CVE / GHSA ids matches the LIKE pattern, ignoring case: their aliases, the
+     * CVE ids resolved for the GHSA ids they still list (as KnownExploitation::cveIdsOf() reads them) and the CVE ids
+     * CISA KEV lists them for (only the id of each KEV entry).
+     *
+     * @param  Builder<Advisory>  $query
+     * @return Builder<Advisory>
+     */
+    #[Scope]
+    protected function matching(Builder $query, string $pattern): Builder
+    {
+        return $query->where(fn (Builder $query) => $query
+            ->whereLike('advisories.title', $pattern)
+            ->orWhereRaw(<<<'SQL'
+                exists (
+                    select 1 from (
+                        select alias from jsonb_path_query(advisories.aliases, 'lax $[*]') as aliases (alias)
+                        union all select jsonb_path_query(advisories.resolved_cve_ids -> (alias #>> '{}'), 'lax $.cves[*]') from jsonb_path_query(advisories.aliases, 'lax $[*]') as aliases (alias)
+                        union all select jsonb_path_query(advisories.known_exploited, 'lax $[*].cve')
+                    ) as ids (id)
+                    where ids.id #>> '{}' ilike ?
+                )
+                SQL, [$pattern]));
+    }
+
+    /**
      * @return BelongsTo<Incident, $this>
      */
     public function incident(): BelongsTo
