@@ -77,7 +77,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                                     {t('Đăng lúc')}
                                 </SortableTh>
                                 <Th align="right">{t('Tin')}</Th>
-                                <Th align="right">{t('Team đã báo')}</Th>
+                                <Th align="right">{t('Đã gửi tới team')}</Th>
                                 <Th>{t('Bản vá')}</Th>
                                 <Th>{t('Cần xử lý')}</Th>
                             </tr>
@@ -97,7 +97,9 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                                     </Td>
                                     <Td className="text-sm whitespace-nowrap text-muted-foreground tabular-nums">{incident.first_published ?? '—'}</Td>
                                     <Td align="right">{incident.notices_count}</Td>
-                                    <Td align="right">{incident.teams_told_count}</Td>
+                                    <Td align="right">
+                                        <DeliveryCell incident={incident} />
+                                    </Td>
                                     <Td>
                                         <FixStatus incident={incident} />
                                     </Td>
@@ -111,6 +113,24 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                 )}
                 <TablePagination meta={incidents.meta} table={table} onChange={query} />
             </Card>
+        </>
+    );
+}
+
+/**
+ * The teams Google Chat accepted a message of the current thread for; the teams a card was queued for only when they
+ * differ, and a mark when a message failed and was not sent again.
+ */
+function DeliveryCell({ incident }: { incident: IncidentSummary }) {
+    const t = useTranslation();
+
+    return (
+        <>
+            <span className="block">{incident.teams_delivered_count}</span>
+            {incident.teams_told_count !== incident.teams_delivered_count && (
+                <span className="block text-sm whitespace-nowrap text-faint">{t('Đã xếp gửi: :count', { count: incident.teams_told_count })}</span>
+            )}
+            {incident.has_delivery_failures && <StatusDot status={{ label: t('Gửi lỗi'), tone: 'danger' }} className="flex justify-end whitespace-nowrap" />}
         </>
     );
 }

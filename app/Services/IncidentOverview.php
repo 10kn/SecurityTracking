@@ -7,6 +7,7 @@ use App\Enums\IncidentSuggestionStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Advisory;
+use App\Models\ChatNotification;
 use App\Models\Incident;
 use App\Models\IncidentSuggestion;
 use App\Models\IncidentTeam;
@@ -16,6 +17,7 @@ use App\Models\RuntimeBranch;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
@@ -27,19 +29,30 @@ use Illuminate\Support\Collection;
  * The fix of a branch, whether the catalog says the branch reached end of life and whether the incident is recent enough
  * for reminders are kept as separate facts: none of them replaces another.
  *
+ * A team counts as told once a card about the incident was queued for it (`is_told`). Whether Google Chat accepted it is
+ * read apart, from the messages of the team's current thread (`delivery`): the thread key and generation of its row,
+ * so a thread taken over in a merge counts and one left behind by a webhook change does not. A message that failed
+ * and was not sent again stays a failure, whatever was delivered after it.
+ *
  * Everything is read for a set of incidents at once, in a number of queries that does not grow with the incidents or
  * the teams, so a list page costs the same whatever it shows.
  *
- * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_running: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool}
+ * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, is_legacy: bool, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
+ * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_running: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
  * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
  */
 class IncidentOverview
 {
+    /**
+     * The delivery of a team whose current thread has no message.
+     */
+    private const array NO_DELIVERY = ['has_messages' => false, 'last_sent_at' => null, 'failures_count' => 0, 'opener' => null, 'latest' => null];
+
     public function __construct(private AlertPolicy $policy) {}
 
     /**
-     * The state of each incident, by incident id. With `$withHistory`, the teams' rows come with their events and
-     * opening messages, for the incident page.
+     * The state of each incident, by incident id. With `$withHistory`, the teams' rows come with their events, and their
+     * deliveries with the latest message and the failures, for the incident page.
      *
      * @param  Collection<int, Incident>  $incidents
      * @return Collection<int, IncidentState>
@@ -65,13 +78,14 @@ class IncidentOverview
             ->with($withHistory ? ['acknowledgedBy', 'openingNotification', 'events.user'] : ['acknowledgedBy', 'openingNotification'])
             ->get()
             ->groupBy('incident_id');
+        $deliveries = $this->deliveriesOf($rows->collapse(), $withHistory);
         $suggestions = $this->pendingSuggestionsQuery($incidentIds, $noticeIds)->get(['id', 'incident_id', 'advisory_id']);
         $incidentOfNotice = $notices->collapse()->pluck('incident_id', 'id');
         $teams = Team::whereKey($ledger->pluck('team_id')->merge($runtimes->flatMap(fn (EloquentCollection $runtimes): array => $runtimes->map(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id)->all()))->unique()->values())
             ->orderBy('name')
             ->get();
 
-        return $incidents->mapWithKeys(function (Incident $incident) use ($notices, $runtimes, $releases, $eolBranches, $ledger, $rows, $suggestions, $incidentOfNotice, $teams): array {
+        return $incidents->mapWithKeys(function (Incident $incident) use ($notices, $runtimes, $releases, $eolBranches, $ledger, $rows, $deliveries, $suggestions, $incidentOfNotice, $teams): array {
             $incidentNotices = $notices->get($incident->id) ?? new EloquentCollection;
             $patches = $incident->confirmedPatches($incidentNotices, $releases->get($incident->technology->value));
             $technologyRuntimes = $runtimes->get($incident->technology->value) ?? new EloquentCollection;
@@ -83,7 +97,7 @@ class IncidentOverview
                 'fixes' => $this->fixes($incident, $technologyRuntimes, $patches, $eolBranches->get($incident->technology->value) ?? []),
                 'is_within_reminder_window' => $this->isWithinReminderWindow($incident),
                 'pending_suggestions_count' => $suggestions->filter(fn (IncidentSuggestion $suggestion): bool => $suggestion->incident_id === $incident->id || (int) $incidentOfNotice->get($suggestion->advisory_id) === $incident->id)->count(),
-                'teams' => $this->teams($incident, $incidentNotices, $patches, $technologyRuntimes, $ledger->whereIn('advisory_id', $memberIds), $rows->get($incident->id) ?? new EloquentCollection, $teams),
+                'teams' => $this->teams($incident, $incidentNotices, $patches, $technologyRuntimes, $ledger->whereIn('advisory_id', $memberIds), $rows->get($incident->id) ?? new EloquentCollection, $deliveries, $teams),
             ]];
         });
     }
@@ -174,12 +188,13 @@ class IncidentOverview
      * @param  EloquentCollection<int, Advisory>  $notices
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
      * @param  EloquentCollection<int, Runtime>  $runtimes  The runtimes of the technology, of every team.
-     * @param  Collection<int, array{team_id: int, advisory_id: int, severity: Severity, is_sent: bool}>  $ledger  What the teams were told of the incident's pre-notices.
+     * @param  Collection<int, array{team_id: int, advisory_id: int, severity: Severity, is_sent: bool, is_legacy: bool}>  $ledger  What the teams were told of the incident's pre-notices.
      * @param  EloquentCollection<int, IncidentTeam>  $rows  The incident's rows.
+     * @param  Collection<int, Delivery>  $deliveries  The delivery of each row's current thread, by row id.
      * @param  EloquentCollection<int, Team>  $teams  Every team any of the incidents read concerns, by name.
      * @return Collection<int, TeamState>
      */
-    private function teams(Incident $incident, EloquentCollection $notices, array $patches, EloquentCollection $runtimes, Collection $ledger, EloquentCollection $rows, EloquentCollection $teams): Collection
+    private function teams(Incident $incident, EloquentCollection $notices, array $patches, EloquentCollection $runtimes, Collection $ledger, EloquentCollection $rows, Collection $deliveries, EloquentCollection $teams): Collection
     {
         $runtimesByTeam = $runtimes->groupBy(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id);
         $toldTeamIds = $ledger->where('is_sent', true)->pluck('team_id')->unique();
@@ -188,7 +203,7 @@ class IncidentOverview
 
         return $teams
             ->filter(fn (Team $team): bool => $toldTeamIds->contains($team->id) || $runtimesByTeam->has($team->id))
-            ->map(function (Team $team) use ($incident, $notices, $patches, $runtimesByTeam, $ledger, $toldTeamIds, $rowsByTeam, $isWithinWindow): array {
+            ->map(function (Team $team) use ($incident, $notices, $patches, $runtimesByTeam, $ledger, $toldTeamIds, $rowsByTeam, $deliveries, $isWithinWindow): array {
                 $teamRuntimes = $runtimesByTeam->get($team->id) ?? new EloquentCollection;
                 $exposure = IncidentTeamExposure::of($incident, $notices, $teamRuntimes, $patches);
                 $row = $rowsByTeam->get($team->id);
@@ -210,6 +225,12 @@ class IncidentOverview
                     'is_assessed' => $isAssessed,
                     'waiting_branches' => $waiting,
                     'needs_acknowledgement' => $isActionable && ! $isAssessed && $waiting !== [] && $isWithinWindow && $this->policy->remindsOfIncident($toldSeverity),
+                    'delivery' => [
+                        ...self::NO_DELIVERY,
+                        'failures' => collect(),
+                        ...($row === null ? [] : $deliveries->get($row->id) ?? []),
+                        'is_legacy' => $ledger->where('team_id', $team->id)->contains('is_legacy', true),
+                    ],
                 ];
             })
             ->values();
@@ -240,6 +261,50 @@ class IncidentOverview
         usort($fixes, fn (array $a, array $b): int => strnatcmp($a['branch'], $b['branch']));
 
         return $fixes;
+    }
+
+    /**
+     * The delivery of each row's current thread, by row id: whether it has any message, when Google Chat last accepted
+     * one, and how many failed and were not sent again. With `$withDetails`, also the opener, the latest message and
+     * the failures. Rows whose thread has no message are left out.
+     *
+     * @param  Collection<int, IncidentTeam>  $rows
+     * @return Collection<int, Delivery>
+     */
+    private function deliveriesOf(Collection $rows, bool $withDetails): Collection
+    {
+        $threadKeys = $rows->pluck('thread_key')->unique()->values()->all();
+
+        if ($threadKeys === []) {
+            return collect();
+        }
+
+        $threads = ChatNotification::whereIn('thread_key', $threadKeys)
+            ->groupBy('thread_key', 'generation')
+            ->selectRaw('thread_key, generation, max(sent_at) as last_sent_at, max(id) as latest_id, count(*) filter (where failed_at is not null and sent_at is null) as failures_count')
+            ->toBase()
+            ->get()
+            ->keyBy(fn (object $thread): string => "{$thread->thread_key}#{$thread->generation}");
+
+        $columns = ['id', 'thread_key', 'generation', 'thread_role', 'sent_at', 'failed_at', 'last_error', 'created_at'];
+        $latest = $withDetails ? ChatNotification::whereKey($threads->pluck('latest_id')->all())->get($columns)->keyBy('id') : collect();
+        $failures = $withDetails ? ChatNotification::whereIn('thread_key', $threadKeys)->whereNotNull('failed_at')->whereNull('sent_at')->orderBy('id')->get($columns) : collect();
+
+        return $rows
+            ->filter(fn (IncidentTeam $row): bool => $threads->has("{$row->thread_key}#{$row->generation}"))
+            ->mapWithKeys(function (IncidentTeam $row) use ($threads, $latest, $failures): array {
+                $thread = $threads->get("{$row->thread_key}#{$row->generation}");
+                $isOfThread = fn (?ChatNotification $notification): bool => $notification !== null && $notification->thread_key === $row->thread_key && $notification->generation === $row->generation;
+
+                return [$row->id => [
+                    'has_messages' => true,
+                    'last_sent_at' => $thread->last_sent_at === null ? null : Carbon::parse($thread->last_sent_at),
+                    'failures_count' => (int) $thread->failures_count,
+                    'opener' => $isOfThread($row->openingNotification) ? $row->openingNotification : null,
+                    'latest' => $latest->get($thread->latest_id),
+                    'failures' => $failures->filter($isOfThread)->values(),
+                ]];
+            });
     }
 
     /**

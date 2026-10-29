@@ -71,6 +71,17 @@ interface Suggestion {
     created: string | null;
 }
 
+type MessageStatus = StatusDotData & { at: string | null };
+
+interface Delivery {
+    opener: MessageStatus | null;
+    latest: MessageStatus | null;
+    last_sent: string | null;
+    failures_count: number;
+    failures: { id: number; error: string; failed: string | null; command: string }[];
+    limit: string | null;
+}
+
 interface TeamRow {
     id: number;
     name: string;
@@ -81,6 +92,7 @@ interface TeamRow {
     is_actionable: boolean;
     needs_acknowledgement: boolean;
     thread: { status: StatusDotData; url: string | null };
+    delivery: Delivery | null;
     assessment: { impact: { value: string; label: string }; note: string | null; by: string | null; at: string | null; is_valid: boolean } | null;
     exposure_hash: string;
     revision: number;
@@ -480,13 +492,14 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                                           ))}
                                 </Td>
                                 <Td className="align-top text-sm">{team.told_severity ? <SeverityBadge severity={team.told_severity} /> : <span className="text-muted-foreground">{t('Chưa báo')}</span>}</Td>
-                                <Td className="align-top">
+                                <Td className="max-w-[300px] align-top">
                                     <StatusDot status={team.thread.status} />
                                     {team.thread.url && (
                                         <span className="mt-0.5 block text-sm">
                                             <ExternalLink href={team.thread.url}>{t('Mở thread')}</ExternalLink>
                                         </span>
                                     )}
+                                    {team.delivery && <DeliveryStatus delivery={team.delivery} />}
                                 </Td>
                                 <Td className="max-w-[260px] align-top text-sm">
                                     <Assessment team={team} />
@@ -529,6 +542,51 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                 </Table>
             )}
         </Card>
+    );
+}
+
+/**
+ * What Google Chat accepted of the team's current thread. "Đã gửi" means Google Chat accepted the message, not that anyone
+ * read it; a failure stays until that message is sent again, whatever was delivered after it.
+ */
+function DeliveryStatus({ delivery }: { delivery: Delivery }) {
+    const t = useTranslation();
+
+    return (
+        <span className="mt-1.5 block text-sm">
+            {delivery.opener && (
+                <span className="block">
+                    <span className="text-muted-foreground">{t('Tin mở thread')}: </span>
+                    <StatusDot status={delivery.opener} />
+                </span>
+            )}
+            {delivery.latest && (
+                <span className="block">
+                    <span className="text-muted-foreground">{t('Tin xếp gửi gần nhất')}: </span>
+                    <StatusDot status={delivery.latest} />
+                </span>
+            )}
+            {delivery.limit ? (
+                <span className="block text-muted-foreground">{delivery.limit}</span>
+            ) : (
+                <span className="block text-muted-foreground">
+                    {delivery.last_sent ? t('Gửi thành công gần nhất: :time', { time: delivery.last_sent }) : t('Chưa gửi thành công tin nào trong thread này')}
+                </span>
+            )}
+            {delivery.failures.length > 0 && (
+                <span className="mt-1 block">
+                    <span className="block text-danger-text">{t('Gửi lỗi chưa gửi lại: :count', { count: delivery.failures_count })}</span>
+                    {delivery.failures.map((failure) => (
+                        <span key={failure.id} className="mt-0.5 block text-muted-foreground">
+                            #{failure.id}
+                            {failure.failed && ` · ${failure.failed}`}
+                            {failure.error && ` · ${failure.error}`}
+                            <code className="mt-0.5 block font-mono text-xs break-all text-foreground">{failure.command}</code>
+                        </span>
+                    ))}
+                </span>
+            )}
+        </span>
     );
 }
 

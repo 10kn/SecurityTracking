@@ -12,6 +12,8 @@ export interface IncidentSummary {
     first_published: string | null;
     notices_count: number;
     teams_told_count: number;
+    teams_delivered_count: number;
+    has_delivery_failures: boolean;
     fixes: { branch: string; version: string | null; is_eol: boolean }[];
     fix_status: StatusDotData;
     is_outside_reminder_window: boolean;

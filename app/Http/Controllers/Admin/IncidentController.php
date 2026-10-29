@@ -39,6 +39,7 @@ use Inertia\Response;
  *
  * @phpstan-import-type IncidentState from IncidentOverview
  * @phpstan-import-type TeamState from IncidentOverview
+ * @phpstan-import-type Delivery from IncidentOverview
  */
 class IncidentController extends Controller
 {
@@ -177,6 +178,9 @@ class IncidentController extends Controller
      * whether a service was upgraded: a branch the vendor confirmed no fix for is missing information, not proof there
      * is none. Whether the incident is too old for reminders is a mark of its own, beside the fix status.
      *
+     * The teams told (a card was queued) and those Google Chat accepted a message of the current thread for are
+     * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again.
+     *
      * @param  IncidentState  $state  See IncidentOverview::states().
      * @return array<string, mixed>
      */
@@ -197,6 +201,8 @@ class IncidentController extends Controller
             'first_published' => LocalTime::format($incident->first_published_at),
             'notices_count' => $notices->count(),
             'teams_told_count' => $state['teams']->where('is_told', true)->count(),
+            'teams_delivered_count' => $state['teams']->filter(fn (array $team): bool => $team['delivery']['last_sent_at'] !== null)->count(),
+            'has_delivery_failures' => $state['teams']->contains(fn (array $team): bool => $team['delivery']['failures_count'] > 0),
             'fixes' => $fixes,
             'fix_status' => match (true) {
                 $confirmed === 0 => ['label' => __('Chưa có thông tin bản vá xác nhận'), 'tone' => 'unknown'],
@@ -242,8 +248,8 @@ class IncidentController extends Controller
 
     /**
      * A team of the incident page: its services with their branch, scope and fix, what it was told, its Google Chat
-     * thread, its assessment and history, and what the form posts back for it (the exposure hash and the assessment
-     * revision shown).
+     * thread and what Google Chat accepted of it, its assessment and history, and what the form posts back for it (the
+     * exposure hash and the assessment revision shown).
      *
      * @param  TeamState  $team  See IncidentOverview::states().
      * @return array<string, mixed>
@@ -268,6 +274,7 @@ class IncidentController extends Controller
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
             'thread' => $this->thread($row),
+            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row) : null,
             'assessment' => $row?->impact === null ? null : [
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
                 'note' => $row->impact_note,
@@ -349,6 +356,50 @@ class IncidentController extends Controller
         };
 
         return ['status' => $status, 'url' => $this->threadUrl($row?->thread_name)];
+    }
+
+    /**
+     * What Google Chat accepted of the team's current thread: its opener, the message queued last, the last one it
+     * accepted, and each message that failed and was not sent again, with the command that sends it again. "Đã gửi"
+     * says Google Chat accepted the message, not that anyone read it. A team told before incident threads, or with no
+     * message in its current thread, shows what cannot be told from here.
+     *
+     * @param  Delivery  $delivery
+     * @return array<string, mixed>
+     */
+    private function delivery(array $delivery, ?IncidentTeam $row): array
+    {
+        return [
+            'opener' => $this->messageStatus($delivery['opener']),
+            'latest' => $this->messageStatus($delivery['latest']),
+            'last_sent' => LocalTime::format($delivery['last_sent_at']),
+            'failures_count' => $delivery['failures_count'],
+            'failures' => $delivery['failures']->take(10)->map(fn (ChatNotification $notification): array => [
+                'id' => $notification->id,
+                'error' => Str::limit((string) $notification->last_error, 160),
+                'failed' => LocalTime::format($notification->failed_at),
+                'command' => "php artisan psm:resend-notification {$notification->id}",
+            ])->values()->all(),
+            'limit' => match (true) {
+                $delivery['has_messages'] => null,
+                $delivery['is_legacy'] => __('Team được báo bằng tin trước khi có thread: không biết từ đây tin đó đã tới chưa.'),
+                ($row?->generation ?? 1) > 1 => __('Chưa có dữ liệu chuyển phát trong thread hiện tại (webhook của team đã đổi).'),
+                default => __('Chưa có dữ liệu chuyển phát trong thread hiện tại.'),
+            },
+        ];
+    }
+
+    /**
+     * @return array{label: string, tone: string, at: string|null}|null
+     */
+    private function messageStatus(?ChatNotification $notification): ?array
+    {
+        return match (true) {
+            $notification === null => null,
+            $notification->sent_at !== null => ['label' => __('Đã gửi'), 'tone' => 'success', 'at' => LocalTime::format($notification->sent_at)],
+            $notification->failed_at !== null => ['label' => __('Gửi lỗi'), 'tone' => 'danger', 'at' => LocalTime::format($notification->failed_at)],
+            default => ['label' => __('Đang chờ gửi'), 'tone' => 'warning', 'at' => LocalTime::format($notification->created_at)],
+        };
     }
 
     /**

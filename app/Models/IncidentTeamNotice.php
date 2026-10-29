@@ -89,10 +89,10 @@ class IncidentTeamNotice extends Model
     /**
      * What every team was told of the pre-notices, read in two queries for many incidents at once: one entry per
      * pre-notice, team and severity, `is_sent` when it was in a card. Cards from before incidents count as sent, with
-     * their severity read as severityToldTo() does.
+     * their severity read as severityToldTo() does, and are `is_legacy`: they belong to no incident thread.
      *
      * @param  list<int>  $advisoryIds
-     * @return Collection<int, array{team_id: int, advisory_id: int, severity: Severity, is_sent: bool}>
+     * @return Collection<int, array{team_id: int, advisory_id: int, severity: Severity, is_sent: bool, is_legacy: bool}>
      */
     public static function ledgerFor(array $advisoryIds): Collection
     {
@@ -105,6 +105,7 @@ class IncidentTeamNotice extends Model
             'advisory_id' => (int) $notice->advisory_id,
             'severity' => $notice->severity,
             'is_sent' => $notice->chat_notification_id !== null,
+            'is_legacy' => false,
         ]);
 
         $legacy = ChatNotification::where(function ($query) use ($advisoryIds): void {
@@ -121,6 +122,7 @@ class IncidentTeamNotice extends Model
                     ? Severity::tryFrom(Str::afterLast($notification->dedupe_key, ':')) ?? Severity::Unknown
                     : self::severityOfTitle((string) ($notification->payload['text'] ?? '')),
                 'is_sent' => true,
+                'is_legacy' => true,
             ]);
 
         return $told->merge($legacy)->values();
