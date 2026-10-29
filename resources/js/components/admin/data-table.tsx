@@ -1,6 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import { ArrowDownIcon, ArrowUpIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -129,10 +129,37 @@ export function Tr({ href, className, ...props }: React.ComponentProps<'tr'> & {
     );
 }
 
-/** The search box of a table header. Searches as you type, 250 ms after the last key. */
-export function TableSearch({ value, placeholder, onSearch }: { value: string; placeholder: string; onSearch: (search: string) => void }) {
+/** Lets a page empty its `TableSearch`, e.g. on "Bỏ lọc", together with a search still waiting to be sent. */
+export interface TableSearchHandle {
+    clear: () => void;
+}
+
+/**
+ * The search box of a table header. Searches as you type, 250 ms after the last key. The box keeps what was typed rather
+ * than following `value`, so a reload coming back while you type on does not undo your keys; a page that resets the
+ * search calls `clear()` through `ref`.
+ */
+export function TableSearch({ ref, value, placeholder, onSearch }: { ref?: Ref<TableSearchHandle>; value: string; placeholder: string; onSearch: (search: string) => void }) {
     const [search, setSearch] = useState(value);
     const debouncedSearch = useDebouncedCallback(onSearch, 250);
+
+    useImperativeHandle(ref, () => ({
+        clear: () => {
+            debouncedSearch.cancel();
+            setSearch('');
+        },
+    }));
+
+    // A search still waiting must not interrupt a visit that leaves the page.
+    useEffect(
+        () =>
+            router.on('start', (event) => {
+                if (!event.detail.visit.preserveState) {
+                    debouncedSearch.cancel();
+                }
+            }),
+        [debouncedSearch],
+    );
 
     return (
         <label className="relative block w-full max-w-[280px]">
