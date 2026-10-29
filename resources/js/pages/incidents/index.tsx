@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import { XIcon } from 'lucide-react';
 
 import { show } from '@/actions/App/Http/Controllers/Admin/IncidentController';
@@ -8,6 +9,7 @@ import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
 import { StatusDot } from '@/components/admin/status-dot';
 import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useTableQuery } from '@/hooks/use-table-query';
 import { useTranslation } from '@/lib/i18n';
 import type { Option, Paginated, TableState } from '@/types';
@@ -22,6 +24,7 @@ interface Props {
 export default function IncidentsIndex({ incidents, table, technologies, teams }: Props) {
     const t = useTranslation();
     const query = useTableQuery(table, ['incidents']);
+    const urlOf = (incident: IncidentSummary) => show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } });
     const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.dismissed !== null;
 
     return (
@@ -66,51 +69,56 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                         <EmptyState title={t('Chưa có sự kiện nào')} description={t('Sự kiện xuất hiện khi hãng đăng tin bảo mật sớm.')} />
                     )
                 ) : (
-                    <Table className="min-w-[1000px]">
-                        <thead>
-                            <tr>
-                                <SortableTh column="severity" sort={table.sort} onSort={(sort) => query({ sort })}>
-                                    {t('Mức')}
-                                </SortableTh>
-                                <Th>{t('Sự kiện')}</Th>
-                                <SortableTh column="first_published_at" sort={table.sort} onSort={(sort) => query({ sort })}>
-                                    {t('Đăng lúc')}
-                                </SortableTh>
-                                <Th align="right">{t('Tin')}</Th>
-                                <Th align="right">{t('Đã gửi tới team')}</Th>
-                                <Th>{t('Bản vá')}</Th>
-                                <Th>{t('Cần xử lý')}</Th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {incidents.data.map((incident) => (
-                                <Tr key={incident.id} href={show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } })}>
-                                    <Td className="whitespace-nowrap">
-                                        <SeverityBadge severity={incident.severity} />
-                                        {incident.is_known_exploited && <StatusDot status={{ label: 'KEV', tone: 'danger' }} className="mt-1 flex" title={t('CISA KEV đang liệt kê CVE của sự kiện')} />}
-                                    </Td>
-                                    <Td className="max-w-[420px]">
-                                        <CellTitle
-                                            title={incident.lead ?? incident.title}
-                                            sub={`#${incident.id} · ${incident.technology.label}`}
-                                            href={show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } })}
-                                        />
-                                    </Td>
-                                    <Td className="text-sm whitespace-nowrap text-muted-foreground tabular-nums">{incident.first_published ?? '—'}</Td>
-                                    <Td align="right">{incident.notices_count}</Td>
-                                    <Td align="right">
-                                        <DeliveryCell incident={incident} />
-                                    </Td>
-                                    <Td>
-                                        <FixStatus incident={incident} />
-                                    </Td>
-                                    <Td>
-                                        <AttentionCell incident={incident} />
-                                    </Td>
-                                </Tr>
-                            ))}
-                        </tbody>
-                    </Table>
+                    <>
+                        <div className="max-sm:hidden">
+                            <Table className="min-w-[1000px]">
+                                <thead>
+                                    <tr>
+                                        <SortableTh column="severity" sort={table.sort} onSort={(sort) => query({ sort })}>
+                                            {t('Mức')}
+                                        </SortableTh>
+                                        <Th>{t('Sự kiện')}</Th>
+                                        <SortableTh column="first_published_at" sort={table.sort} onSort={(sort) => query({ sort })}>
+                                            {t('Đăng lúc')}
+                                        </SortableTh>
+                                        <Th align="right">{t('Tin')}</Th>
+                                        <Th align="right">{t('Đã gửi tới team')}</Th>
+                                        <Th>{t('Bản vá')}</Th>
+                                        <Th>{t('Cần xử lý')}</Th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {incidents.data.map((incident) => (
+                                        <Tr key={incident.id} href={urlOf(incident)}>
+                                            <Td className="whitespace-nowrap">
+                                                <SeverityBadge severity={incident.severity} />
+                                                {incident.is_known_exploited && <StatusDot status={{ label: 'KEV', tone: 'danger' }} className="mt-1 flex" title={t('CISA KEV đang liệt kê CVE của sự kiện')} />}
+                                            </Td>
+                                            <Td className="max-w-[420px]">
+                                                <CellTitle
+                                                    title={incident.lead ?? incident.title}
+                                                    sub={`#${incident.id} · ${incident.technology.label}`}
+                                                    href={urlOf(incident)}
+                                                />
+                                            </Td>
+                                            <Td className="text-sm whitespace-nowrap text-muted-foreground tabular-nums">{incident.first_published ?? '—'}</Td>
+                                            <Td align="right">{incident.notices_count}</Td>
+                                            <Td align="right">
+                                                <DeliveryCell incident={incident} />
+                                            </Td>
+                                            <Td>
+                                                <FixStatus incident={incident} />
+                                            </Td>
+                                            <Td>
+                                                <AttentionCell incident={incident} />
+                                            </Td>
+                                        </Tr>
+                                    ))}
+                                </tbody>
+                            </Table>
+                        </div>
+                        <IncidentCards incidents={incidents} table={table} urlOf={urlOf} onSort={(sort) => query({ sort })} />
+                    </>
                 )}
                 <TablePagination meta={incidents.meta} table={table} onChange={query} />
             </Card>
@@ -136,13 +144,81 @@ function DeliveryCell({ incident }: { incident: IncidentSummary }) {
     );
 }
 
-/** What needs an admin: teams to assess first, then suggestions to merge, kept apart; a zero is left out. */
-function AttentionCell({ incident }: { incident: IncidentSummary }) {
+/**
+ * The incidents below 640px, one card each, where the table would need sideways scrolling: what needs an admin and the
+ * fix status first, then the details in smaller type. The whole card opens the incident. The sort headers are hidden,
+ * so a select sorts instead.
+ */
+function IncidentCards({ incidents, table, urlOf, onSort }: { incidents: Props['incidents']; table: Props['table']; urlOf: (incident: IncidentSummary) => string; onSort: (sort: string) => void }) {
     const t = useTranslation();
-    const items = [
+    const sorts = [
+        { value: '-first_published_at', label: t('Mới đăng trước') },
+        { value: 'first_published_at', label: t('Cũ trước') },
+        { value: 'severity', label: t('Mức cao trước') },
+        { value: '-severity', label: t('Mức thấp trước') },
+    ];
+
+    return (
+        <div className="sm:hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2">
+                <span className="text-sm text-faint">{t(':count sự kiện', { count: incidents.meta.total })}</span>
+                <NativeSelect aria-label={t('Sắp xếp')} value={table.sort} onChange={(event) => onSort(event.target.value)} className="h-[30px] w-auto pl-2.5 text-sm">
+                    {sorts.map((sort) => (
+                        <option key={sort.value} value={sort.value}>
+                            {sort.label}
+                        </option>
+                    ))}
+                </NativeSelect>
+            </div>
+            <ul className="divide-y divide-border">
+                {incidents.data.map((incident) => (
+                    <li key={incident.id}>
+                        <Link href={urlOf(incident)} className="block px-3.5 py-3 hover:bg-surface-2 outline-none focus-visible:bg-surface-2 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-inset">
+                            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <SeverityBadge severity={incident.severity} />
+                                {incident.is_known_exploited && <StatusDot status={{ label: 'KEV', tone: 'danger' }} />}
+                                {incident.has_delivery_failures && <StatusDot status={{ label: t('Gửi lỗi'), tone: 'danger' }} />}
+                            </span>
+                            <span className="mt-1.5 line-clamp-2 font-medium">{incident.lead ?? incident.title}</span>
+                            {attentionOf(incident, t).map((item) => (
+                                <span key={item} className="mt-1 block text-sm">
+                                    {item}
+                                </span>
+                            ))}
+                            <span className="mt-1.5 block min-w-0">
+                                <FixStatus incident={incident} isCompact />
+                            </span>
+                            <span className="mt-1.5 block text-xs text-muted-foreground">
+                                {[
+                                    `#${incident.id}`,
+                                    incident.technology.label,
+                                    incident.first_published,
+                                    t(':count tin', { count: incident.notices_count }),
+                                    t('Đã gửi tới team: :count', { count: incident.teams_delivered_count }),
+                                    incident.teams_told_count !== incident.teams_delivered_count ? t('Đã xếp gửi: :count', { count: incident.teams_told_count }) : null,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                            </span>
+                        </Link>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+/** What needs an admin: teams to assess first, then suggestions to merge, kept apart; a zero is left out. */
+function attentionOf(incident: IncidentSummary, t: ReturnType<typeof useTranslation>): string[] {
+    return [
         incident.teams_to_acknowledge_count > 0 && t('Cần đánh giá: :count', { count: incident.teams_to_acknowledge_count }),
         incident.pending_suggestions_count > 0 && t('Gợi ý gộp: :count', { count: incident.pending_suggestions_count }),
     ].filter((item): item is string => typeof item === 'string');
+}
+
+function AttentionCell({ incident }: { incident: IncidentSummary }) {
+    const t = useTranslation();
+    const items = attentionOf(incident, t);
 
     return items.length === 0 ? (
         <span className="text-sm text-muted-foreground">—</span>
