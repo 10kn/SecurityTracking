@@ -108,6 +108,11 @@ it('keeps an earlier failure after a later message was delivered, until that mes
     get('/admin/incidents')->assertInertia(fn (Assert $page) => $page->where('incidents.data.0.has_delivery_failures', true));
 
     $failed->update(['failed_at' => null]);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.failures', [])
+        ->where('teams.0.delivery.pending_count', 1));
+
     $failed->update(['sent_at' => now()]);
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('teams.0.delivery.failures', []));
@@ -132,6 +137,31 @@ it('reads only the current thread once the team webhook changed, without calling
         ->where('teams.0.delivery.limit', 'Chưa có dữ liệu chuyển phát trong thread hiện tại (webhook của team đã đổi).'));
 
     expect($failed->refresh())->failed_at->not->toBeNull()->sent_at->toBeNull();
+});
+
+it('reads no delivery of the old thread as soon as the team webhook changed, before its next message moves the thread', function () {
+    actingAsAdmin();
+    threadReply($this->row, ['failed_at' => now(), 'last_error' => '404 Not Found']);
+    $this->commerce->update(['google_chat_webhook_url' => chatWebhook('COMMERCE2')]);
+
+    get('/admin/incidents')->assertInertia(fn (Assert $page) => $page
+        ->where('incidents.data.0.teams_delivered_count', 0)
+        ->where('incidents.data.0.has_delivery_failures', false));
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.opener', null)
+        ->where('teams.0.delivery.limit', 'Webhook của team đã đổi: các tin trước đã gửi tới webhook cũ, tin tiếp theo sẽ mở thread mới.'));
+
+    expect($this->row->refresh()->generation)->toBe(1);
+});
+
+it('lists the first failures of a thread and counts them all', function () {
+    actingAsAdmin();
+    $failures = collect(range(1, 12))->map(fn () => threadReply($this->row, ['failed_at' => now(), 'last_error' => '500 Internal Server Error']));
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.failures_count', 12)
+        ->has('teams.0.delivery.failures', 10)
+        ->where('teams.0.delivery.failures.0.id', $failures->first()->id));
 });
 
 it('reads the thread a merged incident handed over', function () {

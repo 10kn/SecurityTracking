@@ -31,13 +31,15 @@ use Illuminate\Support\Collection;
  *
  * A team counts as told once a card about the incident was queued for it (`is_told`). Whether Google Chat accepted it is
  * read apart, from the messages of the team's current thread (`delivery`): the thread key and generation of its row,
- * so a thread taken over in a merge counts and one left behind by a webhook change does not. A message that failed
- * and was not sent again stays a failure, whatever was delivered after it.
+ * so a thread taken over in a merge counts and one left behind by a webhook change does not, also before the next
+ * message moves the row (`is_webhook_changed`). A message that failed and was not sent again stays a failure, whatever
+ * was delivered after it.
  *
  * Everything is read for a set of incidents at once, in a number of queries that does not grow with the incidents or
  * the teams, so a list page costs the same whatever it shows.
  *
- * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, is_legacy: bool, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
+ * @phpstan-type ThreadDelivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
+ * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>, is_legacy: bool, is_webhook_changed: bool}
  * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_running: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
  * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
  */
@@ -46,7 +48,12 @@ class IncidentOverview
     /**
      * The delivery of a team whose current thread has no message.
      */
-    private const array NO_DELIVERY = ['has_messages' => false, 'last_sent_at' => null, 'failures_count' => 0, 'opener' => null, 'latest' => null];
+    private const array NO_DELIVERY = ['has_messages' => false, 'last_sent_at' => null, 'failures_count' => 0, 'pending_count' => 0, 'opener' => null, 'latest' => null];
+
+    /**
+     * The failures of a thread the incident page lists, oldest first.
+     */
+    public const int FAILURES_SHOWN = 10;
 
     public function __construct(private AlertPolicy $policy) {}
 
@@ -190,7 +197,7 @@ class IncidentOverview
      * @param  EloquentCollection<int, Runtime>  $runtimes  The runtimes of the technology, of every team.
      * @param  Collection<int, array{team_id: int, advisory_id: int, severity: Severity, is_sent: bool, is_legacy: bool}>  $ledger  What the teams were told of the incident's pre-notices.
      * @param  EloquentCollection<int, IncidentTeam>  $rows  The incident's rows.
-     * @param  Collection<int, Delivery>  $deliveries  The delivery of each row's current thread, by row id.
+     * @param  Collection<int, ThreadDelivery>  $deliveries  The delivery of each row's current thread, by row id.
      * @param  EloquentCollection<int, Team>  $teams  Every team any of the incidents read concerns, by name.
      * @return Collection<int, TeamState>
      */
@@ -207,6 +214,7 @@ class IncidentOverview
                 $teamRuntimes = $runtimesByTeam->get($team->id) ?? new EloquentCollection;
                 $exposure = IncidentTeamExposure::of($incident, $notices, $teamRuntimes, $patches);
                 $row = $rowsByTeam->get($team->id);
+                $isWebhookChanged = $row?->willMoveTo($team->google_chat_webhook_url) ?? false;
                 $isTold = $toldTeamIds->contains($team->id);
                 $toldSeverity = $isTold ? $ledger->where('team_id', $team->id)->map(fn (array $entry): Severity => $entry['severity'])->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() : null;
                 $isAssessed = $row?->hasValidAssessment($exposure) ?? false;
@@ -228,8 +236,9 @@ class IncidentOverview
                     'delivery' => [
                         ...self::NO_DELIVERY,
                         'failures' => collect(),
-                        ...($row === null ? [] : $deliveries->get($row->id) ?? []),
+                        ...($row === null || $isWebhookChanged ? [] : $deliveries->get($row->id) ?? []),
                         'is_legacy' => $ledger->where('team_id', $team->id)->contains('is_legacy', true),
+                        'is_webhook_changed' => $isWebhookChanged,
                     ],
                 ];
             })
@@ -265,11 +274,12 @@ class IncidentOverview
 
     /**
      * The delivery of each row's current thread, by row id: whether it has any message, when Google Chat last accepted
-     * one, and how many failed and were not sent again. With `$withDetails`, also the opener, the latest message and
-     * the failures. Rows whose thread has no message are left out.
+     * one, how many failed and were not sent again and how many wait to be sent (one sent again included). With
+     * `$withDetails`, also the opener, the latest message and the first FAILURES_SHOWN failures. Rows whose thread has
+     * no message are left out.
      *
      * @param  Collection<int, IncidentTeam>  $rows
-     * @return Collection<int, Delivery>
+     * @return Collection<int, ThreadDelivery>
      */
     private function deliveriesOf(Collection $rows, bool $withDetails): Collection
     {
@@ -281,14 +291,17 @@ class IncidentOverview
 
         $threads = ChatNotification::whereIn('thread_key', $threadKeys)
             ->groupBy('thread_key', 'generation')
-            ->selectRaw('thread_key, generation, max(sent_at) as last_sent_at, max(id) as latest_id, count(*) filter (where failed_at is not null and sent_at is null) as failures_count')
+            ->selectRaw('thread_key, generation, max(sent_at) as last_sent_at, max(id) as latest_id, count(*) filter (where failed_at is not null and sent_at is null) as failures_count, count(*) filter (where failed_at is null and sent_at is null) as pending_count')
             ->toBase()
             ->get()
             ->keyBy(fn (object $thread): string => "{$thread->thread_key}#{$thread->generation}");
 
         $columns = ['id', 'thread_key', 'generation', 'thread_role', 'sent_at', 'failed_at', 'last_error', 'created_at'];
         $latest = $withDetails ? ChatNotification::whereKey($threads->pluck('latest_id')->all())->get($columns)->keyBy('id') : collect();
-        $failures = $withDetails ? ChatNotification::whereIn('thread_key', $threadKeys)->whereNotNull('failed_at')->whereNull('sent_at')->orderBy('id')->get($columns) : collect();
+        $failures = $withDetails ? ChatNotification::fromSub(
+            ChatNotification::whereIn('thread_key', $threadKeys)->whereNotNull('failed_at')->whereNull('sent_at')->select($columns)->selectRaw('row_number() over (partition by thread_key, generation order by id) as position'),
+            'chat_notifications',
+        )->where('position', '<=', self::FAILURES_SHOWN)->orderBy('id')->get() : collect();
 
         return $rows
             ->filter(fn (IncidentTeam $row): bool => $threads->has("{$row->thread_key}#{$row->generation}"))
@@ -300,6 +313,7 @@ class IncidentOverview
                     'has_messages' => true,
                     'last_sent_at' => $thread->last_sent_at === null ? null : Carbon::parse($thread->last_sent_at),
                     'failures_count' => (int) $thread->failures_count,
+                    'pending_count' => (int) $thread->pending_count,
                     'opener' => $isOfThread($row->openingNotification) ? $row->openingNotification : null,
                     'latest' => $latest->get($thread->latest_id),
                     'failures' => $failures->filter($isOfThread)->values(),

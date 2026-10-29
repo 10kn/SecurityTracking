@@ -48,6 +48,11 @@ class IncidentController extends Controller
      */
     private const int FINDINGS_LIMIT = 50;
 
+    /**
+     * The most open findings the link to the findings list carries, as many as the list reads from `ids`.
+     */
+    private const int FINDINGS_LINKED = 200;
+
     public function __construct(private IncidentOverview $overview, private IncidentFindings $findings) {}
 
     /**
@@ -153,7 +158,8 @@ class IncidentController extends Controller
             'findings' => [
                 'items' => $findings->take(self::FINDINGS_LIMIT)->map(fn (array $item): array => $this->findingRow($item['finding'], $item['incident_fix']))->values()->all(),
                 'total' => $findings->count(),
-                'open_ids' => $findings->pluck('finding')->where('state', FindingState::Open)->pluck('id')->values()->all(),
+                'open_ids' => $findings->pluck('finding')->where('state', FindingState::Open)->pluck('id')->take(self::FINDINGS_LINKED)->values()->all(),
+                'open_count' => $findings->pluck('finding')->where('state', FindingState::Open)->count(),
             ],
             'focusTeam' => $teamId,
             'mergeTargets' => Incident::current()
@@ -370,6 +376,7 @@ class IncidentController extends Controller
             'recorded_at' => LocalTime::format($finding->last_seen_at),
             'target_version' => is_string($target) ? $target : null,
             'incident_fix' => $incidentFix,
+            'is_resolved' => $finding->state === FindingState::Resolved,
             'resolved' => LocalTime::format($finding->resolved_at),
         ];
     }
@@ -409,13 +416,15 @@ class IncidentController extends Controller
             'latest' => $this->messageStatus($delivery['latest']),
             'last_sent' => LocalTime::format($delivery['last_sent_at']),
             'failures_count' => $delivery['failures_count'],
-            'failures' => $delivery['failures']->take(10)->map(fn (ChatNotification $notification): array => [
+            'pending_count' => $delivery['pending_count'],
+            'failures' => $delivery['failures']->take(IncidentOverview::FAILURES_SHOWN)->map(fn (ChatNotification $notification): array => [
                 'id' => $notification->id,
                 'error' => Str::limit((string) $notification->last_error, 160),
                 'failed' => LocalTime::format($notification->failed_at),
                 'command' => "php artisan psm:resend-notification {$notification->id}",
             ])->values()->all(),
             'limit' => match (true) {
+                $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: các tin trước đã gửi tới webhook cũ, tin tiếp theo sẽ mở thread mới.'),
                 $delivery['has_messages'] => null,
                 $delivery['is_legacy'] => __('Team được báo bằng tin trước khi có thread: không biết từ đây tin đó đã tới chưa.'),
                 ($row?->generation ?? 1) > 1 => __('Chưa có dữ liệu chuyển phát trong thread hiện tại (webhook của team đã đổi).'),

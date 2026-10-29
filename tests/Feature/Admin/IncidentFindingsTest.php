@@ -56,6 +56,7 @@ it('lists the findings that name the incident, open unread first, with the versi
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('findings.total', 3)
         ->where('findings.open_ids', [$unread->id, $read->id])
+        ->where('findings.open_count', 2)
         ->where('findings.items', fn ($items): bool => collect($items)->pluck('id')->all() === [$unread->id, $read->id, $resolved->id])
         ->where('findings.items.0.service', 'shop')
         ->where('findings.items.0.team', 'WEC')
@@ -66,7 +67,9 @@ it('lists the findings that name the incident, open unread first, with the versi
         ->where('findings.items.0.incident_fix', '8.5.12')
         ->where('findings.items.0.resolved', null)
         ->where('findings.items.1.state.label', 'Mở · Đã đọc')
+        ->where('findings.items.0.is_resolved', false)
         ->where('findings.items.2.state', ['label' => 'Đã giải quyết', 'tone' => 'neutral'])
+        ->where('findings.items.2.is_resolved', true)
         ->where('findings.items.2.resolved', '21/10/2026 04:00 GMT+7'));
 });
 

@@ -79,6 +79,7 @@ interface Delivery {
     latest: MessageStatus | null;
     last_sent: string | null;
     failures_count: number;
+    pending_count: number;
     failures: { id: number; error: string; failed: string | null; command: string }[];
     limit: string | null;
 }
@@ -112,6 +113,7 @@ interface RelatedFinding {
     recorded_at: string | null;
     target_version: string | null;
     incident_fix: string | null;
+    is_resolved: boolean;
     resolved: string | null;
 }
 
@@ -133,7 +135,7 @@ interface Props {
     notices: Notice[];
     suggestions: Suggestion[];
     teams: TeamRow[];
-    findings: { items: RelatedFinding[]; total: number; open_ids: number[] };
+    findings: { items: RelatedFinding[]; total: number; open_ids: number[]; open_count: number };
     focusTeam: number | null;
     mergeTargets: Option<number>[];
     update: { request_id: string; recipients: (Option<number> & { is_default: boolean })[] };
@@ -613,6 +615,7 @@ function DeliveryStatus({ delivery }: { delivery: Delivery }) {
                     {delivery.last_sent ? t('Gửi thành công gần nhất: :time', { time: delivery.last_sent }) : t('Chưa gửi thành công tin nào trong thread này')}
                 </span>
             )}
+            {delivery.pending_count > 0 && <span className="block text-muted-foreground">{t('Đang chờ gửi: :count', { count: delivery.pending_count })}</span>}
             {delivery.failures.length > 0 && (
                 <span className="mt-1 block">
                     <span className="block text-danger-text">{t('Gửi lỗi chưa gửi lại: :count', { count: delivery.failures_count })}</span>
@@ -686,8 +689,10 @@ function RelatedFindings({ findings }: { findings: Props['findings'] }) {
                     {t('Finding liên quan')} <span className="ml-1 text-sm font-normal text-faint">{findings.total}</span>
                 </CardTitle>
                 {findings.open_ids.length > 0 && (
-                    <Link href={findingsIndex.url({ query: { ids: findings.open_ids.slice(0, 200).join(',') } })} className="text-sm font-medium text-link hover:underline">
-                        {t('Mở :count finding đang mở', { count: findings.open_ids.length })}
+                    <Link href={findingsIndex.url({ query: { ids: findings.open_ids.join(',') } })} className="text-sm font-medium text-link hover:underline">
+                        {findings.open_count > findings.open_ids.length
+                            ? t('Mở :count trên :total finding đang mở', { count: findings.open_ids.length, total: findings.open_count })
+                            : t('Mở :count finding đang mở', { count: findings.open_ids.length })}
                     </Link>
                 )}
             </CardHeader>
@@ -728,7 +733,11 @@ function RelatedFindings({ findings }: { findings: Props['findings'] }) {
                                                 <span className="text-muted-foreground">{t('tại lần ghi nhận :time', { time: finding.recorded_at ?? '—' })}</span>
                                             </span>
                                         )}
-                                        {finding.target_version && <span className="mt-0.5 block text-muted-foreground">{t('Cần nâng lên :version', { version: finding.target_version })}</span>}
+                                        {finding.target_version && (
+                                            <span className="mt-0.5 block text-muted-foreground">
+                                                {finding.is_resolved ? t('Từng yêu cầu nâng lên :version', { version: finding.target_version }) : t('Cần nâng lên :version', { version: finding.target_version })}
+                                            </span>
+                                        )}
                                         {finding.incident_fix && <span className="mt-0.5 block text-muted-foreground">{t('Bản vá của sự kiện: :version', { version: finding.incident_fix })}</span>}
                                         {!finding.recorded_version && !finding.target_version && !finding.incident_fix && <span className="text-muted-foreground">—</span>}
                                     </Td>

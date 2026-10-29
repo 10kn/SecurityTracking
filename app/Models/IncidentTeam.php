@@ -113,6 +113,17 @@ class IncidentTeam extends Model
     }
 
     /**
+     * Whether the team's next message starts the next generation (see moveTo()): it posts to another webhook than the
+     * one this thread was opened with. Read only; the row moves when that message is queued.
+     */
+    public function willMoveTo(?string $webhookUrl): bool
+    {
+        return Team::googleChatSpaceOf($webhookUrl) !== null
+            && $this->webhook_hash !== hash('sha256', (string) $webhookUrl)
+            && ($this->webhook_hash !== null || $this->space !== null);
+    }
+
+    /**
      * The row messages of this one go to now: the row of the incident it was merged into, followed to the end, locked
      * until the transaction ends.
      */
