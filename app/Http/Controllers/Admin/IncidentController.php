@@ -128,7 +128,7 @@ class IncidentController extends Controller
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
-                'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->unique('cve')->sortBy('cve')->values()->all()),
+                'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->sortByDesc(fn (array $entry): bool => (bool) ($entry['listed'] ?? false))->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
                 'lead_notice' => $this->leadNotice($this->overview->lead($state)),
             ],
@@ -182,6 +182,8 @@ class IncidentController extends Controller
      *
      * The teams told (a card was queued) and those Google Chat accepted a message of the current thread for are
      * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again.
+     * `is_known_exploited` while CISA KEV still lists a CVE of a pre-notice that is not dismissed; one it removed
+     * stays on the incident page only.
      *
      * @param  IncidentState  $state  See IncidentOverview::states().
      * @return array<string, mixed>
@@ -200,6 +202,7 @@ class IncidentController extends Controller
             'lead' => $lead?->title,
             'technology' => ['value' => $incident->technology->value, 'label' => $incident->technology->getLabel()],
             'severity' => $this->severity($incident->severity),
+            'is_known_exploited' => $notices->where('is_dismissed', false)->contains(fn (Advisory $notice): bool => collect($notice->known_exploited ?? [])->contains(fn (mixed $entry): bool => is_array($entry) && ($entry['listed'] ?? false) === true)),
             'first_published' => LocalTime::format($incident->first_published_at),
             'notices_count' => $notices->count(),
             'teams_told_count' => $state['teams']->where('is_told', true)->count(),

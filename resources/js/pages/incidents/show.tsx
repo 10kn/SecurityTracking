@@ -160,7 +160,7 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                         <Detail label={t('Mức cao nhất')}>
                             <SeverityBadge severity={incident.severity} />
                             {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
-                            {incident.known_exploited.length > 0 && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
+                            {incident.is_known_exploited && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
                         </Detail>
                         <Detail label={t('Bản vá')}>
                             <FixStatus incident={incident} />
@@ -184,10 +184,10 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                     </dl>
                 </CardBody>
             </Card>
-            {suggestions.length > 0 && <Suggestions incidentId={incident.id} suggestions={suggestions} />}
             <Teams incidentId={incident.id} teams={teams} focusTeam={focusTeam} />
             <RelatedFindings findings={findings} />
             <Notices incidentId={incident.id} notices={notices} />
+            {suggestions.length > 0 && <Suggestions incidentId={incident.id} suggestions={suggestions} />}
             <UrgentUpdate incidentId={incident.id} update={update} />
         </>
     );
@@ -295,82 +295,91 @@ function MergeDialog({ incidentId, targets }: { incidentId: number; targets: Opt
     );
 }
 
-/** Pending suggestions: accepting moves only the suggested pre-notice, from the incident it is shown in. */
+/**
+ * Pending suggestions, collapsed below what the incident asks of the teams: accepting moves only the suggested
+ * pre-notice, from the incident it is shown in.
+ */
 function Suggestions({ incidentId, suggestions }: { incidentId: number; suggestions: Suggestion[] }) {
     const t = useTranslation();
+    const [isOpen, setIsOpen] = useState(false);
 
     return (
         <Card className="mb-6">
-            <CardHeader>
+            <CardHeader className={cn(!isOpen && 'border-b-0')}>
                 <CardTitle>
                     {t('Gợi ý gộp')} <span className="ml-1 text-sm font-normal text-faint">{suggestions.length}</span>
                 </CardTitle>
+                <Button variant="ghost" size="sm" aria-expanded={isOpen} onClick={() => setIsOpen((open) => !open)}>
+                    {isOpen ? t('Ẩn') : t('Xem gợi ý')}
+                </Button>
             </CardHeader>
-            <Table className="min-w-[860px]">
-                <thead>
-                    <tr>
-                        <Th>{t('Tin')}</Th>
-                        <Th>{t('Gợi ý')}</Th>
-                        <Th>{t('Lý do')}</Th>
-                        <Th />
-                    </tr>
-                </thead>
-                <tbody>
-                    {suggestions.map((suggestion) => (
-                        <Tr key={suggestion.id}>
-                            <Td className="max-w-[360px]">
-                                <span className="font-medium">{suggestion.notice.title}</span>
-                                <span className="mt-0.5 block text-sm text-muted-foreground">
-                                    {suggestion.notice.severity.label}
-                                    {suggestion.notice.published && ` · ${suggestion.notice.published}`}
-                                </span>
-                            </Td>
-                            <Td className="text-sm">
-                                {suggestion.is_incoming ? (
-                                    <>
-                                        {t('Chuyển vào sự kiện này từ')}{' '}
-                                        {suggestion.source ? (
-                                            <Link href={show.url(suggestion.source.id)} className="font-medium text-link hover:underline">
-                                                #{suggestion.source.id} {suggestion.source.title}
+            {isOpen && (
+                <Table className="min-w-[860px]">
+                    <thead>
+                        <tr>
+                            <Th>{t('Tin')}</Th>
+                            <Th>{t('Gợi ý')}</Th>
+                            <Th>{t('Lý do')}</Th>
+                            <Th />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {suggestions.map((suggestion) => (
+                            <Tr key={suggestion.id}>
+                                <Td className="max-w-[360px]">
+                                    <span className="font-medium">{suggestion.notice.title}</span>
+                                    <span className="mt-0.5 block text-sm text-muted-foreground">
+                                        {suggestion.notice.severity.label}
+                                        {suggestion.notice.published && ` · ${suggestion.notice.published}`}
+                                    </span>
+                                </Td>
+                                <Td className="text-sm">
+                                    {suggestion.is_incoming ? (
+                                        <>
+                                            {t('Chuyển vào sự kiện này từ')}{' '}
+                                            {suggestion.source ? (
+                                                <Link href={show.url(suggestion.source.id)} className="font-medium text-link hover:underline">
+                                                    #{suggestion.source.id} {suggestion.source.title}
+                                                </Link>
+                                            ) : (
+                                                '—'
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            {t('Chuyển sang')}{' '}
+                                            <Link href={show.url(suggestion.target.id)} className="font-medium text-link hover:underline">
+                                                #{suggestion.target.id} {suggestion.target.title}
                                             </Link>
-                                        ) : (
-                                            '—'
-                                        )}
-                                    </>
-                                ) : (
-                                    <>
-                                        {t('Chuyển sang')}{' '}
-                                        <Link href={show.url(suggestion.target.id)} className="font-medium text-link hover:underline">
-                                            #{suggestion.target.id} {suggestion.target.title}
-                                        </Link>
-                                    </>
-                                )}
-                            </Td>
-                            <Td className="text-sm text-muted-foreground">{suggestion.reason}</Td>
-                            <Td align="right" className="whitespace-nowrap">
-                                <div className="inline-flex gap-1.5">
-                                    <ConfirmButton
-                                        variant="secondary"
-                                        size="sm"
-                                        title={t('Chuyển tin vào sự kiện #:id?', { id: suggestion.target.id })}
-                                        description={t('Chỉ tin “:notice” được chuyển; các tin khác của sự kiện đang chứa nó giữ nguyên.', { notice: suggestion.notice.title })}
-                                        confirmLabel={t('Gộp')}
-                                        disabled={!suggestion.target.is_current || suggestion.source === null}
-                                        onConfirm={() =>
-                                            router.post(decide.url(suggestion.id), { decision: 'accept', incident_id: suggestion.source?.id ?? incidentId, target_id: suggestion.target.id }, { preserveScroll: true })
-                                        }
-                                    >
-                                        {t('Gộp')}
-                                    </ConfirmButton>
-                                    <Button variant="ghost" size="sm" onClick={() => router.post(decide.url(suggestion.id), { decision: 'reject' }, { preserveScroll: true })}>
-                                        {t('Bỏ qua')}
-                                    </Button>
-                                </div>
-                            </Td>
-                        </Tr>
-                    ))}
-                </tbody>
-            </Table>
+                                        </>
+                                    )}
+                                </Td>
+                                <Td className="text-sm text-muted-foreground">{suggestion.reason}</Td>
+                                <Td align="right" className="whitespace-nowrap">
+                                    <div className="inline-flex gap-1.5">
+                                        <ConfirmButton
+                                            variant="secondary"
+                                            size="sm"
+                                            title={t('Chuyển tin vào sự kiện #:id?', { id: suggestion.target.id })}
+                                            description={t('Chỉ tin “:notice” được chuyển; các tin khác của sự kiện đang chứa nó giữ nguyên.', { notice: suggestion.notice.title })}
+                                            confirmLabel={t('Gộp')}
+                                            disabled={!suggestion.target.is_current || suggestion.source === null}
+                                            onConfirm={() =>
+                                                router.post(decide.url(suggestion.id), { decision: 'accept', incident_id: suggestion.source?.id ?? incidentId, target_id: suggestion.target.id }, { preserveScroll: true })
+                                            }
+                                        >
+                                            {t('Gộp')}
+                                        </ConfirmButton>
+                                        <Button variant="ghost" size="sm" onClick={() => router.post(decide.url(suggestion.id), { decision: 'reject' }, { preserveScroll: true })}>
+                                            {t('Bỏ qua')}
+                                        </Button>
+                                    </div>
+                                </Td>
+                            </Tr>
+                        ))}
+                    </tbody>
+                </Table>
+            )}
         </Card>
     );
 }

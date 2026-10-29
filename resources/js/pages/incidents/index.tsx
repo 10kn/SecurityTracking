@@ -85,8 +85,9 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                         <tbody>
                             {incidents.data.map((incident) => (
                                 <Tr key={incident.id} href={show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } })}>
-                                    <Td>
+                                    <Td className="whitespace-nowrap">
                                         <SeverityBadge severity={incident.severity} />
+                                        {incident.is_known_exploited && <StatusDot status={{ label: 'KEV', tone: 'danger' }} className="mt-1 flex" title={t('CISA KEV đang liệt kê CVE của sự kiện')} />}
                                     </Td>
                                     <Td className="max-w-[420px]">
                                         <CellTitle
@@ -135,11 +136,12 @@ function DeliveryCell({ incident }: { incident: IncidentSummary }) {
     );
 }
 
+/** What needs an admin: teams to assess first, then suggestions to merge, kept apart; a zero is left out. */
 function AttentionCell({ incident }: { incident: IncidentSummary }) {
     const t = useTranslation();
     const items = [
-        incident.pending_suggestions_count > 0 && t(':count gợi ý gộp', { count: incident.pending_suggestions_count }),
-        incident.teams_to_acknowledge_count > 0 && t(':count team chờ đánh giá', { count: incident.teams_to_acknowledge_count }),
+        incident.teams_to_acknowledge_count > 0 && t('Cần đánh giá: :count', { count: incident.teams_to_acknowledge_count }),
+        incident.pending_suggestions_count > 0 && t('Gợi ý gộp: :count', { count: incident.pending_suggestions_count }),
     ].filter((item): item is string => typeof item === 'string');
 
     return items.length === 0 ? (
@@ -147,7 +149,9 @@ function AttentionCell({ incident }: { incident: IncidentSummary }) {
     ) : (
         <>
             {items.map((item) => (
-                <StatusDot key={item} status={{ label: item, tone: 'warning' }} className="flex" />
+                <span key={item} className="block text-sm whitespace-nowrap">
+                    {item}
+                </span>
             ))}
         </>
     );
