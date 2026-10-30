@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
@@ -47,15 +48,17 @@ final readonly class TableQuery
     }
 
     /**
-     * Rows where any of the columns contains the search text.
+     * Rows where any of the columns contains the search text, or that `$orWhere` adds with `orWhere…` to the same
+     * group, given the LIKE pattern of the text (e.g. to look in related rows).
      *
      * @template TModel of \Illuminate\Database\Eloquent\Model
      *
      * @param  Builder<TModel>  $query
      * @param  list<string>  $columns
+     * @param  (Closure(Builder<TModel>, string): mixed)|null  $orWhere
      * @return Builder<TModel>
      */
-    public function search(Builder $query, array $columns): Builder
+    public function search(Builder $query, array $columns, ?Closure $orWhere = null): Builder
     {
         if ($this->search === '') {
             return $query;
@@ -63,9 +66,13 @@ final readonly class TableQuery
 
         $pattern = '%'.addcslashes($this->search, '\\%_').'%';
 
-        return $query->where(function (Builder $query) use ($columns, $pattern): void {
+        return $query->where(function (Builder $query) use ($columns, $pattern, $orWhere): void {
             foreach ($columns as $column) {
                 $query->orWhereLike($column, $pattern);
+            }
+
+            if ($orWhere !== null) {
+                $orWhere($query, $pattern);
             }
         });
     }

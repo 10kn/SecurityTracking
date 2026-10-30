@@ -56,10 +56,12 @@ class IncidentController extends Controller
     public function __construct(private IncidentOverview $overview, private IncidentFindings $findings) {}
 
     /**
-     * Current incidents, newest first, filtered by technology, by a team told about them, and on those needing an
-     * admin (see IncidentOverview::needsAttention()), for the filtered team only when there is one. The page is read
-     * from the database first; only the attention filter reads the incidents the database cannot rule out, all at
-     * once (see IncidentOverview::states()).
+     * Current incidents, newest first, searched by their title and their pre-notices' titles and CVE / GHSA ids (see
+     * Advisory::matching()), filtered by technology, by a team told about them, and on those needing an admin (see
+     * IncidentOverview::needsAttention()) or marked as read with "Chưa rõ" (`unknown`, see
+     * IncidentOverview::hasUnknownImpact()), for the filtered team only when there is one. The page is read from the
+     * database first; only these two filters read the incidents the database cannot rule out, all at once (see
+     * IncidentOverview::states()).
      *
      * Incidents whose every pre-notice was dismissed as not security news are left out, unless the list is filtered on
      * them (`dismissed`) or on what needs an admin, which counts them as the Overview does.
@@ -71,8 +73,9 @@ class IncidentController extends Controller
         $teamId = $request->integer('team') ?: null;
         $isAttention = $request->boolean('attention');
         $isDismissed = $request->boolean('dismissed');
+        $isUnknown = $request->boolean('unknown');
 
-        $query = $table->search(Incident::current(), ['title'])
+        $query = $table->search(Incident::current(), ['title'], fn (Builder $query, string $pattern) => $query->orWhereIn('id', Advisory::matching($pattern)->whereNotNull('incident_id')->select('incident_id')))
             ->when($isDismissed, fn (Builder $query) => $query->dismissed())
             ->when(! $isDismissed && ! $isAttention, fn (Builder $query) => $query->whereNot(fn (Builder $query) => $query->dismissed()))
             ->when($technology !== null, fn (Builder $query) => $query->where('technology', $technology))
@@ -84,9 +87,13 @@ class IncidentController extends Controller
             )
             ->orderByDesc('id');
 
-        if ($isAttention) {
-            $candidates = $this->overview->mayNeedAttention($query)->get();
-            $states = $this->overview->states($candidates)->filter(fn (array $state): bool => $this->overview->needsAttention($state, $teamId));
+        if ($isAttention || $isUnknown) {
+            $candidates = $query
+                ->when($isAttention, fn (Builder $query) => $this->overview->mayNeedAttention($query))
+                ->when($isUnknown, fn (Builder $query) => $this->overview->mayHaveUnknownImpact($query, $teamId))
+                ->get();
+            $states = $this->overview->states($candidates)->filter(fn (array $state): bool => (! $isAttention || $this->overview->needsAttention($state, $teamId))
+                && (! $isUnknown || $this->overview->hasUnknownImpact($state, $teamId)));
             $matching = $candidates->filter(fn (Incident $incident): bool => $states->has($incident->id))->values();
             $page = LengthAwarePaginator::resolveCurrentPage();
             $incidents = new LengthAwarePaginator($matching->forPage($page, $table->perPage)->values(), $matching->count(), $table->perPage, $page, ['path' => $request->url(), 'query' => $request->query()]);
@@ -99,7 +106,7 @@ class IncidentController extends Controller
 
         return Inertia::render('incidents/index', [
             'incidents' => JsonResource::collection($incidents),
-            'table' => [...$table->toArray(), 'technology' => $technology?->value, 'team' => $teamId, 'attention' => $isAttention ? 1 : null, 'dismissed' => $isDismissed ? 1 : null],
+            'table' => [...$table->toArray(), 'technology' => $technology?->value, 'team' => $teamId, 'attention' => $isAttention ? 1 : null, 'unknown' => $isUnknown ? 1 : null, 'dismissed' => $isDismissed ? 1 : null],
             'technologies' => array_map(fn (Technology $technology): array => ['value' => $technology->value, 'label' => $technology->getLabel()], Technology::cases()),
             'teams' => Team::orderBy('name')->get()->map(fn (Team $team): array => ['value' => $team->id, 'label' => $team->name])->all(),
         ]);
