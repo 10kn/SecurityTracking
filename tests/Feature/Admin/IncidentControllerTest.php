@@ -97,8 +97,8 @@ it('lists current incidents with their lead notice, fixes, told teams and what n
             ->where('incidents.data.0.technology.label', 'PHP')
             ->where('incidents.data.0.notices_count', 1)
             ->where('incidents.data.0.teams_told_count', 2)
-            ->where('incidents.data.0.fixes', [['branch' => '8.3', 'version' => '8.3.36'], ['branch' => '8.4', 'version' => null]])
-            ->where('incidents.data.0.fix_status.label', 'Có bản vá một phần')
+            ->where('incidents.data.0.fixes', [['branch' => '8.3', 'version' => '8.3.36', 'is_eol' => false], ['branch' => '8.4', 'version' => null, 'is_eol' => false]])
+            ->where('incidents.data.0.fix_status.label', 'Hãng có bản vá một phần')
             ->where('incidents.data.0.pending_suggestions_count', 1)
             ->where('incidents.data.0.teams_to_acknowledge_count', 1));
 });

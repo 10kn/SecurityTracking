@@ -2,13 +2,14 @@ import { Link, router, useForm } from '@inertiajs/react';
 import { CheckIcon, ExternalLinkIcon, GitMergeIcon, SendIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { store as acknowledge } from '@/actions/App/Http/Controllers/Admin/IncidentAcknowledgementController';
 import { index, show } from '@/actions/App/Http/Controllers/Admin/IncidentController';
 import { store as merge } from '@/actions/App/Http/Controllers/Admin/IncidentMergeController';
 import { store as decide } from '@/actions/App/Http/Controllers/Admin/IncidentSuggestionDecisionController';
 import { store as sendUpdate } from '@/actions/App/Http/Controllers/Admin/IncidentUpdateController';
 import { store as split } from '@/actions/App/Http/Controllers/Admin/NoticeSplitController';
-import { Card, CardBody, CardHeader, CardTitle } from '@/components/admin/card';
+import { Card, CardBody, CardFooter, CardHeader, CardTitle } from '@/components/admin/card';
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { EmptyState, Table, Td, Th, Tr } from '@/components/admin/data-table';
 import { Field } from '@/components/admin/form-section';
@@ -51,6 +52,7 @@ interface Notice {
     known_exploited: KnownExploited[];
     is_dismissed: boolean;
     basis: string | null;
+    severity_basis: string | null;
 }
 
 interface KnownExploited {
@@ -70,6 +72,18 @@ interface Suggestion {
     created: string | null;
 }
 
+type MessageStatus = StatusDotData & { at: string | null };
+
+interface Delivery {
+    opener: MessageStatus | null;
+    latest: MessageStatus | null;
+    last_sent: string | null;
+    failures_count: number;
+    pending_count: number;
+    failures: { id: number; error: string; failed: string | null; command: string }[];
+    limit: string | null;
+}
+
 interface TeamRow {
     id: number;
     name: string;
@@ -79,11 +93,28 @@ interface TeamRow {
     is_running: boolean;
     is_actionable: boolean;
     needs_acknowledgement: boolean;
-    thread: { status: StatusDotData; url: string | null };
+    thread: { status: StatusDotData; url: string | null; is_old: boolean };
+    delivery: Delivery | null;
     assessment: { impact: { value: string; label: string }; note: string | null; by: string | null; at: string | null; is_valid: boolean } | null;
     exposure_hash: string;
     revision: number;
     history: { id: number; type: string; detail: string; by: string | null; at: string | null }[];
+}
+
+interface RelatedFinding {
+    id: number;
+    title: string;
+    rule: string;
+    severity: Severity;
+    service: string | null;
+    team: string | null;
+    state: StatusDotData;
+    recorded_version: string | null;
+    recorded_at: string | null;
+    target_version: string | null;
+    incident_fix: string | null;
+    is_resolved: boolean;
+    resolved: string | null;
 }
 
 interface Props {
@@ -94,10 +125,17 @@ interface Props {
         is_exploited: boolean;
         known_exploited: KnownExploited[];
         merged_from: { id: number; title: string }[];
+        lead_notice: {
+            summary: { text: string; is_ai: boolean } | null;
+            severity_basis: string | null;
+            url: string | null;
+            classifier: StatusDotData;
+        } | null;
     };
     notices: Notice[];
     suggestions: Suggestion[];
     teams: TeamRow[];
+    findings: { items: RelatedFinding[]; total: number; open_ids: number[]; open_count: number };
     focusTeam: number | null;
     mergeTargets: Option<number>[];
     update: { request_id: string; recipients: (Option<number> & { is_default: boolean })[] };
@@ -105,7 +143,7 @@ interface Props {
 
 type Draft = { impact: string; note: string };
 
-export default function IncidentsShow({ incident, notices, suggestions, teams, focusTeam, mergeTargets, update }: Props) {
+export default function IncidentsShow({ incident, notices, suggestions, teams, findings, focusTeam, mergeTargets, update }: Props) {
     const t = useTranslation();
     const title = incident.lead ?? incident.title;
 
@@ -119,11 +157,12 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
             />
             <Card className="mb-6">
                 <CardBody>
+                    {incident.lead_notice && <LeadNotice notice={incident.lead_notice} />}
                     <dl className="grid grid-cols-3 gap-x-6 gap-y-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
                         <Detail label={t('Mức cao nhất')}>
                             <SeverityBadge severity={incident.severity} />
                             {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
-                            {incident.known_exploited.length > 0 && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
+                            {incident.is_known_exploited && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
                         </Detail>
                         <Detail label={t('Bản vá')}>
                             <FixStatus incident={incident} />
@@ -147,11 +186,35 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                     </dl>
                 </CardBody>
             </Card>
-            {suggestions.length > 0 && <Suggestions incidentId={incident.id} suggestions={suggestions} />}
             <Teams incidentId={incident.id} teams={teams} focusTeam={focusTeam} />
+            <RelatedFindings findings={findings} />
             <Notices incidentId={incident.id} notices={notices} />
+            {suggestions.length > 0 && <Suggestions incidentId={incident.id} suggestions={suggestions} />}
             <UrgentUpdate incidentId={incident.id} update={update} />
         </>
+    );
+}
+
+/**
+ * The lead pre-notice explained: the AI summary or the source's, labelled as such, what gave it its severity (not why it
+ * is that severe), its source and where the classifier stands.
+ */
+function LeadNotice({ notice }: { notice: NonNullable<Props['incident']['lead_notice']> }) {
+    const t = useTranslation();
+
+    return (
+        <div className="mb-5 border-b border-border pb-5">
+            <p className="text-sm text-muted-foreground">{notice.summary === null ? t('Chưa có tóm tắt') : notice.summary.is_ai ? t('Tóm tắt do AI tạo') : t('Tóm tắt của nguồn')}</p>
+            {notice.summary && <p className="mt-1 max-w-[80ch] whitespace-pre-line">{notice.summary.text}</p>}
+            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span>
+                    <span className="text-muted-foreground">{t('Nguồn mức độ')}: </span>
+                    {notice.severity_basis ?? t('Chưa xác định')}
+                </span>
+                <StatusDot status={notice.classifier} />
+                {notice.url && <ExternalLink href={notice.url}>{t('Xem nguồn')}</ExternalLink>}
+            </p>
+        </div>
     );
 }
 
@@ -234,82 +297,91 @@ function MergeDialog({ incidentId, targets }: { incidentId: number; targets: Opt
     );
 }
 
-/** Pending suggestions: accepting moves only the suggested pre-notice, from the incident it is shown in. */
+/**
+ * Pending suggestions, collapsed below what the incident asks of the teams: accepting moves only the suggested
+ * pre-notice, from the incident it is shown in.
+ */
 function Suggestions({ incidentId, suggestions }: { incidentId: number; suggestions: Suggestion[] }) {
     const t = useTranslation();
+    const [isOpen, setIsOpen] = useState(false);
 
     return (
         <Card className="mb-6">
-            <CardHeader>
+            <CardHeader className={cn(!isOpen && 'border-b-0')}>
                 <CardTitle>
                     {t('Gợi ý gộp')} <span className="ml-1 text-sm font-normal text-faint">{suggestions.length}</span>
                 </CardTitle>
+                <Button variant="ghost" size="sm" aria-expanded={isOpen} onClick={() => setIsOpen((open) => !open)}>
+                    {isOpen ? t('Ẩn') : t('Xem gợi ý')}
+                </Button>
             </CardHeader>
-            <Table className="min-w-[860px]">
-                <thead>
-                    <tr>
-                        <Th>{t('Tin')}</Th>
-                        <Th>{t('Gợi ý')}</Th>
-                        <Th>{t('Lý do')}</Th>
-                        <Th />
-                    </tr>
-                </thead>
-                <tbody>
-                    {suggestions.map((suggestion) => (
-                        <Tr key={suggestion.id}>
-                            <Td className="max-w-[360px]">
-                                <span className="font-medium">{suggestion.notice.title}</span>
-                                <span className="mt-0.5 block text-sm text-muted-foreground">
-                                    {suggestion.notice.severity.label}
-                                    {suggestion.notice.published && ` · ${suggestion.notice.published}`}
-                                </span>
-                            </Td>
-                            <Td className="text-sm">
-                                {suggestion.is_incoming ? (
-                                    <>
-                                        {t('Chuyển vào sự kiện này từ')}{' '}
-                                        {suggestion.source ? (
-                                            <Link href={show.url(suggestion.source.id)} className="font-medium text-link hover:underline">
-                                                #{suggestion.source.id} {suggestion.source.title}
+            {isOpen && (
+                <Table className="min-w-[860px]">
+                    <thead>
+                        <tr>
+                            <Th>{t('Tin')}</Th>
+                            <Th>{t('Gợi ý')}</Th>
+                            <Th>{t('Lý do')}</Th>
+                            <Th />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {suggestions.map((suggestion) => (
+                            <Tr key={suggestion.id}>
+                                <Td className="max-w-[360px]">
+                                    <span className="font-medium">{suggestion.notice.title}</span>
+                                    <span className="mt-0.5 block text-sm text-muted-foreground">
+                                        {suggestion.notice.severity.label}
+                                        {suggestion.notice.published && ` · ${suggestion.notice.published}`}
+                                    </span>
+                                </Td>
+                                <Td className="text-sm">
+                                    {suggestion.is_incoming ? (
+                                        <>
+                                            {t('Chuyển vào sự kiện này từ')}{' '}
+                                            {suggestion.source ? (
+                                                <Link href={show.url(suggestion.source.id)} className="font-medium text-link hover:underline">
+                                                    #{suggestion.source.id} {suggestion.source.title}
+                                                </Link>
+                                            ) : (
+                                                '—'
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            {t('Chuyển sang')}{' '}
+                                            <Link href={show.url(suggestion.target.id)} className="font-medium text-link hover:underline">
+                                                #{suggestion.target.id} {suggestion.target.title}
                                             </Link>
-                                        ) : (
-                                            '—'
-                                        )}
-                                    </>
-                                ) : (
-                                    <>
-                                        {t('Chuyển sang')}{' '}
-                                        <Link href={show.url(suggestion.target.id)} className="font-medium text-link hover:underline">
-                                            #{suggestion.target.id} {suggestion.target.title}
-                                        </Link>
-                                    </>
-                                )}
-                            </Td>
-                            <Td className="text-sm text-muted-foreground">{suggestion.reason}</Td>
-                            <Td align="right" className="whitespace-nowrap">
-                                <div className="inline-flex gap-1.5">
-                                    <ConfirmButton
-                                        variant="secondary"
-                                        size="sm"
-                                        title={t('Chuyển tin vào sự kiện #:id?', { id: suggestion.target.id })}
-                                        description={t('Chỉ tin “:notice” được chuyển; các tin khác của sự kiện đang chứa nó giữ nguyên.', { notice: suggestion.notice.title })}
-                                        confirmLabel={t('Gộp')}
-                                        disabled={!suggestion.target.is_current || suggestion.source === null}
-                                        onConfirm={() =>
-                                            router.post(decide.url(suggestion.id), { decision: 'accept', incident_id: suggestion.source?.id ?? incidentId, target_id: suggestion.target.id }, { preserveScroll: true })
-                                        }
-                                    >
-                                        {t('Gộp')}
-                                    </ConfirmButton>
-                                    <Button variant="ghost" size="sm" onClick={() => router.post(decide.url(suggestion.id), { decision: 'reject' }, { preserveScroll: true })}>
-                                        {t('Bỏ qua')}
-                                    </Button>
-                                </div>
-                            </Td>
-                        </Tr>
-                    ))}
-                </tbody>
-            </Table>
+                                        </>
+                                    )}
+                                </Td>
+                                <Td className="text-sm text-muted-foreground">{suggestion.reason}</Td>
+                                <Td align="right" className="whitespace-nowrap">
+                                    <div className="inline-flex gap-1.5">
+                                        <ConfirmButton
+                                            variant="secondary"
+                                            size="sm"
+                                            title={t('Chuyển tin vào sự kiện #:id?', { id: suggestion.target.id })}
+                                            description={t('Chỉ tin “:notice” được chuyển; các tin khác của sự kiện đang chứa nó giữ nguyên.', { notice: suggestion.notice.title })}
+                                            confirmLabel={t('Gộp')}
+                                            disabled={!suggestion.target.is_current || suggestion.source === null}
+                                            onConfirm={() =>
+                                                router.post(decide.url(suggestion.id), { decision: 'accept', incident_id: suggestion.source?.id ?? incidentId, target_id: suggestion.target.id }, { preserveScroll: true })
+                                            }
+                                        >
+                                            {t('Gộp')}
+                                        </ConfirmButton>
+                                        <Button variant="ghost" size="sm" onClick={() => router.post(decide.url(suggestion.id), { decision: 'reject' }, { preserveScroll: true })}>
+                                            {t('Bỏ qua')}
+                                        </Button>
+                                    </div>
+                                </Td>
+                            </Tr>
+                        ))}
+                    </tbody>
+                </Table>
+            )}
         </Card>
     );
 }
@@ -462,13 +534,14 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                                           ))}
                                 </Td>
                                 <Td className="align-top text-sm">{team.told_severity ? <SeverityBadge severity={team.told_severity} /> : <span className="text-muted-foreground">{t('Chưa báo')}</span>}</Td>
-                                <Td className="align-top">
+                                <Td className="max-w-[300px] align-top">
                                     <StatusDot status={team.thread.status} />
                                     {team.thread.url && (
                                         <span className="mt-0.5 block text-sm">
-                                            <ExternalLink href={team.thread.url}>{t('Mở thread')}</ExternalLink>
+                                            <ExternalLink href={team.thread.url}>{team.thread.is_old ? t('Mở thread cũ') : t('Mở thread')}</ExternalLink>
                                         </span>
                                     )}
+                                    {team.delivery && <DeliveryStatus delivery={team.delivery} />}
                                 </Td>
                                 <Td className="max-w-[260px] align-top text-sm">
                                     <Assessment team={team} />
@@ -514,6 +587,52 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
     );
 }
 
+/**
+ * What Google Chat accepted of the team's current thread. "Đã gửi" means Google Chat accepted the message, not that anyone
+ * read it; a failure stays until that message is sent again, whatever was delivered after it.
+ */
+function DeliveryStatus({ delivery }: { delivery: Delivery }) {
+    const t = useTranslation();
+
+    return (
+        <span className="mt-1.5 block text-sm">
+            {delivery.opener && (
+                <span className="block">
+                    <span className="text-muted-foreground">{t('Tin mở thread')}: </span>
+                    <StatusDot status={delivery.opener} />
+                </span>
+            )}
+            {delivery.latest && (
+                <span className="block">
+                    <span className="text-muted-foreground">{t('Tin xếp gửi gần nhất')}: </span>
+                    <StatusDot status={delivery.latest} />
+                </span>
+            )}
+            {delivery.limit ? (
+                <span className="block text-muted-foreground">{delivery.limit}</span>
+            ) : (
+                <span className="block text-muted-foreground">
+                    {delivery.last_sent ? t('Gửi thành công gần nhất: :time', { time: delivery.last_sent }) : t('Chưa gửi thành công tin nào trong thread này')}
+                </span>
+            )}
+            {delivery.pending_count > 0 && <span className="block text-muted-foreground">{t('Đang chờ gửi: :count', { count: delivery.pending_count })}</span>}
+            {delivery.failures.length > 0 && (
+                <span className="mt-1 block">
+                    <span className="block text-danger-text">{t('Gửi lỗi chưa gửi lại: :count', { count: delivery.failures_count })}</span>
+                    {delivery.failures.map((failure) => (
+                        <span key={failure.id} className="mt-0.5 block text-muted-foreground">
+                            #{failure.id}
+                            {failure.failed && ` · ${failure.failed}`}
+                            {failure.error && ` · ${failure.error}`}
+                            <code className="mt-0.5 block font-mono text-xs break-all text-foreground">{failure.command}</code>
+                        </span>
+                    ))}
+                </span>
+            )}
+        </span>
+    );
+}
+
 function Assessment({ team }: { team: TeamRow }) {
     const t = useTranslation();
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -554,6 +673,94 @@ function Assessment({ team }: { team: TeamRow }) {
     );
 }
 
+/**
+ * The findings linked to the incident, open ones first. The versions are those of the finding's last evaluation, kept
+ * apart from the incident's own fix. The findings list shows open findings only, so resolved ones are only listed here.
+ */
+function RelatedFindings({ findings }: { findings: Props['findings'] }) {
+    const t = useTranslation();
+    const [isExpanded, setIsExpanded] = useState(false);
+    const shown = isExpanded ? findings.items : findings.items.slice(0, 5);
+
+    return (
+        <Card className="mb-6">
+            <CardHeader>
+                <CardTitle>
+                    {t('Finding liên quan')} <span className="ml-1 text-sm font-normal text-faint">{findings.total}</span>
+                </CardTitle>
+                {findings.open_ids.length > 0 && (
+                    <Link href={findingsIndex.url({ query: { ids: findings.open_ids.join(',') } })} className="text-sm font-medium text-link hover:underline">
+                        {findings.open_count > findings.open_ids.length
+                            ? t('Mở :count trên :total finding đang mở', { count: findings.open_ids.length, total: findings.open_count })
+                            : t('Mở :count finding đang mở', { count: findings.open_ids.length })}
+                    </Link>
+                )}
+            </CardHeader>
+            {findings.items.length === 0 ? (
+                <EmptyState title={t('Chưa có finding nào gắn với sự kiện này')} description={t('Chỉ tính finding nhắc tới tin hoặc bản vá của sự kiện; không đoán theo công nghệ hay phiên bản.')} />
+            ) : (
+                <>
+                    <Table className="min-w-[860px]">
+                        <thead>
+                            <tr>
+                                <Th>{t('Service')}</Th>
+                                <Th>{t('Finding')}</Th>
+                                <Th>{t('Trạng thái')}</Th>
+                                <Th>{t('Phiên bản')}</Th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {shown.map((finding) => (
+                                <Tr key={finding.id} className="align-top">
+                                    <Td className="align-top text-sm">
+                                        <span className="font-medium">{finding.service ?? '—'}</span>
+                                        {finding.team && <span className="mt-0.5 block text-muted-foreground">{finding.team}</span>}
+                                    </Td>
+                                    <Td className="max-w-[380px] align-top text-sm">
+                                        <span className="font-medium">{finding.title}</span>
+                                        <span className="mt-0.5 block text-muted-foreground">
+                                            {finding.rule} · {finding.severity.label}
+                                        </span>
+                                    </Td>
+                                    <Td className="align-top text-sm whitespace-nowrap">
+                                        <StatusDot status={finding.state} />
+                                        {finding.resolved && <span className="mt-0.5 block text-muted-foreground tabular-nums">{finding.resolved}</span>}
+                                    </Td>
+                                    <Td className="align-top text-sm">
+                                        {finding.recorded_version && (
+                                            <span className="block">
+                                                <span className="font-mono">{finding.recorded_version}</span>{' '}
+                                                <span className="text-muted-foreground">{t('tại lần ghi nhận :time', { time: finding.recorded_at ?? '—' })}</span>
+                                            </span>
+                                        )}
+                                        {finding.target_version && (
+                                            <span className="mt-0.5 block text-muted-foreground">
+                                                {finding.is_resolved ? t('Từng yêu cầu nâng lên :version', { version: finding.target_version }) : t('Cần nâng lên :version', { version: finding.target_version })}
+                                            </span>
+                                        )}
+                                        {finding.incident_fix && <span className="mt-0.5 block text-muted-foreground">{t('Bản vá của sự kiện: :version', { version: finding.incident_fix })}</span>}
+                                        {!finding.recorded_version && !finding.target_version && !finding.incident_fix && <span className="text-muted-foreground">—</span>}
+                                    </Td>
+                                </Tr>
+                            ))}
+                        </tbody>
+                    </Table>
+                    {(findings.items.length > 5 || findings.total > findings.items.length) && (
+                        <CardFooter>
+                            {findings.items.length > 5 && (
+                                <Button variant="link" size="sm" className="h-auto px-0 text-sm" onClick={() => setIsExpanded((expanded) => !expanded)}>
+                                    {isExpanded ? t('Thu gọn') : t('Xem thêm (:count)', { count: findings.items.length - 5 })}
+                                </Button>
+                            )}
+                            {findings.total > findings.items.length && <span>{t('Chỉ hiện :shown trên :total finding', { shown: findings.items.length, total: findings.total })}</span>}
+                        </CardFooter>
+                    )}
+                </>
+            )}
+        </Card>
+    );
+}
+
 /** The incident's pre-notices, oldest first; one that shares the incident can be split off into a new one. */
 function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[] }) {
     const t = useTranslation();
@@ -584,7 +791,9 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                             </Td>
                             <Td className="max-w-[380px] align-top">
                                 {notice.url ? <ExternalLink href={notice.url}>{notice.title}</ExternalLink> : <span className="font-medium">{notice.title}</span>}
-                                <span className="mt-0.5 block text-sm text-muted-foreground">{[notice.basis, notice.is_dismissed ? t('Không phải tin bảo mật') : null].filter(Boolean).join(' · ')}</span>
+                                <span className="mt-0.5 block text-sm text-muted-foreground">
+                                    {[notice.basis, notice.severity_basis, notice.is_dismissed ? t('Không phải tin bảo mật') : null].filter(Boolean).join(' · ')}
+                                </span>
                                 {notice.is_exploited && (
                                     <span className="mt-0.5 block text-sm">
                                         <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} />

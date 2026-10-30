@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\FindingState;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentScope;
 use App\Enums\IncidentTeamEventType;
@@ -10,12 +11,14 @@ use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Models\Advisory;
 use App\Models\ChatNotification;
+use App\Models\Finding;
 use App\Models\Incident;
 use App\Models\IncidentSuggestion;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamEvent;
 use App\Models\IncidentTeamNotice;
 use App\Models\Team;
+use App\Services\IncidentFindings;
 use App\Services\IncidentOverview;
 use App\Support\LocalTime;
 use App\Support\TableQuery;
@@ -36,10 +39,21 @@ use Inertia\Response;
  *
  * @phpstan-import-type IncidentState from IncidentOverview
  * @phpstan-import-type TeamState from IncidentOverview
+ * @phpstan-import-type Delivery from IncidentOverview
  */
 class IncidentController extends Controller
 {
-    public function __construct(private IncidentOverview $overview) {}
+    /**
+     * The most related findings the incident page lists.
+     */
+    private const int FINDINGS_LIMIT = 50;
+
+    /**
+     * The most open findings the link to the findings list carries, as many as the list reads from `ids`.
+     */
+    private const int FINDINGS_LINKED = 200;
+
+    public function __construct(private IncidentOverview $overview, private IncidentFindings $findings) {}
 
     /**
      * Current incidents, newest first, filtered by technology, by a team told about them, and on those needing an
@@ -93,7 +107,8 @@ class IncidentController extends Controller
 
     /**
      * An incident with its pre-notices, the pending suggestions about it, each team told about it or running its
-     * technology, and what the merge and urgent update forms need. A merged incident opens the one it went into.
+     * technology, the findings linked to it (see IncidentFindings), and what the merge and urgent update forms need. A
+     * merged incident opens the one it went into. The header explains the lead pre-notice (see leadNotice()).
      */
     public function show(Request $request, Incident $incident): Response|RedirectResponse
     {
@@ -109,6 +124,7 @@ class IncidentController extends Controller
         $notices = $state['notices'];
         $teams = $state['teams'];
         $teamId = $request->integer('team') ?: null;
+        $findings = $this->findings->of($incident, $notices);
 
         return Inertia::render('incidents/show', [
             'incident' => [
@@ -117,8 +133,9 @@ class IncidentController extends Controller
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
-                'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->unique('cve')->sortBy('cve')->values()->all()),
+                'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->sortByDesc(fn (array $entry): bool => (bool) ($entry['listed'] ?? false))->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
+                'lead_notice' => $this->leadNotice($this->overview->lead($state)),
             ],
             'notices' => $notices->map(fn (Advisory $notice): array => [
                 'id' => $notice->id,
@@ -134,9 +151,16 @@ class IncidentController extends Controller
                 'known_exploited' => $this->knownExploited($notice->known_exploited ?? []),
                 'is_dismissed' => $notice->is_dismissed,
                 'basis' => $notice->incident_basis?->getLabel(),
+                'severity_basis' => $notice->severity_basis?->getLabel(),
             ])->all(),
             'suggestions' => $this->suggestions($incident),
             'teams' => $teams->map(fn (array $team): array => $this->teamRow($incident, $team))->all(),
+            'findings' => [
+                'items' => $findings->take(self::FINDINGS_LIMIT)->map(fn (array $item): array => $this->findingRow($item['finding'], $item['incident_fix']))->values()->all(),
+                'total' => $findings->count(),
+                'open_ids' => $findings->pluck('finding')->where('state', FindingState::Open)->pluck('id')->take(self::FINDINGS_LINKED)->values()->all(),
+                'open_count' => $findings->pluck('finding')->where('state', FindingState::Open)->count(),
+            ],
             'focusTeam' => $teamId,
             'mergeTargets' => Incident::current()
                 ->where('technology', $incident->technology)
@@ -158,7 +182,14 @@ class IncidentController extends Controller
     }
 
     /**
-     * A row of the list, also the header of the incident page.
+     * A row of the list, also the header of the incident page. The fix status says what the vendor released, never
+     * whether a service was upgraded: a branch the vendor confirmed no fix for is missing information, not proof there
+     * is none. Whether the incident is too old for reminders is a mark of its own, beside the fix status.
+     *
+     * The teams told (a card was queued) and those Google Chat accepted a message of the current thread for are
+     * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again.
+     * `is_known_exploited` while CISA KEV still lists a CVE of a pre-notice that is not dismissed; one it removed
+     * stays on the incident page only.
      *
      * @param  IncidentState  $state  See IncidentOverview::states().
      * @return array<string, mixed>
@@ -169,7 +200,7 @@ class IncidentController extends Controller
         $notices = $state['notices'];
         $lead = $this->overview->lead($state);
         $fixes = $state['fixes'];
-        $fixed = collect($fixes)->whereNotNull('version')->count();
+        $confirmed = collect($fixes)->whereNotNull('version')->count();
 
         return [
             'id' => $incident->id,
@@ -177,17 +208,51 @@ class IncidentController extends Controller
             'lead' => $lead?->title,
             'technology' => ['value' => $incident->technology->value, 'label' => $incident->technology->getLabel()],
             'severity' => $this->severity($incident->severity),
+            'is_known_exploited' => $notices->where('is_dismissed', false)->contains(fn (Advisory $notice): bool => collect($notice->known_exploited ?? [])->contains(fn (mixed $entry): bool => is_array($entry) && ($entry['listed'] ?? false) === true)),
             'first_published' => LocalTime::format($incident->first_published_at),
             'notices_count' => $notices->count(),
             'teams_told_count' => $state['teams']->where('is_told', true)->count(),
+            'teams_delivered_count' => $state['teams']->filter(fn (array $team): bool => $team['delivery']['last_sent_at'] !== null)->count(),
+            'has_delivery_failures' => $state['teams']->contains(fn (array $team): bool => $team['delivery']['failures_count'] > 0),
             'fixes' => $fixes,
             'fix_status' => match (true) {
-                $fixes === [] || $fixed === 0 => ['label' => __('Chưa có bản vá'), 'tone' => 'warning'],
-                $fixed < count($fixes) => ['label' => __('Có bản vá một phần'), 'tone' => 'warning'],
-                default => ['label' => __('Đã có bản vá'), 'tone' => 'success'],
+                $confirmed === 0 => ['label' => __('Chưa có thông tin bản vá xác nhận'), 'tone' => 'unknown'],
+                $confirmed < count($fixes) => ['label' => __('Hãng có bản vá một phần'), 'tone' => 'warning'],
+                default => ['label' => __('Hãng đã có bản vá'), 'tone' => 'neutral'],
             },
+            'is_outside_reminder_window' => ! $state['is_within_reminder_window'],
             'pending_suggestions_count' => $state['pending_suggestions_count'],
             'teams_to_acknowledge_count' => $state['teams']->where('needs_acknowledgement', true)->count(),
+        ];
+    }
+
+    /**
+     * The lead pre-notice explained: its summary, the AI one (written in the alerts language, not the viewer's) else
+     * the source's; what gave it its severity; its source; and where the classifier stands. A classifier that failed
+     * keeps an earlier result only when it had one; one that classified the entry may have read an earlier text.
+     *
+     * @return array{summary: array{text: string, is_ai: bool}|null, severity_basis: string|null, url: string|null, classifier: array{label: string, tone: string}}|null
+     */
+    private function leadNotice(?Advisory $notice): ?array
+    {
+        if ($notice === null) {
+            return null;
+        }
+
+        return [
+            'summary' => match (true) {
+                filled($notice->localized_summary) => ['text' => (string) $notice->localized_summary, 'is_ai' => true],
+                filled($notice->summary) => ['text' => (string) $notice->summary, 'is_ai' => false],
+                default => null,
+            },
+            'severity_basis' => $notice->severity_basis?->getLabel(),
+            'url' => $notice->url,
+            'classifier' => match (true) {
+                $notice->classification_failed_at !== null && $notice->classified_by !== null => ['label' => __('Phân loại AI lỗi; kết quả AI trước được giữ lại'), 'tone' => 'danger'],
+                $notice->classification_failed_at !== null => ['label' => __('Phân loại AI lỗi'), 'tone' => 'danger'],
+                $notice->classified_by === null => ['label' => __('AI chưa phân loại'), 'tone' => 'unknown'],
+                default => ['label' => __('AI đã từng phân loại'), 'tone' => 'neutral'],
+            },
         ];
     }
 
@@ -224,8 +289,8 @@ class IncidentController extends Controller
 
     /**
      * A team of the incident page: its services with their branch, scope and fix, what it was told, its Google Chat
-     * thread, its assessment and history, and what the form posts back for it (the exposure hash and the assessment
-     * revision shown).
+     * thread and what Google Chat accepted of it, its assessment and history, and what the form posts back for it (the
+     * exposure hash and the assessment revision shown).
      *
      * @param  TeamState  $team  See IncidentOverview::states().
      * @return array<string, mixed>
@@ -249,7 +314,8 @@ class IncidentController extends Controller
             'is_running' => $team['is_running'],
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
-            'thread' => $this->thread($row),
+            'thread' => $this->thread($row, $team['delivery']['is_webhook_changed']),
+            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row) : null,
             'assessment' => $row?->impact === null ? null : [
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
                 'note' => $row->impact_note,
@@ -282,22 +348,104 @@ class IncidentController extends Controller
     }
 
     /**
-     * The team's Google Chat thread of the incident, with a link once Google named it.
+     * A finding linked to the incident. The versions are those of its last evaluation (`context` is a snapshot): the
+     * one the service ran then and the one it asks to upgrade to, which may be later than this incident's fix, shown
+     * apart. Read stays open: only an evaluation resolves it.
      *
-     * @return array{status: array{label: string, tone: string}, url: string|null}
+     * @param  string|null  $incidentFix  The fixed version of this incident the finding lists.
+     * @return array<string, mixed>
      */
-    private function thread(?IncidentTeam $row): array
+    private function findingRow(Finding $finding, ?string $incidentFix): array
+    {
+        $context = $finding->context ?? [];
+        $target = $context['latest'] ?? $context['fixed'] ?? null;
+
+        return [
+            'id' => $finding->id,
+            'title' => $finding->localizedTitle(),
+            'rule' => $finding->rule->getLabel(),
+            'severity' => $this->severity($finding->severity),
+            'service' => $finding->deployment?->service?->name,
+            'team' => $finding->team?->name,
+            'state' => match (true) {
+                $finding->state === FindingState::Resolved => ['label' => __('Đã giải quyết'), 'tone' => 'neutral'],
+                $finding->isAcknowledged() => ['label' => __('Mở · Đã đọc'), 'tone' => 'warning'],
+                default => ['label' => __('Mở · Chưa đọc'), 'tone' => 'warning'],
+            },
+            'recorded_version' => is_string($context['version'] ?? null) ? $context['version'] : null,
+            'recorded_at' => LocalTime::format($finding->last_seen_at),
+            'target_version' => is_string($target) ? $target : null,
+            'incident_fix' => $incidentFix,
+            'is_resolved' => $finding->state === FindingState::Resolved,
+            'resolved' => LocalTime::format($finding->resolved_at),
+        ];
+    }
+
+    /**
+     * The team's Google Chat thread of the incident, with a link once Google named it. A thread of the webhook the team
+     * no longer posts to is shown as the old one: the next message opens a new thread.
+     *
+     * @return array{status: array{label: string, tone: string}, url: string|null, is_old: bool}
+     */
+    private function thread(?IncidentTeam $row, bool $isWebhookChanged): array
     {
         $opener = $row?->openingNotification;
 
         $status = match (true) {
             $row === null || ! $row->hasThread() => ['label' => __('Chưa có thread'), 'tone' => 'unknown'],
+            $isWebhookChanged => ['label' => __('Thread của webhook cũ'), 'tone' => 'unknown'],
             $row->thread_name !== null => ['label' => __('Đã mở thread'), 'tone' => 'success'],
             $opener instanceof ChatNotification && $opener->failed_at !== null => ['label' => __('Gửi lỗi'), 'tone' => 'danger'],
             default => ['label' => __('Đang gửi'), 'tone' => 'warning'],
         };
 
-        return ['status' => $status, 'url' => $this->threadUrl($row?->thread_name)];
+        return ['status' => $status, 'url' => $this->threadUrl($row?->thread_name), 'is_old' => $isWebhookChanged && $row?->hasThread() === true];
+    }
+
+    /**
+     * What Google Chat accepted of the team's current thread: its opener, the message queued last (unless it is the
+     * opener), the last one it accepted, and each message that failed and was not sent again, with the command that
+     * sends it again. "Đã gửi" says Google Chat accepted the message, not that anyone read it. A team told before
+     * incident threads, or with no message in its current thread, shows what cannot be told from here.
+     *
+     * @param  Delivery  $delivery
+     * @return array<string, mixed>
+     */
+    private function delivery(array $delivery, ?IncidentTeam $row): array
+    {
+        return [
+            'opener' => $this->messageStatus($delivery['opener']),
+            'latest' => $delivery['latest']?->id === $delivery['opener']?->id ? null : $this->messageStatus($delivery['latest']),
+            'last_sent' => LocalTime::format($delivery['last_sent_at']),
+            'failures_count' => $delivery['failures_count'],
+            'pending_count' => $delivery['pending_count'],
+            'failures' => $delivery['failures']->take(IncidentOverview::FAILURES_SHOWN)->map(fn (ChatNotification $notification): array => [
+                'id' => $notification->id,
+                'error' => Str::limit((string) $notification->last_error, 160),
+                'failed' => LocalTime::format($notification->failed_at),
+                'command' => "php artisan psm:resend-notification {$notification->id}",
+            ])->values()->all(),
+            'limit' => match (true) {
+                $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: dữ liệu thread cũ không tính cho webhook hiện tại; tin tiếp theo sẽ mở thread mới.'),
+                $delivery['has_messages'] => null,
+                $delivery['is_legacy'] => __('Team được báo bằng tin trước khi có thread: không biết từ đây tin đó đã tới chưa.'),
+                ($row?->generation ?? 1) > 1 => __('Chưa có dữ liệu chuyển phát trong thread hiện tại (webhook của team đã đổi).'),
+                default => __('Chưa có dữ liệu chuyển phát trong thread hiện tại.'),
+            },
+        ];
+    }
+
+    /**
+     * @return array{label: string, tone: string, at: string|null}|null
+     */
+    private function messageStatus(?ChatNotification $notification): ?array
+    {
+        return match (true) {
+            $notification === null => null,
+            $notification->sent_at !== null => ['label' => __('Đã gửi'), 'tone' => 'success', 'at' => LocalTime::format($notification->sent_at)],
+            $notification->failed_at !== null => ['label' => __('Gửi lỗi'), 'tone' => 'danger', 'at' => LocalTime::format($notification->failed_at)],
+            default => ['label' => __('Đang chờ gửi'), 'tone' => 'warning', 'at' => LocalTime::format($notification->created_at)],
+        };
     }
 
     /**
