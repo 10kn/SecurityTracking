@@ -1,9 +1,10 @@
 import { Link } from '@inertiajs/react';
 import { XIcon } from 'lucide-react';
+import { useRef } from 'react';
 
 import { show } from '@/actions/App/Http/Controllers/Admin/IncidentController';
 import { Card, CardHeader } from '@/components/admin/card';
-import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
+import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr, type TableSearchHandle } from '@/components/admin/data-table';
 import { FixStatus, type IncidentSummary } from '@/components/admin/incidents/fix-status';
 import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
@@ -24,6 +25,7 @@ interface Props {
 export default function IncidentsIndex({ incidents, table, technologies, teams }: Props) {
     const t = useTranslation();
     const query = useTableQuery(table, ['incidents']);
+    const searchRef = useRef<TableSearchHandle>(null);
     const urlOf = (incident: IncidentSummary) => show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } });
     const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.unknown !== null || table.dismissed !== null;
 
@@ -36,7 +38,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
             <Card>
                 <CardHeader>
                     <div className="flex flex-1 flex-wrap items-center gap-2">
-                        <TableSearch value={table.search} placeholder={t('Tìm sự kiện')} onSearch={(search) => query({ search })} />
+                        <TableSearch ref={searchRef} value={table.search} placeholder={t('Tìm sự kiện')} onSearch={(search) => query({ search })} />
                         <TableFilter value={table.technology} label={t('Công nghệ')} allLabel={t('Mọi công nghệ')} options={technologies} onChange={(technology) => query({ technology })} />
                         <TableFilter value={table.team} label={t('Team')} allLabel={t('Mọi team')} options={teams} onChange={(team) => query({ team })} />
                         <TableFilter
@@ -61,7 +63,14 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                             onChange={(dismissed) => query({ dismissed })}
                         />
                         {isFiltered && (
-                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, technology: null, team: null, attention: null, unknown: null, dismissed: null })}>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    searchRef.current?.clear();
+                                    query({ search: null, technology: null, team: null, attention: null, unknown: null, dismissed: null });
+                                }}
+                            >
                                 {t('Bỏ lọc')}
                                 <XIcon />
                             </Button>

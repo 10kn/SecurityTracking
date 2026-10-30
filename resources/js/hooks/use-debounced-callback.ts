@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 
-/** Calls the latest `callback` once the arguments stop changing for `delay` ms. */
-export function useDebouncedCallback<TArgs extends unknown[]>(callback: (...args: TArgs) => void, delay: number): (...args: TArgs) => void {
+/** Calls the latest `callback` once the arguments stop changing for `delay` ms. `cancel()` drops a call still waiting, as unmounting does. */
+export function useDebouncedCallback<TArgs extends unknown[]>(callback: (...args: TArgs) => void, delay: number): ((...args: TArgs) => void) & { cancel: () => void } {
     const callbackRef = useRef(callback);
     const timeoutRef = useRef<number | undefined>(undefined);
 
@@ -9,14 +9,25 @@ export function useDebouncedCallback<TArgs extends unknown[]>(callback: (...args
         callbackRef.current = callback;
     }, [callback]);
 
-    useEffect(() => () => window.clearTimeout(timeoutRef.current), []);
+    const debounced = useMemo(() => {
+        const cancel = () => {
+            window.clearTimeout(timeoutRef.current);
+            timeoutRef.current = undefined;
+        };
 
-    return useMemo(
-        () =>
+        return Object.assign(
             (...args: TArgs) => {
-                window.clearTimeout(timeoutRef.current);
-                timeoutRef.current = window.setTimeout(() => callbackRef.current(...args), delay);
+                cancel();
+                timeoutRef.current = window.setTimeout(() => {
+                    timeoutRef.current = undefined;
+                    callbackRef.current(...args);
+                }, delay);
             },
-        [delay],
-    );
+            { cancel },
+        );
+    }, [delay]);
+
+    useEffect(() => debounced.cancel, [debounced]);
+
+    return debounced;
 }

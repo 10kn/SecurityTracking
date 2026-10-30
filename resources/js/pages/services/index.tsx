@@ -1,10 +1,11 @@
 import { Link } from '@inertiajs/react';
 import { XIcon } from 'lucide-react';
+import { useRef } from 'react';
 
 import { show as showProject } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { create, edit } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { Card, CardHeader } from '@/components/admin/card';
-import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
+import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr, type TableSearchHandle } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
 import { LockfilesCell, OpenFindingsCell, RuntimesCell, serviceSubline, type ServiceRow } from '@/components/admin/services/service-cells';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import type { Option, Paginated, TableState } from '@/types';
 export default function ServicesIndex({ services, table, projects }: { services: Paginated<ServiceRow>; table: TableState & { project: number | null; attention: number | null }; projects: Option<number>[] }) {
     const t = useTranslation();
     const query = useTableQuery(table, ['services']);
+    const searchRef = useRef<TableSearchHandle>(null);
     const isFiltered = table.search !== '' || table.project !== null || table.attention !== null;
 
     return (
@@ -31,7 +33,7 @@ export default function ServicesIndex({ services, table, projects }: { services:
             <Card>
                 <CardHeader>
                     <div className="flex flex-1 flex-wrap items-center gap-2">
-                        <TableSearch value={table.search} placeholder={t('Tìm service')} onSearch={(search) => query({ search })} />
+                        <TableSearch ref={searchRef} value={table.search} placeholder={t('Tìm service')} onSearch={(search) => query({ search })} />
                         <TableFilter value={table.project} label={t('Project')} allLabel={t('Mọi project')} options={projects} onChange={(project) => query({ project })} />
                         <TableFilter
                             value={table.attention}
@@ -41,7 +43,14 @@ export default function ServicesIndex({ services, table, projects }: { services:
                             onChange={(attention) => query({ attention })}
                         />
                         {isFiltered && (
-                            <Button variant="ghost" size="sm" onClick={() => query({ search: null, project: null, attention: null })}>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    searchRef.current?.clear();
+                                    query({ search: null, project: null, attention: null });
+                                }}
+                            >
                                 {t('Bỏ lọc')}
                                 <XIcon />
                             </Button>
