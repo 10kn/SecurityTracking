@@ -272,8 +272,37 @@ class IncidentTeam extends Model
             return false;
         }
 
+        $this->clearAssessment($exposure);
+
+        return true;
+    }
+
+    /**
+     * Clears the assessment, whether or not it still holds, because the admin resumed a project of the team whose
+     * services it was made on: they were not maintained meanwhile, so it has to be made again. Callers hold the row
+     * locked.
+     *
+     * @return bool Whether there was one to reset.
+     */
+    public function resetForResumedProject(Project $project, User $user, IncidentTeamExposure $exposure): bool
+    {
+        if ($this->impact === null) {
+            return false;
+        }
+
+        $this->clearAssessment($exposure, ['project_id' => $project->id, 'project' => $project->name, 'user' => $user->name], $user);
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $why  What ended it, besides the exposure.
+     */
+    private function clearAssessment(IncidentTeamExposure $exposure, array $why = [], ?User $user = null): void
+    {
         $this->events()->create([
             'type' => IncidentTeamEventType::ImpactReset,
+            'user_id' => $user?->id,
             'data' => [
                 'impact' => $this->impact->value,
                 'note' => $this->impact_note,
@@ -281,6 +310,7 @@ class IncidentTeam extends Model
                 'acknowledged_exposure' => $this->acknowledged_exposure,
                 'exposure_hash' => $exposure->hash(),
                 'exposure' => $exposure->toArray(),
+                ...$why,
             ],
         ]);
 
@@ -293,8 +323,6 @@ class IncidentTeam extends Model
             'acknowledged_exposure_hash' => null,
             'assessment_revision' => $this->assessment_revision + 1,
         ])->save();
-
-        return true;
     }
 
     /**

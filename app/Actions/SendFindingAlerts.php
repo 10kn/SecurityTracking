@@ -10,6 +10,7 @@ use App\Models\FindingEvent;
 use App\Models\Incident;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
+use App\Models\Project;
 use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
@@ -26,6 +27,9 @@ use Illuminate\Support\Traits\Localizable;
  * service gets the same issue; the daily digest is the reminder. Running it again sends nothing new. A "thiếu bản vá"
  * finding a "Đã có bản vá" card stands for counts as sent without a card of its own (see isToldByIncident()), and a
  * new one may wait a few hours for that card (see isHeldForVendorPatch()).
+ *
+ * The findings of a paused project are neither sent nor counted as sent (see Finding::monitored()): the team's
+ * projects are share-locked while a card is queued, so pausing one waits for it, or the card for the pause.
  */
 class SendFindingAlerts
 {
@@ -53,6 +57,7 @@ class SendFindingAlerts
     public function handle(): int
     {
         [$covered, $pending] = Finding::open()
+            ->monitored()
             ->whereIn('severity', config('psm.alerts.immediate_severities'))
             ->where(fn ($query) => $query->whereNull('notified_severity')->orWhereColumn('notified_severity', '!=', 'severity'))
             ->with('runtime')
@@ -75,7 +80,10 @@ class SendFindingAlerts
     private function send(int $teamId, string $groupKey): bool
     {
         return DB::transaction(function () use ($teamId, $groupKey): bool {
+            Project::where('team_id', $teamId)->orderBy('id')->sharedLock()->pluck('id');
+
             $findings = Finding::open()
+                ->monitored()
                 ->where('team_id', $teamId)
                 ->where('group_key', $groupKey)
                 ->with(['deployment.service.project', 'runtime'])

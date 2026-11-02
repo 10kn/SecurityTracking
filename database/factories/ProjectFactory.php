@@ -27,4 +27,15 @@ class ProjectFactory extends Factory
             'slug' => Str::slug($name),
         ];
     }
+
+    /**
+     * A project whose monitoring an admin paused.
+     */
+    public function paused(string $reason = 'Đã ngừng maintain.'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'monitoring_paused_at' => now(),
+            'monitoring_pause_reason' => $reason,
+        ]);
+    }
 }

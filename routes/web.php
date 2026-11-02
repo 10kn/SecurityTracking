@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\NoticeSplitController;
 use App\Http\Controllers\Admin\OverviewController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
+use App\Http\Controllers\Admin\ProjectMonitoringPauseController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
 use App\Http\Controllers\Admin\SearchController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -57,6 +58,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('notices/{notice}/split', [NoticeSplitController::class, 'store'])->name('notices.split.store');
 
         Route::resource('projects', ProjectController::class);
+        Route::post('projects/{project}/monitoring-pause', [ProjectMonitoringPauseController::class, 'store'])->name('projects.monitoring-pause.store');
+        Route::delete('projects/{project}/monitoring-pause', [ProjectMonitoringPauseController::class, 'destroy'])->name('projects.monitoring-pause.destroy');
         Route::resource('services', ServiceController::class)->except('show');
         Route::post('services/{service}/lockfile-sync', [ServiceLockfileSyncController::class, 'store'])->name('services.lockfile-sync.store');
         Route::post('repositories/sync', [AccessibleRepositorySyncController::class, 'store'])->name('repositories.sync.store');

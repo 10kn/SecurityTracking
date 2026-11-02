@@ -14,6 +14,8 @@ use App\Models\Incident;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\Lockfile;
+use App\Models\Project;
+use App\Models\ProjectIncidentSkip;
 use App\Models\Runtime;
 use App\Models\RuntimeBranch;
 use App\Models\RuntimeRelease;
@@ -25,6 +27,7 @@ use App\Services\IncidentTeamExposure;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Traits\Localizable;
 
 /**
@@ -46,6 +49,9 @@ use Illuminate\Support\Traits\Localizable;
  * Each digest records the end of the time window it reports on (`covers_until`, taken before reading anything); the
  * next one starts where the last delivered one ended, so a digest that failed loses nothing. Days are counted in
  * `psm.digest.timezone`.
+ *
+ * A paused project is left out entirely (see Project): the team's projects are share-locked while its digest is
+ * read and queued, so pausing one waits for it, or the digest for the pause.
  */
 class SendDailyDigest
 {
@@ -68,7 +74,9 @@ class SendDailyDigest
         $today = now(config('psm.digest.timezone'));
         $isWeekly = $today->dayOfWeek === config('psm.digest.weekly_day');
 
-        return $this->withLocale(config('psm.alerts.locale'), fn (): int => Team::query()->orderBy('id')->get()->sum(function (Team $team) use ($today, $isWeekly): int {
+        return $this->withLocale(config('psm.alerts.locale'), fn (): int => Team::query()->orderBy('id')->get()->sum(fn (Team $team): int => DB::transaction(function () use ($team, $today, $isWeekly): int {
+            Project::where('team_id', $team->id)->orderBy('id')->sharedLock()->pluck('id');
+
             $coversUntil = now();
             $digest = $this->digestFor($team, $isWeekly);
 
@@ -80,7 +88,7 @@ class SendDailyDigest
             $dedupeKey = $isWeekly ? "digest-weekly:{$team->id}:{$today->format('o-\WW')}" : "digest:{$team->id}:{$today->toDateString()}";
 
             return $this->queueChatNotification->handle($team, ChatNotificationKind::Digest, $dedupeKey, $payload, attributes: ['covers_until' => $coversUntil]) === null ? 0 : 1;
-        }));
+        })));
     }
 
     /**
@@ -92,6 +100,7 @@ class SendDailyDigest
         $resolvedSince = $isWeekly ? now()->subWeek() : $since;
 
         $findings = $team->findings()
+            ->monitored()
             ->with('deployment.service.project')
             ->where(fn ($query) => $query->where('state', FindingState::Open)->orWhere('resolved_at', '>=', $resolvedSince))
             ->orderByRaw("case severity when 'critical' then 4 when 'high' then 3 when 'medium' then 2 when 'low' then 1 else 0 end desc")
@@ -108,11 +117,12 @@ class SendDailyDigest
         $overdue = $notNew->diffKeys($reminders)->filter(fn (Finding $finding): bool => $finding->sla_due_at !== null && $finding->sla_due_at->between($since, now()));
 
         $runtimes = Runtime::with('deployment.service.project')
-            ->whereHas('deployment', fn ($query) => $query->where('is_current', true)->whereHas('service.project', fn ($query) => $query->where('team_id', $team->id)))
+            ->monitored()
+            ->whereHas('deployment.service.project', fn ($query) => $query->where('team_id', $team->id))
             ->get();
 
         $services = Service::with('productionDeployment.lockfiles')
-            ->whereHas('project', fn ($query) => $query->where('team_id', $team->id))
+            ->whereHas('project', fn ($query) => $query->where('team_id', $team->id)->whereNull('monitoring_paused_at'))
             ->get();
         $unreadable = $services->flatMap(function (Service $service): Collection {
             $lockfiles = $service->productionDeployment->lockfiles ?? collect();
@@ -183,9 +193,27 @@ class SendDailyDigest
             ->groupBy('incident_id')
             ->reject(fn (Collection $notices): bool => $notices->contains(fn (Advisory $notice): bool => $this->policy->sendsPreNoticeRightAway($notice)))
             ->reject(fn (Collection $notices, int $incidentId): bool => IncidentTeamNotice::severityToldTo($team->id, Advisory::where('incident_id', $incidentId)->pluck('id')->all()) !== null)
+            ->reject(fn (Collection $notices, int $incidentId): bool => $this->isSkipped(Incident::findOrFail($incidentId), $runtimes))
             ->map(fn (Collection $notices): Advisory => $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first())
             ->sortBy('published_at')
             ->values();
+    }
+
+    /**
+     * Whether every runtime of the team the incident is about belongs to a project resumed without telling the team
+     * about it, which still covers what it asks of them (see ProjectIncidentSkip).
+     *
+     * @param  Collection<int, Runtime>  $runtimes
+     */
+    private function isSkipped(Incident $incident, Collection $runtimes): bool
+    {
+        if (! ProjectIncidentSkip::where('incident_id', $incident->id)->exists()) {
+            return false;
+        }
+
+        $all = $incident->notices()->get();
+
+        return ProjectIncidentSkip::withoutSkipped($incident, $all, $runtimes->where('technology', $incident->technology)->values(), $incident->confirmedPatches($all))->isEmpty();
     }
 
     /**
@@ -202,7 +230,8 @@ class SendDailyDigest
      * incident marked "Không" is left out, one marked "Có" or "Chưa rõ" stays listed. One the team was told about at the
      * immediate severities with no assessment that holds is a reminder instead (`is_reminder`), every day until an admin
      * marks it as read for the team. A runtime whose branch is not known counts as waiting for the reminder, listed by
-     * its version, as no fix can be matched to it; it does not put an incident on the awaiting list by itself.
+     * its version, as no fix can be matched to it; it does not put an incident on the awaiting list by itself. The
+     * services of a project resumed without telling the team about the incident are left out (see ProjectIncidentSkip).
      *
      * @param  Collection<int, Runtime>  $runtimes
      * @return Collection<int, array{item: array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}, is_news: bool, is_reminder: bool}>
@@ -236,6 +265,12 @@ class SendDailyDigest
                 $isAssessed = $assessment?->hasValidAssessment($exposure) ?? false;
 
                 if ($isAssessed && $assessment->isRuledOut($exposure)) {
+                    return null;
+                }
+
+                $technologyRuntimes = ProjectIncidentSkip::withoutSkipped($incident, $all, $technologyRuntimes, $patches);
+
+                if ($technologyRuntimes->isEmpty()) {
                     return null;
                 }
 
@@ -282,7 +317,7 @@ class SendDailyDigest
      * @param  Collection<int, Runtime>  $runtimes
      * @return Collection<int, array{runtime: Runtime, date: string}>
      */
-    private function endingSoon(Collection $runtimes, ?CarbonInterface $since): Collection
+    public function endingSoon(Collection $runtimes, ?CarbonInterface $since): Collection
     {
         $candidates = $runtimes->whereNotIn('status', [RuntimeStatus::Eol, RuntimeStatus::Unknown])->whereNotNull('branch');
 

@@ -14,9 +14,9 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * A "Đã có bản vá" card stands for the team's open "thiếu bản vá" findings of the branch whose upgrade target is the
- * patched version or an earlier one: they take the incident's severity when it is higher and count as sent, so they
- * send no card of their own. A finding asking for a later version is left alone, since the vendor has not said that
+ * A "Đã có bản vá" card stands for the open "thiếu bản vá" findings of the branch, in the projects whose services it
+ * lists, whose upgrade target is the patched version or an earlier one: they take the incident's severity when it is
+ * higher and count as sent, so they send no card of their own. A finding asking for a later version is left alone, since the vendor has not said that
  * release is the fix. The card and the findings it stands for share one deadline: that of the incident's severity
  * from now, the date CISA KEV asks a CVE of the incident fixed by, or a finding's own, whichever is earliest, so a
  * deadline is never pushed back. RuntimeFindings gives findings
@@ -27,14 +27,17 @@ class CoverPatchedFindings
     public function __construct(private AlertPolicy $policy) {}
 
     /**
-     * The findings a card about `$version` of the branch stands for, locked until the transaction ends.
+     * The findings a card about `$version` of the branch stands for, locked until the transaction ends: those of the
+     * projects whose services it lists on the branch, never those of a paused project.
      *
+     * @param  list<int>  $projectIds
      * @return Collection<int, Finding>
      */
-    public function findingsFor(int $teamId, Technology $technology, string $branch, string $version): Collection
+    public function findingsFor(int $teamId, array $projectIds, Technology $technology, string $branch, string $version): Collection
     {
         return Finding::open()
             ->where('team_id', $teamId)
+            ->whereHas('deployment.service', fn ($query) => $query->whereIn('project_id', $projectIds))
             ->where('rule', FindingRule::RuntimeOutdatedSecurity)
             ->whereHas('runtime', fn ($query) => $query->where('technology', $technology)->where('branch', $branch))
             ->lockForUpdate()

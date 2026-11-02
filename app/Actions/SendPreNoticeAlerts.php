@@ -15,6 +15,8 @@ use App\Models\Incident;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\IncidentTeamPatch;
+use App\Models\Project;
+use App\Models\ProjectIncidentSkip;
 use App\Models\Runtime;
 use App\Models\Team;
 use App\Services\AlertPolicy;
@@ -83,7 +85,7 @@ class SendPreNoticeAlerts
      *
      * @param  bool  $holdUnclassified  Leaves out pre-notices the classifier has not read yet: they wait for it, as it
      *                                  may rate or dismiss them, while the ones its CVSS score or a KEV listing makes
-     *                                  Critical go out right away (see isCriticalBeyondWords()). Such a run sends a part
+     *                                  Critical go out right away (see Advisory::isCriticalBeyondWords()). Such a run sends a part
      *                                  of what a full run would, so it never stores a fingerprint.
      * @return int The number of messages queued.
      */
@@ -122,7 +124,7 @@ class SendPreNoticeAlerts
     private function runtimesOf(Technology $technology): array
     {
         $runtimes = Runtime::where('technology', $technology)
-            ->whereHas('deployment', fn ($query) => $query->where('is_current', true))
+            ->monitored()
             ->with('deployment.service.project.team')
             ->orderBy('id')
             ->get();
@@ -150,6 +152,12 @@ class SendPreNoticeAlerts
      * A team sent a card about the incident gets its updates whatever the incident's severity now; a team never sent
      * one gets a first card only while the incident is fresh and urgent, or newly listed by CISA KEV when it is
      * exposed (see isExposed()).
+     *
+     * The services of a paused project are left out (see Runtime::monitored()); the projects paused since the runtimes
+     * were read are left out again once the lock is held, as pausing takes it too (see PauseProjectMonitoring). So
+     * are, from the alerts only, those of a project resumed without telling the team while what the incident asks of
+     * them did not grow (see ProjectIncidentSkip): the team's exposure, which an admin's assessment holds for, still
+     * counts them.
      *
      * @param  array{by_team: Collection<int|string, EloquentCollection<int, Runtime>>, signature: string}  $technologyRuntimes
      */
@@ -184,7 +192,16 @@ class SendPreNoticeAlerts
             $patches = $notices->isEmpty() ? [] : $patches;
             $queued = 0;
 
-            foreach ($notices->isEmpty() ? [] : $technologyRuntimes['by_team'] as $teamId => $runtimes) {
+            $pausedIds = Project::whereNotNull('monitoring_paused_at')->pluck('id')->all();
+
+            foreach ($notices->isEmpty() ? [] : $technologyRuntimes['by_team'] as $teamId => $monitored) {
+                $monitored = $monitored->reject(fn (Runtime $runtime): bool => in_array($runtime->deployment->service->project_id, $pausedIds, true))->values();
+                $runtimes = ProjectIncidentSkip::withoutSkipped($incident, $all, $monitored, $confirmedPatches);
+
+                if ($runtimes->isEmpty()) {
+                    continue;
+                }
+
                 $wasTold = IncidentTeamNotice::wasSentTo($teamId, $memberIds);
 
                 $team = $runtimes->first()->deployment->service->project->team;
@@ -196,7 +213,7 @@ class SendPreNoticeAlerts
 
                 [$thread, $isNewThread] = IncidentTeam::lockFor($incident, $team);
                 $thread->moveTo($team->google_chat_webhook_url);
-                $exposure = IncidentTeamExposure::of($incident, $all, $runtimes, $confirmedPatches);
+                $exposure = IncidentTeamExposure::of($incident, $all, $monitored, $confirmedPatches);
                 $thread->resetStaleAssessment($exposure);
                 $duePatches = $this->duePatches($teamId, $runtimes, $patches, $memberIds);
 
@@ -237,7 +254,7 @@ class SendPreNoticeAlerts
      * afterwards (a catalog release, a classification) changes the next fingerprint: what decides the alerts of each
      * pre-notice (its CISA KEV evidence included), which of them are fresh now (the only input that changes with time
      * alone, as does whether CISA added a CVE of it recently), the confirmed fixes, the
-     * runtimes of the technology and the alert settings. Values, not update times, so two edits within one second are
+     * runtimes of the technology, the projects resumed without telling their team about it and the alert settings. Values, not update times, so two edits within one second are
      * told apart.
      *
      * @param  Collection<int, Advisory>  $notices  Every pre-notice of the incident.
@@ -267,6 +284,7 @@ class SendPreNoticeAlerts
             [$incident->affected_branches, $incident->unaffected_branches],
             collect($patches)->map(fn (array $patch): string => "{$patch['notice']->id}:{$patch['version']}")->all(),
             $runtimeSignature,
+            ProjectIncidentSkip::where('incident_id', $incident->id)->orderBy('id')->pluck('id')->all(),
             [config('psm.alerts.immediate_severities'), config('psm.notices.relevant_days'), config('psm.alerts.max_listed_items'), config('psm.kev.severity')],
         ]));
     }
@@ -367,7 +385,8 @@ class SendPreNoticeAlerts
         $isReply = $isUpdate && $role === ChatThreadRole::Reply;
         $shown = $isReply ? collect([$lead]) : collect([$lead, ...$others]);
         $versions = collect($duePatches)->map(fn (array $patch, string $branch): string => "{$branch}:{$patch['version']}")->sort()->join(',');
-        $covered = collect($duePatches)->map(fn (array $patch, string $branch) => $this->coverPatchedFindings->findingsFor($team->id, $incident->technology, $branch, $patch['version']));
+        $projectIds = collect($duePatches)->map(fn (array $patch, string $branch): array => $runtimes->where('branch', $branch)->map(fn (Runtime $runtime): int => $runtime->deployment->service->project_id)->unique()->sort()->values()->all());
+        $covered = collect($duePatches)->map(fn (array $patch, string $branch) => $this->coverPatchedFindings->findingsFor($team->id, $projectIds[$branch], $incident->technology, $branch, $patch['version']));
         $dueDate = KnownExploitation::dueDate($this->knownExploited($notices));
         $deadline = $this->coverPatchedFindings->deadlineFor($severity, new EloquentCollection($covered->collapse()->all()), $dueDate);
         $versionsOf = fn (array $patches): array => collect($patches)->map(fn (array $patch): string => $patch['version'])->all();
@@ -410,6 +429,7 @@ class SendPreNoticeAlerts
                 'branch' => $branch,
                 'version' => $patch['version'],
                 'severity' => $severity,
+                'project_ids' => $projectIds[$branch],
                 'chat_notification_id' => $notification->id,
             ]), $covered[$branch], $dueDate);
         }
@@ -504,20 +524,8 @@ class SendPreNoticeAlerts
     private function countingNotices(Collection $notices, bool $holdUnclassified): Collection
     {
         return $notices
-            ->reject(fn (Advisory $notice): bool => $holdUnclassified && $notice->classified_by === null && ! $this->isCriticalBeyondWords($notice))
+            ->reject(fn (Advisory $notice): bool => $holdUnclassified && $notice->classified_by === null && ! $notice->isCriticalBeyondWords())
             ->values();
-    }
-
-    /**
-     * Critical by its CVSS score or a KEV listing, which the classifier cannot lower, rather than by the vendor's
-     * words alone, which it replaces once it has read them (see SyncNoticeFeed).
-     */
-    private function isCriticalBeyondWords(Advisory $notice): bool
-    {
-        return $notice->severity === Severity::Critical
-            && ($notice->severity_basis !== SeverityBasis::Vendor
-                || ($notice->cvss_score !== null && Severity::fromCvss((float) $notice->cvss_score) === Severity::Critical)
-                || $notice->isKnownExploited());
     }
 
     /**

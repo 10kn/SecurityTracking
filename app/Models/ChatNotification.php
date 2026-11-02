@@ -69,14 +69,35 @@ class ChatNotification extends Model
     }
 
     /**
-     * The team's webhook, or the admin space's for a message without a team. Null when none is configured; an admin
-     * webhook without the Google Chat prefix counts as none.
+     * The team's webhook, or the admin space's for a message without a team: security news goes to its own space,
+     * or to the admin space when none is set. Null when none is configured; an admin webhook without the Google Chat
+     * prefix counts as none.
      */
     public function webhookUrl(): ?string
     {
-        $url = $this->team_id === null ? config('psm.alerts.admin_webhook') : $this->team?->google_chat_webhook_url;
+        $url = match (true) {
+            $this->team_id !== null => $this->team?->google_chat_webhook_url,
+            $this->kind === ChatNotificationKind::SecurityNews => self::securityNewsWebhookUrl(),
+            default => config('psm.alerts.admin_webhook'),
+        };
 
         return is_string($url) && str_starts_with($url, Team::GOOGLE_CHAT_WEBHOOK_PREFIX) ? $url : null;
+    }
+
+    /**
+     * The security news space's webhook, the admin space's when `psm.alerts.news_webhook` is not set.
+     */
+    public static function securityNewsWebhookUrl(): ?string
+    {
+        return filled(config('psm.alerts.news_webhook')) ? config('psm.alerts.news_webhook') : config('psm.alerts.admin_webhook');
+    }
+
+    /**
+     * Whether security news has a space of its own, apart from the admin space's system alerts.
+     */
+    public static function hasSecurityNewsSpace(): bool
+    {
+        return filled(config('psm.alerts.news_webhook')) && config('psm.alerts.news_webhook') !== config('psm.alerts.admin_webhook');
     }
 
     /**

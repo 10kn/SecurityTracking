@@ -23,6 +23,7 @@ class ProjectResource extends JsonResource
             'name' => $this->name,
             'slug' => $this->slug,
             'services_count' => $this->services_count,
+            'is_paused' => $this->isPaused(),
             'team' => $this->whenLoaded('team', fn (): array => ['id' => $this->team->id, 'name' => $this->team->name]),
         ];
     }

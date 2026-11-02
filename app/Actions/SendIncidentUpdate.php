@@ -86,7 +86,8 @@ class SendIncidentUpdate
     private function queue(Incident $incident, Collection $notices, Team $team, string $message, ?User $actor, string $requestId): bool
     {
         $runtimes = Runtime::where('technology', $incident->technology)
-            ->whereHas('deployment', fn ($query) => $query->where('is_current', true)->whereHas('service.project', fn ($query) => $query->where('team_id', $team->id)))
+            ->monitored()
+            ->whereHas('deployment.service.project', fn ($query) => $query->where('team_id', $team->id))
             ->with('deployment.service.project')
             ->get();
 

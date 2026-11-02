@@ -86,7 +86,7 @@ class RuntimeFindings
             );
         }
 
-        $patch = is_string($latest) ? IncidentTeamPatch::covering($runtime->deployment->service->project->team_id, $technology, $runtime->branch, $latest) : null;
+        $patch = is_string($latest) ? IncidentTeamPatch::covering($runtime->deployment->service->project->team_id, $runtime->deployment->service->project_id, $technology, $runtime->branch, $latest) : null;
         $severity = $this->policy->severityFor($rule);
         $related = $this->relatedPatches($runtime);
         $evidence = collect($related)

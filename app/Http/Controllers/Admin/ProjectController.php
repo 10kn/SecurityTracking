@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\FindingState;
+use App\Enums\ProjectEventType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ProjectRequest;
 use App\Http\Resources\Admin\ProjectResource;
 use App\Http\Resources\Admin\ServiceResource;
 use App\Models\Project;
+use App\Models\ProjectEvent;
 use App\Models\Team;
 use App\Support\LocalTime;
 use App\Support\TableQuery;
@@ -63,7 +65,7 @@ class ProjectController extends Controller
 
     public function show(Project $project): Response
     {
-        $project->load('team.latestChatNotification');
+        $project->load(['team.latestChatNotification', 'pausedBy', 'events' => fn ($query) => $query->with('user')->latest('id')->limit(10)]);
 
         $services = $project->services()
             ->with(ServiceResource::EAGER_LOADS)
@@ -81,7 +83,25 @@ class ProjectController extends Controller
                 'team' => ['id' => $project->team->id, 'name' => $project->team->name],
                 'alert_channel' => ['label' => __('Google Chat của team').' · '.$chatStatus->getLabel(), 'tone' => $chatStatus->dotTone()],
                 'created_at' => LocalTime::date($project->created_at),
+                'monitoring' => $project->isPaused() ? [
+                    'paused_at' => LocalTime::format($project->monitoring_paused_at),
+                    'by' => $project->pausedBy?->name,
+                    'reason' => $project->monitoring_pause_reason,
+                ] : null,
             ],
+            'history' => $project->events
+                ->map(fn (ProjectEvent $event): array => [
+                    'id' => $event->id,
+                    'type' => $event->type->getLabel(),
+                    'detail' => match ($event->type) {
+                        ProjectEventType::Paused => (string) ($event->data['reason'] ?? ''),
+                        ProjectEventType::Resumed => collect([($event->data['notify'] ?? false) ? __('Gửi tình trạng hiện tại cho team') : __('Không gửi, đánh dấu tồn đọng đã đọc'), $event->data['note'] ?? null])->filter()->join(' · '),
+                    },
+                    'by' => $event->user?->name ?? $event->data['user'] ?? null,
+                    'at' => LocalTime::format($event->created_at),
+                ])
+                ->values()
+                ->all(),
             'services' => ServiceResource::collection($services),
         ]);
     }

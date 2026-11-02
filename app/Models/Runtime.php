@@ -7,6 +7,8 @@ use App\Enums\RuntimeStatus;
 use App\Enums\Technology;
 use Database\Factories\RuntimeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,6 +41,19 @@ class Runtime extends Model
             'observed_at' => 'datetime',
             'evaluated_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Runtimes on a current deployment of a project whose monitoring is not paused: the only ones alerts, digests and
+     * the incidents' exposure are about. The runtimes of a paused project are still evaluated.
+     *
+     * @param  Builder<Runtime>  $query
+     * @return Builder<Runtime>
+     */
+    #[Scope]
+    protected function monitored(Builder $query): Builder
+    {
+        return $query->whereHas('deployment', fn (Builder $query) => $query->where('is_current', true)->whereHas('service.project', fn (Builder $query) => $query->whereNull('monitoring_paused_at')));
     }
 
     /**

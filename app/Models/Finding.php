@@ -59,6 +59,18 @@ class Finding extends Model
     }
 
     /**
+     * Findings of a project whose monitoring is not paused: the only ones alerts and digests tell the team about.
+     *
+     * @param  Builder<Finding>  $query
+     * @return Builder<Finding>
+     */
+    #[Scope]
+    protected function monitored(Builder $query): Builder
+    {
+        return $query->whereHas('deployment.service.project', fn (Builder $query) => $query->whereNull('monitoring_paused_at'));
+    }
+
+    /**
      * The findings an admin should start with (the Overview, and `priority=1` of the findings list): CISA KEV lists a
      * CVE of them, their deadline passed, or they are Critical or High and nobody marked them as read.
      *

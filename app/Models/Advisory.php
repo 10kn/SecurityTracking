@@ -161,6 +161,18 @@ class Advisory extends Model
     }
 
     /**
+     * Critical by its CVSS score or a KEV listing, which the classifier cannot lower, rather than by the vendor's
+     * words alone, which it replaces once it has read them (see SyncNoticeFeed).
+     */
+    public function isCriticalBeyondWords(): bool
+    {
+        return $this->severity === Severity::Critical
+            && ($this->severity_basis !== SeverityBasis::Vendor
+                || ($this->cvss_score !== null && Severity::fromCvss((float) $this->cvss_score) === Severity::Critical)
+                || $this->isKnownExploited());
+    }
+
+    /**
      * Whether the advisory is exploited: the vendor's words say so (`is_exploited`, pre-notices only) or CISA KEV
      * lists one of its CVE ids.
      */

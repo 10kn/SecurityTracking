@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Actions\SendPreNoticeAlerts;
+use App\Actions\SendSecurityNews;
 use App\Actions\SyncNoticeFeed;
 use App\Enums\Technology;
 use Illuminate\Console\Attributes\Description;
@@ -19,9 +20,10 @@ class WatchVendorNotices extends Command
      *
      * The classifier never delays an alert it could not change: every feed is polled and what the CVSS score or a KEV
      * listing makes Critical is sent first. Then the classifier reads the new and edited entries, and the rest is sent
-     * with what it read, the vendor's words standing in for it where it failed (see SendPreNoticeAlerts).
+     * with what it read, the vendor's words standing in for it where it failed (see SendPreNoticeAlerts). The admin's
+     * security news space gets every pre-notice that counts last, once the classifier has read it (see SendSecurityNews).
      */
-    public function handle(SyncNoticeFeed $syncNoticeFeed, SendPreNoticeAlerts $sendPreNoticeAlerts): int
+    public function handle(SyncNoticeFeed $syncNoticeFeed, SendPreNoticeAlerts $sendPreNoticeAlerts, SendSecurityNews $sendSecurityNews): int
     {
         $failures = 0;
         $polled = [];
@@ -48,6 +50,7 @@ class WatchVendorNotices extends Command
         $queued += $sendPreNoticeAlerts->handle();
 
         $this->components->info("{$queued} pre-notice cards queued.");
+        $this->components->info($sendSecurityNews->handle().' security news queued.');
 
         return $failures === 0 ? self::SUCCESS : self::FAILURE;
     }

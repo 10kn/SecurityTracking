@@ -134,11 +134,11 @@ function chatWebhook(string $space): string
 /**
  * Fakes Google Chat: every space accepts messages and answers as Google does, with the message's name and its
  * thread's, one thread per thread key (a message without one opens its own thread). The admin space is configured as
- * "ADMIN".
+ * "ADMIN", and the security news space as "NEWS".
  */
 function fakeGoogleChat(): void
 {
-    config(['psm.alerts.admin_webhook' => chatWebhook('ADMIN')]);
+    config(['psm.alerts.admin_webhook' => chatWebhook('ADMIN'), 'psm.alerts.news_webhook' => chatWebhook('NEWS')]);
 
     Http::preventStrayRequests();
     Http::fake([Team::GOOGLE_CHAT_WEBHOOK_PREFIX.'*' => function (Request $request) {

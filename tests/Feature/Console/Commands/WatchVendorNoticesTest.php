@@ -13,6 +13,7 @@ use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\PhpNetNoticeFeed;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
@@ -31,7 +32,7 @@ it('polls the news feed of every technology, once each', function () {
     expect(Advisory::groupBy('source')->selectRaw('source, count(*) as total')->pluck('total', 'source')->all())
         ->toEqual(['notice:nodejs' => 3, 'notice:php' => 3, 'notice:ruby' => 2])
         ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:nodejs', 'notice:php', 'notice:ruby'])
-        ->and(Http::recorded())->toHaveCount(3);
+        ->and(Http::recorded(fn (Request $request): bool => ! str_starts_with($request->url(), Team::GOOGLE_CHAT_WEBHOOK_PREFIX)))->toHaveCount(3);
 });
 
 it('keeps polling the other feeds when one fails, records the failure and alerts the admin once it is stale', function () {

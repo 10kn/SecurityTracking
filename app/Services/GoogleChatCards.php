@@ -7,9 +7,11 @@ use App\Enums\Severity;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\Incident;
+use App\Models\Project;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
+use App\Models\User;
 use App\Services\Kev\KnownExploitation;
 use App\Support\LocalTime;
 use App\Support\Version;
@@ -155,6 +157,82 @@ class GoogleChatCards
         }
 
         return $this->card("incident-{$incident->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections);
+    }
+
+    /**
+     * "Tin bảo mật": one vendor security news item for the admin's news space, whether or not a team runs the
+     * technology, saying which teams do.
+     *
+     * @param  Collection<int, Advisory>  $others  The incident's other pre-notices that count now.
+     * @param  list<string>  $teams  The names of the teams running the technology.
+     * @return array<string, mixed>
+     */
+    public function securityNews(Incident $incident, Advisory $advisory, Collection $others, array $teams): array
+    {
+        $technology = $advisory->technology;
+
+        $widgets = $this->incidentWidgets($incident, $advisory, null, __('Hãng vừa đăng tin bảo mật về :technology.', ['technology' => $technology->getLabel()]));
+
+        $widgets[] = ['textParagraph' => ['text' => e($teams === []
+            ? __('Chưa team nào chạy :technology.', ['technology' => $technology->getLabel()])
+            : __('Team đang chạy :technology: :teams', ['technology' => $technology->getLabel(), 'teams' => implode(', ', $teams)]))]];
+
+        return $this->card("news-{$advisory->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Tin bảo mật · :technology', ['technology' => $technology->getLabel()]), [
+            ['widgets' => $widgets],
+            ...$this->otherNoticesSection($others),
+            ['widgets' => [$this->buttons(array_filter([__('Mở nguồn tin') => $advisory->url, __('Xem incident') => route('admin.incidents.show', $incident)], filled(...)))]],
+        ]);
+    }
+
+    /**
+     * "Theo dõi lại project": an admin resumed a paused project and chose to tell the team what it missed meanwhile:
+     * its open findings, the incidents that affect its services, its runtimes reaching end of life within
+     * `psm.digest.eol_warning_days` and its unreadable lockfiles. The urgent cards follow on their own.
+     *
+     * @param  Collection<int, Finding>  $findings  The project's open findings.
+     * @param  Collection<int, Incident>  $incidents  The current incidents affecting its services.
+     * @param  Collection<int, array{runtime: Runtime, date: string}>  $ending
+     * @return array<string, mixed>
+     */
+    public function projectResumed(Project $project, User $user, ?string $note, Collection $findings, Collection $incidents, Collection $ending, int $unreadableLockfiles): array
+    {
+        $bySeverity = $findings
+            ->groupBy(fn (Finding $finding): string => $finding->severity->value)
+            ->sortByDesc(fn (Collection $group): int => $group->first()->severity->rank())
+            ->map(fn (Collection $group): string => "{$group->first()->severity->getLabel()}: {$group->count()}")
+            ->join(' · ');
+
+        $widgets = array_filter([
+            ['textParagraph' => ['text' => e(__('Project :project được theo dõi lại. Dưới đây là tình trạng hiện tại; cảnh báo khẩn sẽ được gửi riêng.', ['project' => $project->name]))]],
+            ['textParagraph' => ['text' => e(collect([__('Mở lại bởi :user', ['user' => $user->name]), $note])->filter()->join(' · '))]],
+            ['textParagraph' => ['text' => e($findings->isEmpty() ? __('Không có finding đang mở.') : __('Finding đang mở: :count (:severities)', ['count' => $findings->count(), 'severities' => $bySeverity]))]],
+            $unreadableLockfiles === 0 ? null : ['textParagraph' => ['text' => e(__(':count lockfile không đọc được.', ['count' => $unreadableLockfiles]))]],
+        ]);
+
+        return $this->card("project-{$project->id}", __('Project :project được theo dõi lại', ['project' => $project->name]), __('Theo dõi lại project · :team', ['team' => $project->team->name]), [
+            ['widgets' => array_values($widgets)],
+            ['header' => __('Sự kiện bảo mật đang ảnh hưởng'), 'widgets' => [
+                ...$incidents
+                    ->take($this->maxListedItems())
+                    ->map(fn (Incident $incident): array => ['decoratedText' => [
+                        'text' => e($this->severityTitle($incident->severity, $incident->title)),
+                        'wrapText' => true,
+                        'button' => ['text' => __('Xem incident'), 'onClick' => ['openLink' => ['url' => route('admin.incidents.show', $incident)]]],
+                    ]])
+                    ->values()
+                    ->all(),
+                ...($incidents->isEmpty() ? [] : $this->moreWidget($incidents->count())),
+            ]],
+            ['header' => __('Sắp hết hỗ trợ'), 'widgets' => $ending
+                ->take($this->maxListedItems())
+                ->map(fn (array $item): array => $this->serviceWidget($item['runtime']->deployment->service, __(':runtime hết hỗ trợ từ :date', ['runtime' => $item['runtime']->displayName(), 'date' => $item['date']])))
+                ->values()
+                ->all()],
+            ['widgets' => [$this->buttons(array_filter([
+                __('Xem finding') => $findings->isEmpty() ? null : $this->findingsUrl(['team' => $project->team_id, 'ids' => implode(',', $findings->sortBy('id')->take(200)->modelKeys())]),
+                __('Mở project') => route('admin.projects.show', $project),
+            ], filled(...)))]],
+        ]);
     }
 
     /**

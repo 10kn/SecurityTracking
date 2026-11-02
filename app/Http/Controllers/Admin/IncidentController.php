@@ -343,7 +343,9 @@ class IncidentController extends Controller
                             __('Ảnh hưởng: :impact', ['impact' => IncidentImpact::tryFrom((string) ($event->data['impact'] ?? ''))?->getLabel() ?? '—']),
                             $event->data['note'] ?? null,
                         ])->filter()->join(' · '),
-                        IncidentTeamEventType::ImpactReset => __('Phạm vi, mức độ hoặc tin của sự kiện đã đổi so với lúc đánh giá.'),
+                        IncidentTeamEventType::ImpactReset => isset($event->data['project'])
+                            ? __('Project :project được theo dõi lại.', ['project' => $event->data['project']])
+                            : __('Phạm vi, mức độ hoặc tin của sự kiện đã đổi so với lúc đánh giá.'),
                         IncidentTeamEventType::UpdateSent => Str::limit((string) ($event->data['message'] ?? ''), 120),
                     },
                     'by' => $event->user?->name,

@@ -9,6 +9,7 @@ use App\Actions\ResolveNoticeCves;
 use App\Actions\SendAdminAlert;
 use App\Actions\SendFindingAlerts;
 use App\Actions\SendPreNoticeAlerts;
+use App\Actions\SendSecurityNews;
 use App\Actions\SyncKnownExploitedVulnerabilities;
 use App\Models\Advisory;
 use App\Models\Deployment;
@@ -34,6 +35,7 @@ class SyncKevCatalog extends Command
         ResolveNoticeCves $resolveNoticeCves,
         MatchKnownExploited $matchKnownExploited,
         SendPreNoticeAlerts $sendPreNoticeAlerts,
+        SendSecurityNews $sendSecurityNews,
         EvaluateRuntimes $evaluateRuntimes,
         RefreshKnownExploitedFindings $refreshFindings,
         SendFindingAlerts $sendFindingAlerts,
@@ -61,6 +63,7 @@ class SyncKevCatalog extends Command
                 return count($delisted).' advisories delisted';
             },
             'pre-notices' => fn (): string => $sendPreNoticeAlerts->handle().' pre-notice cards queued',
+            'security news' => fn (): string => $sendSecurityNews->handle().' security news queued',
             'runtimes' => function () use ($evaluateRuntimes): string {
                 $deploymentIds = Deployment::where('is_current', true)->whereHas('runtimes')->orderBy('id')->pluck('id')->all();
                 $evaluateRuntimes->syncRuntimeFindings($deploymentIds);

@@ -4,6 +4,7 @@ import { create, edit, show } from '@/actions/App/Http/Controllers/Admin/Project
 import { Card, CardHeader } from '@/components/admin/card';
 import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
+import { StatusDot } from '@/components/admin/status-dot';
 import { Button } from '@/components/ui/button';
 import { useTableQuery } from '@/hooks/use-table-query';
 import { useTranslation } from '@/lib/i18n';
@@ -14,6 +15,7 @@ interface ProjectRow {
     name: string;
     slug: string;
     services_count: number;
+    is_paused: boolean;
     team: { id: number; name: string };
 }
 
@@ -75,7 +77,19 @@ export default function ProjectsIndex({ projects, table, teams }: { projects: Pa
                             {projects.data.map((project) => (
                                 <Tr key={project.id} href={show.url(project.id)}>
                                     <Td>
-                                        <CellTitle title={project.name} sub={project.slug} href={show.url(project.id)} />
+                                        <CellTitle
+                                            title={project.name}
+                                            sub={
+                                                project.is_paused ? (
+                                                    <>
+                                                        {project.slug} · <StatusDot status={{ label: t('Ngừng theo dõi'), tone: 'neutral' }} />
+                                                    </>
+                                                ) : (
+                                                    project.slug
+                                                )
+                                            }
+                                            href={show.url(project.id)}
+                                        />
                                     </Td>
                                     <Td>{project.team.name}</Td>
                                     <Td align="right">{project.services_count}</Td>

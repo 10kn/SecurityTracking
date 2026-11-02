@@ -70,7 +70,7 @@ class SyncFindings
             $existing = Finding::whereIn('fingerprint', $wanted->keys())->lockForUpdate()->get()->keyBy('fingerprint');
 
             foreach ($wanted as $fingerprint => $data) {
-                $this->store($deployment, $teamId, $this->withCoveringPatch($teamId, $data), $existing->get($fingerprint));
+                $this->store($deployment, $teamId, $this->withCoveringPatch($teamId, $deployment->service->project_id, $data), $existing->get($fingerprint));
             }
         });
     }
@@ -120,12 +120,12 @@ class SyncFindings
      * (see CoverPatchedFindings), and the older result must not undo that. Cards are never withdrawn, so only a cover
      * the data lacks is added.
      */
-    private function withCoveringPatch(int $teamId, FindingData $data): FindingData
+    private function withCoveringPatch(int $teamId, int $projectId, FindingData $data): FindingData
     {
         $latest = $data->context['latest'] ?? null;
         $branch = $data->context['branch'] ?? null;
         $runtime = $data->rule === FindingRule::RuntimeOutdatedSecurity && is_string($latest) && is_string($branch) && $data->runtimeId !== null ? Runtime::find($data->runtimeId) : null;
-        $patch = $runtime === null ? null : IncidentTeamPatch::covering($teamId, $runtime->technology, $branch, $latest);
+        $patch = $runtime === null ? null : IncidentTeamPatch::covering($teamId, $projectId, $runtime->technology, $branch, $latest);
 
         if ($patch === null) {
             return $data;

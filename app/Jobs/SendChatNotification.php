@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\SendAdminAlert;
+use App\Enums\ChatNotificationKind;
 use App\Enums\ChatThreadRole;
 use App\Models\ChatNotification;
 use App\Models\Incident;
@@ -32,7 +33,7 @@ use Throwable;
  * Delivers one Google Chat message (handover 5.5). Transient errors are retried with backoff, up to
  * `psm.alerts.tries` HTTP attempts within `psm.alerts.retry_hours`; a message that cannot be delivered, including one
  * for a team without a webhook, is marked failed and reported to the admin space, which can send it again with
- * psm:resend-notification.
+ * psm:resend-notification. Security news that cannot be delivered to its own space is reported to the admin space too.
  *
  * Messages to one space go one at a time, `psm.alerts.space_interval_seconds` apart, whatever their kind: a job that
  * would send too early, or while another message of the space is being sent, goes back to the queue without using a
@@ -98,7 +99,11 @@ class SendChatNotification implements ShouldQueue
         $webhookUrl = $notification->webhookUrl();
 
         if ($webhookUrl === null) {
-            $this->markFailed($sendAdminAlert, $notification->team_id === null ? __('Chưa cấu hình PSM_ADMIN_CHAT_WEBHOOK.') : __('Team chưa có webhook.'));
+            $this->markFailed($sendAdminAlert, match (true) {
+                $notification->team_id !== null => __('Team chưa có webhook.'),
+                $notification->kind === ChatNotificationKind::SecurityNews => __('Chưa cấu hình PSM_ADMIN_NEWS_WEBHOOK hay PSM_ADMIN_CHAT_WEBHOOK.'),
+                default => __('Chưa cấu hình PSM_ADMIN_CHAT_WEBHOOK.'),
+            });
 
             return;
         }
@@ -412,6 +417,10 @@ class SendChatNotification implements ShouldQueue
             return;
         }
 
+        if ($notification->team_id === null) {
+            return;
+        }
+
         $notification->loadMissing('team');
 
         $this->afterUnlock[] = fn () => $sendAdminAlert->handle(
@@ -537,6 +546,24 @@ class SendChatNotification implements ShouldQueue
         }
 
         $notification->update(['failed_at' => now(), 'last_error' => $error]);
+
+        if ($notification->team_id === null && $notification->kind === ChatNotificationKind::SecurityNews && ChatNotification::hasSecurityNewsSpace()) {
+            $this->afterUnlock[] = fn () => $sendAdminAlert->handle(
+                'news-undelivered:'.now(config('psm.digest.timezone'))->toDateString(),
+                __('Không gửi được tin bảo mật tới space tin'),
+                [
+                    __('Lỗi: :error', ['error' => $error]),
+                    __('Nội dung: :text', ['text' => $notification->payload['text'] ?? '—']),
+                    __('Kiểm tra PSM_ADMIN_NEWS_WEBHOOK rồi gửi lại: php artisan psm:resend-notification :id', ['id' => $notification->id]),
+                ],
+            );
+
+            if (! $this->isHoldingLock) {
+                $this->flushAfterUnlock();
+            }
+
+            return;
+        }
 
         if ($notification->team_id === null) {
             Log::error('Could not deliver an alert to the admin Google Chat space.', ['notification_id' => $notification->id, 'error' => $error]);

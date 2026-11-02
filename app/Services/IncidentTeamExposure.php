@@ -53,14 +53,16 @@ final readonly class IncidentTeamExposure
     }
 
     /**
-     * The team's runtimes of the incident's technology on current deployments, with `deployment.service.project`.
+     * The team's runtimes of the incident's technology on current deployments, with `deployment.service.project`, but
+     * those of a paused project (see Runtime::monitored()).
      *
      * @return Collection<int, Runtime>
      */
     public static function runtimesOf(Incident $incident, int $teamId): Collection
     {
         return Runtime::where('technology', $incident->technology)
-            ->whereHas('deployment', fn ($query) => $query->where('is_current', true)->whereHas('service.project', fn ($query) => $query->where('team_id', $teamId)))
+            ->monitored()
+            ->whereHas('deployment.service.project', fn ($query) => $query->where('team_id', $teamId))
             ->with('deployment.service.project')
             ->orderBy('id')
             ->get();

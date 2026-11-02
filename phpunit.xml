@@ -36,5 +36,7 @@
         <env name="PSM_GITHUB_APP_ID" value="" force="true"/>
         <env name="PSM_GITHUB_INSTALLATION_ID" value="" force="true"/>
         <env name="PSM_GITHUB_PRIVATE_KEY_PATH" value="" force="true"/>
+        <env name="PSM_ADMIN_CHAT_WEBHOOK" value="" force="true"/>
+        <env name="PSM_ADMIN_NEWS_WEBHOOK" value="" force="true"/>
     </php>
 </phpunit>

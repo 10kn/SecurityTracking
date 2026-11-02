@@ -8,6 +8,7 @@ use App\Support\Slug;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class ProjectRequest extends FormRequest
 {
@@ -29,6 +30,25 @@ class ProjectRequest extends FormRequest
             'team_id' => ['required', 'integer', Rule::exists(Team::class, 'id')],
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'regex:'.Slug::PATTERN, Rule::unique(Project::class)->ignore($project instanceof Project ? $project : null)],
+        ];
+    }
+
+    /**
+     * A paused project keeps its team until it is resumed: the team was not told about it meanwhile, so another team
+     * would take over findings and incidents it never heard of.
+     *
+     * @return list<callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $project = $this->route('project');
+
+                if ($project instanceof Project && $project->isPaused() && (int) $this->input('team_id') !== $project->team_id) {
+                    $validator->errors()->add('team_id', __('Mở lại project trước khi đổi team.'));
+                }
+            },
         ];
     }
 

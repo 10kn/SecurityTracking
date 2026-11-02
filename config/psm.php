@@ -27,8 +27,9 @@ return [
     | Handover 5.4 and 5.5. Findings whose severity is in `immediate_severities` are sent to the owning team right
     | away, one card per team and issue; every other finding only appears in the daily digest. `runtime_severity` is
     | the severity of each runtime rule. System errors (a source failing past its threshold, a message that could not
-    | be delivered) go to the admin space at `admin_webhook`. Messages are written in `locale`, whatever language the
-    | admin who triggered them uses.
+    | be delivered) go to the admin space at `admin_webhook`. Every vendor security news item goes once to the space at
+    | `news_webhook`, whether or not a team runs its technology, or to the admin space when it is not set. Messages are
+    | written in `locale`, whatever language the admin who triggered them uses.
     |
     | Each finding has a handling deadline of `deadline_days` after it is first seen, by severity (calendar days). A
     | rise in severity can only bring it forward. An admin marks a finding as read ("Đã đọc") to stop its daily
@@ -49,6 +50,7 @@ return [
 
     'alerts' => [
         'admin_webhook' => env('PSM_ADMIN_CHAT_WEBHOOK'),
+        'news_webhook' => env('PSM_ADMIN_NEWS_WEBHOOK'),
         'locale' => env('PSM_ALERT_LOCALE', env('APP_LOCALE', 'vi')),
         'immediate_severities' => array_values(array_filter(array_map('trim', explode(',', (string) env('PSM_IMMEDIATE_SEVERITIES', 'critical,high'))))),
         'runtime_severity' => [

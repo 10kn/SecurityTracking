@@ -386,14 +386,15 @@ class IncidentOverview
     }
 
     /**
-     * The runtimes of the technology on current deployments, of every team.
+     * The runtimes of the technology on current deployments, of every team, but those of a paused project: the same
+     * ones the exposure an admin assesses is read from (see IncidentTeamExposure::runtimesOf()).
      *
      * @return EloquentCollection<int, Runtime>
      */
     private function runtimesOf(Technology $technology): EloquentCollection
     {
         return Runtime::where('technology', $technology)
-            ->whereHas('deployment', fn ($query) => $query->where('is_current', true))
+            ->monitored()
             ->with('deployment.service.project')
             ->orderBy('id')
             ->get();

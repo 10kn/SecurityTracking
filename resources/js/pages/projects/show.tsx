@@ -1,11 +1,15 @@
 import { Link } from '@inertiajs/react';
+import { PauseCircleIcon } from 'lucide-react';
+import { useState } from 'react';
 
 import { edit, index } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { create as createService, edit as editService } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { edit as editTeam } from '@/actions/App/Http/Controllers/Admin/TeamController';
+import { Callout, CalloutText } from '@/components/admin/callout';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/admin/card';
 import { CellTitle, EmptyState, Table, Td, Th, Tr } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
+import { PauseMonitoringDialog, ResumeMonitoringDialog } from '@/components/admin/projects/monitoring-dialogs';
 import { LockfilesCell, OpenFindingsCell, RuntimesCell, serviceSubline, type ServiceRow } from '@/components/admin/services/service-cells';
 import { StatusDot } from '@/components/admin/status-dot';
 import { Button } from '@/components/ui/button';
@@ -20,11 +24,13 @@ interface Props {
         team: { id: number; name: string };
         alert_channel: StatusDotData;
         created_at: string | null;
+        monitoring: { paused_at: string | null; by: string | null; reason: string | null } | null;
     };
+    history: { id: number; type: string; detail: string; by: string | null; at: string | null }[];
     services: { data: ServiceRow[] };
 }
 
-export default function ProjectsShow({ project, services }: Props) {
+export default function ProjectsShow({ project, history, services }: Props) {
     const t = useTranslation();
     const createServiceUrl = createService.url({ query: { project: project.id } });
 
@@ -44,6 +50,7 @@ export default function ProjectsShow({ project, services }: Props) {
                 }
                 actions={
                     <>
+                        {project.monitoring === null && <PauseMonitoringDialog projectId={project.id} />}
                         <Button variant="secondary" asChild>
                             <Link href={edit.url(project.id)}>{t('Sửa')}</Link>
                         </Button>
@@ -53,6 +60,16 @@ export default function ProjectsShow({ project, services }: Props) {
                     </>
                 }
             />
+            {project.monitoring && (
+                <Callout className="mb-6" icon={<PauseCircleIcon />} title={t('Đang ngừng theo dõi')} action={<ResumeMonitoringDialog projectId={project.id} />}>
+                    <CalloutText>
+                        {project.monitoring.by
+                            ? t('Từ :time, bởi :user. Team không nhận thông báo nào về project này; service vẫn được quét.', { time: project.monitoring.paused_at ?? '', user: project.monitoring.by })
+                            : t('Từ :time. Team không nhận thông báo nào về project này; service vẫn được quét.', { time: project.monitoring.paused_at ?? '' })}
+                    </CalloutText>
+                    {project.monitoring.reason && <CalloutText>{t('Lý do: :reason', { reason: project.monitoring.reason })}</CalloutText>}
+                </Callout>
+            )}
             <Card className="mb-6">
                 <CardBody>
                     <dl className="grid grid-cols-3 gap-x-6 gap-y-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
@@ -75,6 +92,7 @@ export default function ProjectsShow({ project, services }: Props) {
                             <dd className="mt-1">{project.created_at ?? '—'}</dd>
                         </div>
                     </dl>
+                    {history.length > 0 && <MonitoringHistory history={history} />}
                 </CardBody>
             </Card>
             <Card>
@@ -119,5 +137,29 @@ export default function ProjectsShow({ project, services }: Props) {
                 )}
             </Card>
         </>
+    );
+}
+
+function MonitoringHistory({ history }: { history: Props['history'] }) {
+    const t = useTranslation();
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="mt-5 text-sm">
+            <Button variant="link" size="sm" className="h-auto text-sm" onClick={() => setIsOpen((open) => !open)}>
+                {isOpen ? t('Ẩn lịch sử') : t('Lịch sử theo dõi (:count)', { count: history.length })}
+            </Button>
+            {isOpen && (
+                <ul className="mt-1 grid gap-1 text-muted-foreground">
+                    {history.map((event) => (
+                        <li key={event.id}>
+                            <span className="text-foreground">{event.type}</span>
+                            {event.detail && ` · ${event.detail}`}
+                            <span className="block text-xs">{[event.by, event.at].filter(Boolean).join(' · ')}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
     );
 }
