@@ -14,7 +14,7 @@ class GoogleChatClient
      * Redirects are not followed and count as failures, so a validated webhook URL cannot bounce the request to another host.
      *
      * @param  array<string, mixed>  $message
-     * @param  array<string, string>  $query  Added to the webhook's query string, which keeps its key and token, e.g. `requestId`.
+     * @param  array<string, string>  $query  Added to the webhook's query string, which keeps its key and token, e.g. `messageReplyOption`.
      * @return array<string, mixed> What Google Chat answered, e.g. `['name' => 'spaces/…/messages/…', 'thread' => ['name' => 'spaces/…/threads/…']]`.
      *
      * @throws ConnectionException

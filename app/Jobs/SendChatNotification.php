@@ -25,7 +25,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
-use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Localizable;
 use Throwable;
 
@@ -202,10 +201,6 @@ class SendChatNotification implements ShouldQueue
             }
         }
 
-        if ($notification->request_id === null) {
-            $notification->update(['request_id' => (string) Str::uuid()]);
-        }
-
         $notification->increment('attempts');
         $this->holdSpace($space, config('psm.alerts.space_interval_seconds'));
 
@@ -254,7 +249,7 @@ class SendChatNotification implements ShouldQueue
     /**
      * Before every attempt, under the thread's row lock: the message goes to the row of the incident its own was merged
      * into, and the thread follows the team to the webhook it posts to now (see IncidentTeam::moveTo()). A message whose
-     * thread changed since it was queued moves to the current one, with a new request id.
+     * thread changed since it was queued moves to the current one.
      *
      * Its part is fixed once, before its first attempt: the opener, or a reply. A reply whose opener is still waiting
      * to be sent waits too, unless the job cannot be released or `psm.alerts.opener_wait_minutes` passed since it was
@@ -284,7 +279,7 @@ class SendChatNotification implements ShouldQueue
             $notification->incident_team_id = $thread->id;
 
             if ($isMoved) {
-                $notification->fill(['generation' => $thread->generation, 'thread_key' => $thread->thread_key, 'request_id' => (string) Str::uuid()]);
+                $notification->fill(['generation' => $thread->generation, 'thread_key' => $thread->thread_key]);
             }
 
             $opener = $thread->opening_notification_id === null ? null : ChatNotification::find($thread->opening_notification_id);
@@ -371,14 +366,14 @@ class SendChatNotification implements ShouldQueue
     }
 
     /**
+     * Google Chat webhooks reject a `requestId` ("Request Id is not supported for webhooks"), so nothing makes a retry
+     * idempotent: a timeout after Google posted the message posts it again.
+     *
      * @return array<string, string>
      */
     private function query(ChatNotification $notification): array
     {
-        return array_filter([
-            'messageReplyOption' => $notification->thread_key === null ? null : 'REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD',
-            'requestId' => $notification->request_id,
-        ]);
+        return $notification->thread_key === null ? [] : ['messageReplyOption' => 'REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD'];
     }
 
     /**

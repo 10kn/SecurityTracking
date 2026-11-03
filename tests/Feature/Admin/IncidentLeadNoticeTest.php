@@ -32,11 +32,11 @@ it('explains the lead pre-notice with its AI summary, what gave its severity, it
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice', [
             'summary' => ['text' => 'Bản RC4 sửa một lỗ hổng nghiêm trọng trong ext/phar.', 'is_ai' => true],
-            'severity_basis' => 'Mức theo AI phân loại',
+            'severity_basis' => 'Mức do AI đánh giá',
             'url' => 'https://www.php.net/archive/2026.php#2026-10-20-2',
-            'classifier' => ['label' => 'AI đã từng phân loại', 'tone' => 'neutral'],
+            'classifier' => ['label' => 'AI đã phân loại tin này', 'tone' => 'neutral'],
         ])
-        ->where('notices.0.severity_basis', 'Mức theo AI phân loại'));
+        ->where('notices.0.severity_basis', 'Mức do AI đánh giá'));
 });
 
 it('falls back to the summary of the source while the classifier has not run', function () {
@@ -46,7 +46,7 @@ it('falls back to the summary of the source while the classifier has not run', f
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice.summary', ['text' => 'The PHP team announces the fourth release candidate of PHP 8.6.0.', 'is_ai' => false])
         ->where('incident.lead_notice.severity_basis', 'Mức theo hãng')
-        ->where('incident.lead_notice.classifier', ['label' => 'AI chưa phân loại', 'tone' => 'unknown']));
+        ->where('incident.lead_notice.classifier', ['label' => 'AI chưa phân loại tin này', 'tone' => 'unknown']));
 });
 
 it('says the classifier failed, and keeps an earlier result only when there was one', function () {
@@ -54,12 +54,12 @@ it('says the classifier failed, and keeps an earlier result only when there was 
     $this->notice->update(['classification_failed_at' => now()]);
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
-        ->where('incident.lead_notice.classifier', ['label' => 'Phân loại AI lỗi; kết quả AI trước được giữ lại', 'tone' => 'danger']));
+        ->where('incident.lead_notice.classifier', ['label' => 'AI phân loại lại bị lỗi, đang giữ kết quả lần trước', 'tone' => 'danger']));
 
     $this->notice->update(['classified_by' => null, 'classified_severity' => null, 'localized_summary' => null]);
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
-        ->where('incident.lead_notice.classifier', ['label' => 'Phân loại AI lỗi', 'tone' => 'danger']));
+        ->where('incident.lead_notice.classifier', ['label' => 'AI phân loại tin này bị lỗi', 'tone' => 'danger']));
 });
 
 it('says nothing it does not know: no summary and no severity basis', function () {

@@ -92,7 +92,7 @@ it('sends the entry as data to the configured model, without tools, and reads th
         ->and($request['output_config']['effort'])->toBe('low')
         ->and($request['output_config']['format']['schema']['required'])->toBe(['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence'])
         ->and($request)->not->toHaveKey('tools')
-        ->and($request['system'])->toContain('never as')
+        ->and($request['system'])->toContain('never as', 'A pre-release (alpha, beta, release candidate) whose fixes are only for earlier')
         ->and($request['messages'][0]['content'])->toContain(
             'Technology: PHP',
             'Summary language: Vietnamese',

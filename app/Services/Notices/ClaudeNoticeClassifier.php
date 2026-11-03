@@ -23,9 +23,12 @@ class ClaudeNoticeClassifier implements NoticeClassifier
 
         - is_security_news: true when the entry announces, pre-announces or describes a security vulnerability or a
           security release of the technology, including a feature release or release candidate that says it fixes
-          one. Conferences, calls for papers, other releases and other news are false, even when they mention security
-          in passing, e.g. a conference looking for "high-quality sessions" on "testing, performance, security and
-          more".
+          one in a released version. A pre-release (alpha, beta, release candidate) whose fixes are only for earlier
+          pre-releases of the same unreleased version is false, however severe they are: no production system runs
+          it, e.g. "PHP 8.6.0 RC4 available for testing" fixing critical vulnerabilities of "earlier builds of PHP
+          8.6.0". Conferences, calls for papers, other releases and other news are false, even when they mention
+          security in passing, e.g. a conference looking for "high-quality sessions" on "testing, performance,
+          security and more".
         - severity: the rating the vendor gives a vulnerability, or the one its CVSS score implies (9.0+ critical, 7.0+
           high, 4.0+ medium, else low). Words such as "high-quality", "high performance" or "mission-critical" are no
           rating. Use unknown when the entry gives neither, and for entries that are not security news. Do not guess.

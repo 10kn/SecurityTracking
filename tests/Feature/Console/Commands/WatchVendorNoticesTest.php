@@ -10,6 +10,7 @@ use App\Models\FindingEvent;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
 use App\Services\Notices\NoticeClassification;
+use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
@@ -101,10 +102,11 @@ it('sends a critical pre-notice before the classifier reads anything', function 
     $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
     runtimeAt($commerce, 'shop-api', Technology::Php, '8.3.35');
     $sentWhenClassifying = [];
-    classifyNoticesWith(function () use (&$sentWhenClassifying): NoticeClassification {
+    classifyNoticesWith(function (NoticeEntry $entry) use (&$sentWhenClassifying): NoticeClassification {
         $sentWhenClassifying[] = chatMessagesTo('COMMERCE')->count();
+        $isSecurityNews = str_contains($entry->title, 'Security');
 
-        return new NoticeClassification(isSecurityNews: true, severity: Severity::Critical);
+        return new NoticeClassification(isSecurityNews: $isSecurityNews, severity: $isSecurityNews ? Severity::Critical : Severity::Unknown);
     });
 
     artisan('psm:watch-notices')->assertSuccessful();

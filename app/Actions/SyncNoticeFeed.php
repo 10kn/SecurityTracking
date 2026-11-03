@@ -22,7 +22,9 @@ use Throwable;
 /**
  * Polls the security news feed of a technology and stores the entries that matter as pre-notice
  * advisories, keyed by feed and entry id so polling again changes nothing. Every attempt is recorded on the feed's
- * source heartbeat. When the notice classifier is configured, it reads each fresh entry (see `psm.notices`).
+ * source heartbeat. When the notice classifier is configured, it reads each entry and decides what is security news;
+ * the keywords only decide while it has not read the current text: not configured, failing, or the vendor edited the
+ * entry since (see `psm.notices`).
  *
  * Storing and classifying are two steps, so a caller can send what the CVSS score or a KEV listing already makes
  * Critical before waiting for the classifier (see WatchVendorNotices).
@@ -34,6 +36,7 @@ class SyncNoticeFeed
         private AssignNoticeToIncident $assignNoticeToIncident,
         private MatchKnownExploited $matchKnownExploited,
         private KnownExploitation $knownExploitation,
+        private ReportClassifierOutage $reportClassifierOutage,
     ) {}
 
     /**
@@ -134,7 +137,7 @@ class SyncNoticeFeed
 
     /**
      * Release announcements are left to the catalog sync, which alerts on each security release with the version to
-     * upgrade to; everything else needs a keyword unless the feed only publishes security news.
+     * upgrade to. The classifier reads everything else; without it, an entry needs a keyword.
      */
     private function isRelevant(NoticeFeed $feed, NoticeEntry $entry): bool
     {
@@ -144,6 +147,15 @@ class SyncNoticeFeed
             }
         }
 
+        return $this->classifier->isEnabled() || $this->mentionsSecurity($feed, $entry);
+    }
+
+    /**
+     * The keyword rule, which stands in for the classifier while it has not read the current text: a keyword, unless
+     * the feed only publishes security news.
+     */
+    private function mentionsSecurity(NoticeFeed $feed, NoticeEntry $entry): bool
+    {
         return $feed->isSecurityOnly() || $entry->mentionsAny(config('psm.notices.keywords'));
     }
 
@@ -153,8 +165,9 @@ class SyncNoticeFeed
      * on its first poll, are classified once too, so the classifier rather than the words rates them, but their edits
      * are not, unless they belong to an incident a team was sent a card about: a newly confirmed branch or exploitation
      * still reaches that team (see SendPreNoticeAlerts). A classifier error is reported and the entry is tried again
-     * on the next poll; `classification_failed_at` keeps when the errors started, for psm:check-sources. A dismissal
-     * was made on the earlier text, so it no longer holds for the new one.
+     * on the next poll, and the admin is told once per outage (see ReportClassifierOutage); `classification_failed_at`
+     * keeps when the errors started, for psm:check-sources. Meanwhile the keyword rule decides whether it is security
+     * news: a dismissal was made on the earlier text, so it no longer holds for the new one.
      */
     private function classification(Technology $technology, NoticeEntry $entry, Advisory $advisory): ?NoticeClassification
     {
@@ -165,17 +178,22 @@ class SyncNoticeFeed
         }
 
         try {
-            return $this->classifier->classify($technology, $entry, $this->assignNoticeToIncident->recentIncidents($technology, $advisory->incident_id));
+            $classification = $this->classifier->classify($technology, $entry, $this->assignNoticeToIncident->recentIncidents($technology, $advisory->incident_id));
         } catch (Throwable $exception) {
             report($exception);
+            $this->reportClassifierOutage->failed($exception);
 
             $advisory->update([
                 'classification_failed_at' => $advisory->classification_failed_at ?? now(),
-                'is_dismissed' => false,
+                'is_dismissed' => $advisory->is_dismissed && ! $this->mentionsSecurity($this->feed($technology), $entry),
             ]);
 
             return null;
         }
+
+        $this->reportClassifierOutage->recovered();
+
+        return $classification;
     }
 
     /**
@@ -183,8 +201,9 @@ class SyncNoticeFeed
      * ids (see MatchKnownExploited). The vendor's words (see NoticeEntry::severity()) only stand in for the classifier
      * while it has not read the current text: not configured, failing, or the vendor edited the entry since. The
      * classifier dismisses an entry as not security news unless its CVSS score or a KEV listing says otherwise. Without
-     * a new classification, the previous one is kept. The KEV evidence is kept apart from what the entry's words say
-     * (`is_exploited`), so polling again never drops it.
+     * a new classification, the previous one is kept; an entry it never read is dismissed when the keyword rule finds no
+     * security news in it, so it waits for the classifier, and a failing one leaves it out. The KEV evidence is kept
+     * apart from what the entry's words say (`is_exploited`), so polling again never drops it.
      *
      * The pre-notice is put in its incident when it is new, and checked again for other incidents when what ties it to
      * them changes (see AssignNoticeToIncident).
@@ -219,6 +238,7 @@ class SyncNoticeFeed
 
         $cvssScore = $entry->cvssScore();
         $isClassified = $advisory->classified_by !== null && $advisory->content_hash === $this->contentHash($entry);
+        $isDismissed = $advisory->classified_by === null ? ! $this->mentionsSecurity($this->feed($technology), $entry) : $advisory->is_dismissed;
         $ratings = [
             SeverityBasis::Vendor->value => $isClassified ? Severity::Unknown : $entry->severity(),
             SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
@@ -240,14 +260,14 @@ class SyncNoticeFeed
             'severity' => $severity,
             'severity_basis' => $basis,
             'severity_before_kev' => $basis === SeverityBasis::Kev->value ? $withoutKev : null,
-            'is_dismissed' => $advisory->is_dismissed && $ratings[SeverityBasis::Vendor->value] === Severity::Unknown && $ratings[SeverityBasis::Cvss->value] === Severity::Unknown && ! $advisory->isKnownExploited(),
+            'is_dismissed' => $isDismissed && $ratings[SeverityBasis::Vendor->value] === Severity::Unknown && $ratings[SeverityBasis::Cvss->value] === Severity::Unknown && ! $advisory->isKnownExploited(),
             'cvss_score' => $cvssScore,
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,
             'links' => $entry->links,
             'patch_versions' => $entry->patchVersions() ?: null,
             'published_at' => $entry->publishedAt,
-            ...$this->exploitation($entry, $advisory, $classification),
+            ...$this->exploitation($entry, $advisory, $classification, $isClassified),
         ]);
 
         $isOngoingCritical = ($severity === Severity::Critical && $this->isFresh($entry)) || KnownExploitation::isFresh($advisory->known_exploited);
@@ -268,16 +288,18 @@ class SyncNoticeFeed
     }
 
     /**
-     * Whether the entry says its vulnerability is exploited: its own words (see NoticeEntry::exploitationEvidence()),
-     * or the classifier with a sentence it quoted from the entry, checked against the entry with the same filter. A
-     * classifier that says no, or fails, never outweighs the words. Without a new classification, the sentence the
-     * classifier quoted before still counts while the entry still says it.
+     * Whether the entry says its vulnerability is exploited: the classifier, with a sentence it quoted from the entry,
+     * checked against the entry with the same filter as the words. Its own words (see NoticeEntry::exploitationEvidence())
+     * only stand in while the classifier has not read the current text: not configured, failing, or the vendor edited
+     * the entry since. Without a new classification, the sentence the classifier quoted before still counts while the
+     * entry still says it.
      *
+     * @param  bool  $isClassified  Whether the classifier has read the current text.
      * @return array{is_exploited: bool, exploited_basis: array{method: string, excerpt: string, content_hash: string}|null}
      */
-    private function exploitation(NoticeEntry $entry, Advisory $advisory, ?NoticeClassification $classification): array
+    private function exploitation(NoticeEntry $entry, Advisory $advisory, ?NoticeClassification $classification, bool $isClassified): array
     {
-        $keyword = $entry->exploitationEvidence();
+        $keyword = $isClassified ? null : $entry->exploitationEvidence();
         $quoted = $classification === null
             ? (($advisory->exploited_basis['method'] ?? null) === 'classifier' ? $advisory->exploited_basis['excerpt'] : null)
             : ($classification->activelyExploited === true ? $classification->exploitedEvidence : null);

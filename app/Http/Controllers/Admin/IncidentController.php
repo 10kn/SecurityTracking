@@ -255,10 +255,10 @@ class IncidentController extends Controller
             'severity_basis' => $notice->severity_basis?->getLabel(),
             'url' => $notice->url,
             'classifier' => match (true) {
-                $notice->classification_failed_at !== null && $notice->classified_by !== null => ['label' => __('Phân loại AI lỗi; kết quả AI trước được giữ lại'), 'tone' => 'danger'],
-                $notice->classification_failed_at !== null => ['label' => __('Phân loại AI lỗi'), 'tone' => 'danger'],
-                $notice->classified_by === null => ['label' => __('AI chưa phân loại'), 'tone' => 'unknown'],
-                default => ['label' => __('AI đã từng phân loại'), 'tone' => 'neutral'],
+                $notice->classification_failed_at !== null && $notice->classified_by !== null => ['label' => __('AI phân loại lại bị lỗi, đang giữ kết quả lần trước'), 'tone' => 'danger'],
+                $notice->classification_failed_at !== null => ['label' => __('AI phân loại tin này bị lỗi'), 'tone' => 'danger'],
+                $notice->classified_by === null => ['label' => __('AI chưa phân loại tin này'), 'tone' => 'unknown'],
+                default => ['label' => __('AI đã phân loại tin này'), 'tone' => 'neutral'],
             },
         ];
     }

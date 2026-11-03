@@ -155,11 +155,11 @@ function fakeGoogleChat(): void
 }
 
 /**
- * A Google Chat webhook URL without the query parameters a message adds to it (`messageReplyOption`, `requestId`).
+ * A Google Chat webhook URL without the query parameter a message of a thread adds to it (`messageReplyOption`).
  */
 function chatWebhookOf(Request $request): string
 {
-    return (string) preg_replace('/&(?:messageReplyOption|requestId)=[^&]*/', '', $request->url());
+    return (string) preg_replace('/&messageReplyOption=[^&]*/', '', $request->url());
 }
 
 /**

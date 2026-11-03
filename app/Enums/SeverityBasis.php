@@ -18,7 +18,7 @@ enum SeverityBasis: string
         return match ($this) {
             self::Vendor => __('Mức theo hãng'),
             self::Cvss => __('Mức theo điểm CVSS'),
-            self::Classifier => __('Mức theo AI phân loại'),
+            self::Classifier => __('Mức do AI đánh giá'),
             self::Kev => __('Mức theo CISA KEV'),
         };
     }

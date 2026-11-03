@@ -1,5 +1,6 @@
 <?php
 
+use Anthropic\Core\Exceptions\APIStatusException;
 use App\Actions\SyncNoticeFeed;
 use App\Enums\AdvisoryKind;
 use App\Enums\ChatNotificationKind;
@@ -15,6 +16,8 @@ use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
 use Carbon\CarbonImmutable;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
@@ -182,6 +185,63 @@ it('records when the classifier started failing on an entry and clears it once t
     expect($preNotice->refresh()->classification_failed_at)->toBeNull();
 });
 
+it('tells the admin once when the classifier starts failing, with the error, and again once it works', function () {
+    Exceptions::fake();
+    fakeGoogleChat();
+    fakeNoticeFeeds();
+    $fails = true;
+    classifyNoticesWith(function () use (&$fails): NoticeClassification {
+        return $fails
+            ? throw APIStatusException::from(new Request('POST', 'https://api.anthropic.com/v1/messages'), new Response(401, [], (string) json_encode(['type' => 'error', 'error' => ['type' => 'authentication_error', 'message' => 'invalid x-api-key']])))
+            : new NoticeClassification(isSecurityNews: true, severity: Severity::Critical);
+    });
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+    $this->travel(15)->minutes();
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+    app(SyncNoticeFeed::class)->handle(Technology::Nodejs);
+
+    expect(chatMessagesTo('ADMIN'))->toHaveCount(1)
+        ->and(chatJson(chatMessagesTo('ADMIN')->sole()))->toContain('AI phân loại tin bảo mật đang lỗi', 'Model: claude-haiku-5-5', 'Lỗi: HTTP 401: invalid x-api-key', 'Kiểm tra ANTHROPIC_API_KEY.');
+
+    $fails = false;
+    $this->travel(15)->minutes();
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+    app(SyncNoticeFeed::class)->handle(Technology::Nodejs);
+
+    expect(chatMessagesTo('ADMIN'))->toHaveCount(2)
+        ->and(chatJson(chatMessagesTo('ADMIN')->last()))->toContain('AI phân loại tin bảo mật đã hoạt động lại', 'Lỗi từ 23/10/2026 17:00 GMT+7 tới 23/10/2026 17:30 GMT+7.');
+});
+
+it('tells the admin again when the classifier fails after it worked again', function () {
+    Exceptions::fake();
+    fakeGoogleChat();
+    $feed = noticeFixture('php-feed.atom');
+    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+        return Http::response($feed);
+    }]);
+    $fails = true;
+    classifyNoticesWith(function () use (&$fails): NoticeClassification {
+        return $fails ? throw new RuntimeException('Overloaded') : new NoticeClassification(isSecurityNews: true, severity: Severity::Critical);
+    });
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+    $fails = false;
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+    $fails = true;
+    $feed = str_replace('Upcoming Critical PHP Security Release', 'Upcoming Critical PHP Security Release (updated)', $feed);
+    $this->travel(15)->minutes();
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(chatMessagesTo('ADMIN')->map(chatJson(...)))
+        ->toHaveCount(3)
+        ->sequence(
+            fn ($message) => $message->toContain('AI phân loại tin bảo mật đang lỗi', 'Lỗi: RuntimeException: Overloaded', 'Kiểm tra log lỗi.'),
+            fn ($message) => $message->toContain('AI phân loại tin bảo mật đã hoạt động lại'),
+            fn ($message) => $message->toContain('AI phân loại tin bảo mật đang lỗi'),
+        );
+});
+
 it('no longer holds a dismissal once the vendor edits the entry and the classifier cannot read the new text', function () {
     Exceptions::fake();
     $feed = noticeFixture('php-feed.atom');
@@ -229,7 +289,7 @@ it('records a failed poll on the feed heartbeat and rethrows', function () {
         ->and(Advisory::count())->toBe(0);
 });
 
-it('classifies the entries it keeps, the history of the feed included, and stores what the classifier read', function () {
+it('classifies every entry but release announcements, without a keyword and the history of the feed included, and stores what the classifier read', function () {
     fakeNoticeFeeds();
     $classified = classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(
         isSecurityNews: true,
@@ -244,6 +304,8 @@ it('classifies the entries it keeps, the history of the feed included, and store
     expect($classified->getArrayCopy())->toEqualCanonicalizing([
         'Security advisory: Critical remote code execution vulnerabilities, update now',
         'Upcoming Critical PHP Security Release',
+        'PHP 8.6.0 RC3 available for testing',
+        'Dutch PHP Conference 2027',
         'PHPKonf 2025 Baku',
     ])->and(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
         ->classified_by->toBe('claude-haiku-5-5')
@@ -269,14 +331,14 @@ it('classifies an entry again only when the vendor edits it', function () {
     $this->travel(15)->minutes();
     $advisories = app(SyncNoticeFeed::class)->handle($php);
 
-    expect($classified)->toHaveCount(3)
+    expect($classified)->toHaveCount(5)
         ->and(collect($advisories)->contains(fn (Advisory $advisory): bool => $advisory->wasRecentlyCreated || $advisory->wasChanged()))->toBeFalse();
 
     $feed = str_replace('scheduled for Wednesday, 21 October 2026 at 14:00 UTC', 'scheduled for Thursday, 22 October 2026 at 14:00 UTC', $feed);
     app(SyncNoticeFeed::class)->handle($php);
 
-    expect($classified)->toHaveCount(4)
-        ->and($classified[3])->toBe('Upcoming Critical PHP Security Release');
+    expect($classified)->toHaveCount(6)
+        ->and($classified[5])->toBe('Upcoming Critical PHP Security Release');
 });
 
 it('lets the classifier replace the severity the vendor\'s words gave, but not lower the CVSS score', function () {
@@ -329,13 +391,15 @@ it('dismisses an entry the classifier finds is not security news whatever its wo
 
     expect(Advisory::where('is_dismissed', true)->pluck('title')->all())->toEqualCanonicalizing([
         'Security advisory: Critical remote code execution vulnerabilities, update now',
+        'PHP 8.6.0 RC3 available for testing',
+        'Dutch PHP Conference 2027',
         'PHPKonf 2025 Baku',
     ])->and(Advisory::where('title', 'PHPKonf 2025 Baku')->sole())
         ->severity->toBe(Severity::Unknown)
         ->severity_basis->toBeNull();
 });
 
-it('keeps the keyword result when the classifier fails, and classifies the entry on the next poll', function () {
+it('keeps the keyword result when the classifier fails, leaving out the entries without a keyword, and classifies them on the next poll', function () {
     Exceptions::fake();
     fakeNoticeFeeds();
     $fails = true;
@@ -350,14 +414,17 @@ it('keeps the keyword result when the classifier fails, and classifies the entry
     expect(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
         ->severity->toBe(Severity::Critical)
         ->classified_by->toBeNull()
+        ->is_dismissed->toBeFalse()
+        ->and(Advisory::where('is_dismissed', true)->pluck('title')->all())->toEqualCanonicalizing(['PHP 8.6.0 RC3 available for testing', 'Dutch PHP Conference 2027'])
         ->and(SourceHeartbeat::where('source', 'notice:php')->value('last_error'))->toBeNull();
 
     $fails = false;
     $this->travel(15)->minutes();
     app(SyncNoticeFeed::class)->handle($php);
 
-    expect($classified)->toHaveCount(6)
-        ->and(Advisory::whereNotNull('classified_by')->count())->toBe(3);
+    expect($classified)->toHaveCount(10)
+        ->and(Advisory::whereNotNull('classified_by')->count())->toBe(5)
+        ->and(Advisory::where('is_dismissed', true)->count())->toBe(0);
 });
 
 it('does not call the classifier when no API key is configured', function () {

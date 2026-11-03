@@ -207,10 +207,7 @@ function LeadNotice({ notice }: { notice: NonNullable<Props['incident']['lead_no
             <p className="text-sm text-muted-foreground">{notice.summary === null ? t('Chưa có tóm tắt') : notice.summary.is_ai ? t('Tóm tắt do AI tạo') : t('Tóm tắt của nguồn')}</p>
             {notice.summary && <p className="mt-1 max-w-[80ch] whitespace-pre-line">{notice.summary.text}</p>}
             <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                <span>
-                    <span className="text-muted-foreground">{t('Nguồn mức độ')}: </span>
-                    {notice.severity_basis ?? t('Chưa xác định')}
-                </span>
+                <span>{notice.severity_basis ?? t('Chưa xác định mức độ')}</span>
                 <StatusDot status={notice.classifier} />
                 {notice.url && <ExternalLink href={notice.url}>{t('Xem nguồn')}</ExternalLink>}
             </p>

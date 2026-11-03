@@ -124,7 +124,7 @@ it('honours the Retry-After of a 429 for the whole space, with a little jitter',
     workJob($other)->assertReleased(delay: 20);
 });
 
-it('keeps the request id of a message across its retries', function () {
+it('sends no request id on any try, since google chat webhooks reject it', function () {
     Http::swap(new Factory);
     $failing = true;
     Http::fake([chatWebhook('COMMERCE').'*' => function () use (&$failing) {
@@ -137,10 +137,8 @@ it('keeps the request id of a message across its retries', function () {
     $failing = false;
     workJob($notification)->assertNotReleased();
 
-    $ids = chatRequestsTo('COMMERCE')->map(fn (Request $request): string => (string) str($request->url())->after('requestId='))->unique();
-    expect($ids)->toHaveCount(1)
-        ->and($ids->first())->toBe($notification->refresh()->request_id)
-        ->and($notification)->attempts->toBe(2)->sent_at->not->toBeNull()->google_message_name->toBe('spaces/COMMERCE/messages/1');
+    expect(chatRequestsTo('COMMERCE')->map(fn (Request $request): string => $request->url())->all())->toBe([chatWebhook('COMMERCE'), chatWebhook('COMMERCE')])
+        ->and($notification->refresh())->attempts->toBe(2)->sent_at->not->toBeNull()->google_message_name->toBe('spaces/COMMERCE/messages/1');
 });
 
 it('replies in the thread once its opener was delivered with the thread', function () {
@@ -256,9 +254,8 @@ it('sends a reply whose team moved after a failed try as the full card that open
     fakeGoogleChat();
 
     workJob($reply)->assertReleased(delay: 60);
-    $firstRequestId = $reply->refresh()->request_id;
 
-    expect($reply->sent_as)->toBe(ChatThreadRole::Reply);
+    expect($reply->refresh()->sent_as)->toBe(ChatThreadRole::Reply);
 
     $this->team->update(['google_chat_webhook_url' => chatWebhook('COMMERCE2')]);
     $this->travel(2)->minutes();
@@ -267,8 +264,7 @@ it('sends a reply whose team moved after a failed try as the full card that open
     $thread = IncidentTeam::sole();
     expect(chatMessagesTo('COMMERCE2')->sole())->toMatchArray(['text' => 'full card', 'thread' => ['threadKey' => $thread->thread_key]])
         ->and($thread)->generation->toBe(2)->opening_notification_id->toBe($reply->id)
-        ->and($reply->refresh())->sent_as->toBe(ChatThreadRole::Opener)->generation->toBe(2)
-        ->and($reply->request_id)->not->toBe($firstRequestId);
+        ->and($reply->refresh())->sent_as->toBe(ChatThreadRole::Opener)->generation->toBe(2);
 });
 
 it('sends a message of a merged incident to the thread of the incident it went into', function () {

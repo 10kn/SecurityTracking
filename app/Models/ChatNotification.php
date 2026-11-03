@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
 
 /**
  * Log of Google Chat messages. A null team means the message goes to the admin space.
@@ -18,10 +17,9 @@ use Illuminate\Support\Str;
  *
  * A message about an incident belongs to the thread of its team (`incident_team_id`, `thread_key`, `generation`):
  * `thread_role` is what it was queued as, `sent_as` what it is sent as, fixed before its first HTTP attempt (a reply
- * whose thread could not be opened sends `opening_payload` and opens it). `attempts` counts HTTP attempts only, and
- * `request_id` stays the same across them, so Google Chat never posts it twice.
+ * whose thread could not be opened sends `opening_payload` and opens it). `attempts` counts HTTP attempts only.
  */
-#[Fillable(['team_id', 'incident_team_id', 'thread_key', 'generation', 'thread_role', 'sent_as', 'dedupe_key', 'request_id', 'kind', 'requested_by', 'payload', 'opening_payload', 'covers_until', 'attempts', 'sent_at', 'google_message_name', 'google_thread_name', 'failed_at', 'last_error'])]
+#[Fillable(['team_id', 'incident_team_id', 'thread_key', 'generation', 'thread_role', 'sent_as', 'dedupe_key', 'kind', 'requested_by', 'payload', 'opening_payload', 'covers_until', 'attempts', 'sent_at', 'google_message_name', 'google_thread_name', 'failed_at', 'last_error'])]
 class ChatNotification extends Model
 {
     /** @use HasFactory<ChatNotificationFactory> */
@@ -46,16 +44,6 @@ class ChatNotification extends Model
             'sent_at' => 'datetime',
             'failed_at' => 'datetime',
         ];
-    }
-
-    /**
-     * Every message gets its request id when it is recorded.
-     */
-    protected static function booted(): void
-    {
-        static::creating(function (ChatNotification $notification): void {
-            $notification->request_id ??= (string) Str::uuid();
-        });
     }
 
     /**

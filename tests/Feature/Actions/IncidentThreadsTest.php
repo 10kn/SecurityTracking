@@ -59,7 +59,7 @@ it('opens one thread per incident and team with the first card and records the n
     $notification = ChatNotification::sole();
 
     expect($request->data()['thread']['threadKey'])->toBe($thread->thread_key)
-        ->and($request->url())->toContain('&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD', "&requestId={$notification->request_id}", 'key=demo-key&token=demo-token')
+        ->and($request->url())->toContain('&messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD', 'key=demo-key&token=demo-token')->not->toContain('requestId')
         ->and($thread->thread_key)->toStartWith('psm-')->toEndWith("-incident-{$this->preNotice->refresh()->incident_id}-team-{$this->commerce->id}-g1")
         ->and($thread)->space->toBe('COMMERCE')->generation->toBe(1)->opening_notification_id->toBe($notification->id)
         ->and($thread->thread_name)->toStartWith('spaces/COMMERCE/threads/')
