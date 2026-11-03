@@ -158,7 +158,7 @@ class IncidentController extends Controller
                 'known_exploited' => $this->knownExploited($notice->known_exploited ?? []),
                 'is_dismissed' => $notice->is_dismissed,
                 'basis' => $notice->incident_basis?->getLabel(),
-                'severity_basis' => $notice->severity_basis?->getLabel(),
+                'severity_basis' => $notice->severity_basis?->getLabel($notice->technology),
             ])->all(),
             'suggestions' => $this->suggestions($incident),
             'teams' => $teams->map(fn (array $team): array => $this->teamRow($incident, $team))->all(),
@@ -195,6 +195,7 @@ class IncidentController extends Controller
      *
      * The teams told (a card was queued) and those Google Chat accepted a message of the current thread for are
      * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again.
+     * `is_dismissed` when every pre-notice was dismissed as not security news (see Incident::dismissed()).
      * `is_known_exploited` while CISA KEV still lists a CVE of a pre-notice that is not dismissed; one it removed
      * stays on the incident page only.
      *
@@ -215,6 +216,7 @@ class IncidentController extends Controller
             'lead' => $lead?->title,
             'technology' => ['value' => $incident->technology->value, 'label' => $incident->technology->getLabel()],
             'severity' => $this->severity($incident->severity),
+            'is_dismissed' => $notices->isNotEmpty() && $notices->every(fn (Advisory $notice): bool => $notice->is_dismissed),
             'is_known_exploited' => $notices->where('is_dismissed', false)->contains(fn (Advisory $notice): bool => collect($notice->known_exploited ?? [])->contains(fn (mixed $entry): bool => is_array($entry) && ($entry['listed'] ?? false) === true)),
             'first_published' => LocalTime::format($incident->first_published_at),
             'notices_count' => $notices->count(),
@@ -252,7 +254,7 @@ class IncidentController extends Controller
                 filled($notice->summary) => ['text' => (string) $notice->summary, 'is_ai' => false],
                 default => null,
             },
-            'severity_basis' => $notice->severity_basis?->getLabel(),
+            'severity_basis' => $notice->severity_basis?->getLabel($notice->technology),
             'url' => $notice->url,
             'classifier' => match (true) {
                 $notice->classification_failed_at !== null && $notice->classified_by !== null => ['label' => __('AI phân loại lại bị lỗi, đang giữ kết quả lần trước'), 'tone' => 'danger'],
@@ -313,6 +315,7 @@ class IncidentController extends Controller
                 'name' => $service['service'],
                 'branch' => $service['branch'],
                 'scope' => IncidentScope::from($service['scope'])->getLabel(),
+                'scope_hint' => IncidentScope::from($service['scope'])->getDescription(),
                 'is_not_affected' => $service['scope'] === IncidentScope::NotAffected->value,
                 'patch' => $service['patch'],
             ], $team['exposure']->services),

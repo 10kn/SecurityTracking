@@ -13,6 +13,7 @@ import { Card, CardBody, CardFooter, CardHeader, CardTitle } from '@/components/
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { EmptyState, Table, Td, Th, Tr } from '@/components/admin/data-table';
 import { Field } from '@/components/admin/form-section';
+import { HelpTip } from '@/components/admin/help-tip';
 import { FixStatus, type IncidentSummary } from '@/components/admin/incidents/fix-status';
 import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
@@ -87,7 +88,7 @@ interface Delivery {
 interface TeamRow {
     id: number;
     name: string;
-    services: { name: string; branch: string; scope: string; is_not_affected: boolean; patch: string | null }[];
+    services: { name: string; branch: string; scope: string; scope_hint: string; is_not_affected: boolean; patch: string | null }[];
     told_severity: Severity | null;
     is_told: boolean;
     is_running: boolean;
@@ -157,29 +158,9 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
             />
             <Card className="mb-6">
                 <CardBody>
-                    {incident.lead_notice && <LeadNotice notice={incident.lead_notice} />}
+                    {incident.lead_notice && <LeadNotice notice={incident.lead_notice} isDismissed={incident.is_dismissed} />}
                     <dl className="grid grid-cols-3 gap-x-6 gap-y-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
-                        <Detail label={t('Mức cao nhất')}>
-                            <SeverityBadge severity={incident.severity} />
-                            {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
-                            {incident.is_known_exploited && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
-                        </Detail>
-                        <Detail label={t('Bản vá')}>
-                            <FixStatus incident={incident} />
-                        </Detail>
-                        <Detail label={t('Đăng lúc')}>{incident.first_published ?? '—'}</Detail>
-                        <Detail label={t('Nhánh bị ảnh hưởng')}>
-                            <span className="font-mono">{incident.affected_branches.join(', ') || '—'}</span>
-                        </Detail>
-                        <Detail label={t('Nhánh không ảnh hưởng')}>
-                            <span className="font-mono">{incident.unaffected_branches.join(', ') || '—'}</span>
-                        </Detail>
-                        <Detail label={t('Dự kiến phát hành')}>{incident.planned_release ?? '—'}</Detail>
-                        {incident.known_exploited.length > 0 && (
-                            <Detail label="CISA KEV">
-                                <KnownExploitedList entries={incident.known_exploited} />
-                            </Detail>
-                        )}
+                        {incident.is_dismissed ? <Detail label={t('Đăng lúc')}>{incident.first_published ?? '—'}</Detail> : <SecurityDetails incident={incident} />}
                         {incident.merged_from.length > 0 && (
                             <Detail label={t('Đã gộp vào đây')}>{incident.merged_from.map((merged) => `#${merged.id} ${merged.title}`).join(' · ')}</Detail>
                         )}
@@ -196,10 +177,59 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
 }
 
 /**
- * The lead pre-notice explained: the AI summary or the source's, labelled as such, what gave it its severity (not why it
- * is that severe), its source and where the classifier stands.
+ * What a security incident is about: severity, fix, branches and planned release. An incident whose every pre-notice
+ * is not security news has none of them, so its page leaves them out rather than showing them empty.
  */
-function LeadNotice({ notice }: { notice: NonNullable<Props['incident']['lead_notice']> }) {
+function SecurityDetails({ incident }: { incident: Props['incident'] }) {
+    const t = useTranslation();
+
+    return (
+        <>
+            <Detail
+                label={t('Mức cao nhất')}
+                hint={t(
+                    'Mức cao nhất trong các tin của sự kiện, không tính tin được xếp là “Không phải tin bảo mật”. Mức lấy theo trang chính thức, điểm CVSS, CISA KEV hoặc do AI đánh giá; nguồn của mức ghi ngay dưới phần tóm tắt.',
+                )}
+            >
+                <SeverityBadge severity={incident.severity} />
+                {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
+                {incident.is_known_exploited && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
+            </Detail>
+            <Detail label={t('Bản vá')}>
+                <FixStatus incident={incident} />
+            </Detail>
+            <Detail label={t('Đăng lúc')}>{incident.first_published ?? '—'}</Detail>
+            <Detail
+                label={t('Nhánh bị ảnh hưởng')}
+                hint={t('Các nhánh mà tin trên trang chính thức ghi rõ là bị ảnh hưởng. Trống khi tin không nêu nhánh nào; danh sách bản vá không được tính là danh sách nhánh.')}
+            >
+                <span className="font-mono">{incident.affected_branches.join(', ') || '—'}</span>
+            </Detail>
+            <Detail
+                label={t('Nhánh không ảnh hưởng')}
+                hint={t('Các nhánh mà tin trên trang chính thức ghi rõ là không bị ảnh hưởng. Nhánh đã hết hỗ trợ (EOL) không bao giờ được loại trừ.')}
+            >
+                <span className="font-mono">{incident.unaffected_branches.join(', ') || '—'}</span>
+            </Detail>
+            <Detail label={t('Dự kiến phát hành')}>{incident.planned_release ?? '—'}</Detail>
+            {incident.known_exploited.length > 0 && (
+                <Detail
+                    label="CISA KEV"
+                    hint={t('Danh sách lỗ hổng đang bị khai thác thực tế do CISA (Mỹ) công bố. CVE CISA đã gỡ khỏi danh sách vẫn được giữ lại ở đây.')}
+                >
+                    <KnownExploitedList entries={incident.known_exploited} />
+                </Detail>
+            )}
+        </>
+    );
+}
+
+/**
+ * The lead pre-notice explained: the AI summary or the source's, labelled as such, what gave it its severity (not why it
+ * is that severe), its source and where the classifier stands. An incident that is not security news says so instead
+ * of its severity.
+ */
+function LeadNotice({ notice, isDismissed }: { notice: NonNullable<Props['incident']['lead_notice']>; isDismissed: boolean }) {
     const t = useTranslation();
 
     return (
@@ -207,7 +237,16 @@ function LeadNotice({ notice }: { notice: NonNullable<Props['incident']['lead_no
             <p className="text-sm text-muted-foreground">{notice.summary === null ? t('Chưa có tóm tắt') : notice.summary.is_ai ? t('Tóm tắt do AI tạo') : t('Tóm tắt của nguồn')}</p>
             {notice.summary && <p className="mt-1 max-w-[80ch] whitespace-pre-line">{notice.summary.text}</p>}
             <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                <span>{notice.severity_basis ?? t('Chưa xác định mức độ')}</span>
+                {isDismissed ? (
+                    <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex h-6 items-center rounded-[5px] bg-neutral-soft px-2 text-xs font-medium whitespace-nowrap">{t('Tin tức, không phải tin bảo mật')}</span>
+                        <HelpTip label={t('Tin tức, không phải tin bảo mật')}>
+                            {t('Mọi tin của sự kiện này đều được xếp là không phải tin bảo mật, nên không có mức độ, nhánh bị ảnh hưởng hay bản vá, và không còn được báo cho team. Thẻ đã gửi trước khi tin được xếp lại vẫn còn trong Google Chat.')}
+                        </HelpTip>
+                    </span>
+                ) : (
+                    <span>{notice.severity_basis ?? t('Chưa xác định mức độ')}</span>
+                )}
                 <StatusDot status={notice.classifier} />
                 {notice.url && <ExternalLink href={notice.url}>{t('Xem nguồn')}</ExternalLink>}
             </p>
@@ -215,10 +254,13 @@ function LeadNotice({ notice }: { notice: NonNullable<Props['incident']['lead_no
     );
 }
 
-function Detail({ label, children }: { label: string; children: ReactNode }) {
+function Detail({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
     return (
         <div>
-            <dt className="text-sm text-muted-foreground">{label}</dt>
+            <dt className="flex items-center gap-1 text-sm text-muted-foreground">
+                {label}
+                {hint && <HelpTip label={label}>{hint}</HelpTip>}
+            </dt>
             <dd className="mt-1">{children}</dd>
         </div>
     );
@@ -497,9 +539,20 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                             </Th>
                             <Th>{t('Team')}</Th>
                             <Th>{t('Service')}</Th>
-                            <Th>{t('Đã báo')}</Th>
-                            <Th>{t('Thread')}</Th>
-                            <Th>{t('Đánh giá')}</Th>
+                            <Th>
+                                {t('Đã báo')} <HelpTip label={t('Đã báo')}>{t('Mức độ đã báo cho team qua Google Chat.')}</HelpTip>
+                            </Th>
+                            <Th>
+                                {t('Thread')} <HelpTip label={t('Thread')}>{t('“Đã gửi” nghĩa là Google Chat đã nhận tin, không có nghĩa là đã có người đọc.')}</HelpTip>
+                            </Th>
+                            <Th>
+                                {t('Đánh giá')}{' '}
+                                <HelpTip label={t('Đánh giá')}>
+                                    {t(
+                                        'Có, Không và Chưa rõ đều dừng nhắc hằng ngày. “Không” còn ngừng nhắc team về sự kiện này và bỏ nó khỏi danh sách “Đang chờ bản vá”. Đánh giá hết hiệu lực khi tin mới, phạm vi, mức độ hoặc bản vá thay đổi.',
+                                    )}
+                                </HelpTip>
+                            </Th>
                             <Th>{t('Đánh dấu đã đọc')}</Th>
                         </tr>
                     </thead>
@@ -525,7 +578,10 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                                         ? '—'
                                         : team.services.map((service) => (
                                               <span key={`${service.name}-${service.branch}`} className={cn('block', service.is_not_affected && 'text-muted-foreground')}>
-                                                  <span className="font-medium">{service.name}</span> · <span className="font-mono">{service.branch}</span> · {service.scope}
+                                                  <span className="font-medium">{service.name}</span> · <span className="font-mono">{service.branch}</span> ·{' '}
+                                                  <span className="whitespace-nowrap">
+                                                      {service.scope} <HelpTip label={service.scope}>{service.scope_hint}</HelpTip>
+                                                  </span>
                                                   {service.patch && <span className="font-mono"> · {t('vá :version', { version: service.patch })}</span>}
                                               </span>
                                           ))}

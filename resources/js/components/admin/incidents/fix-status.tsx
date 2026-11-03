@@ -10,6 +10,7 @@ export interface IncidentSummary {
     lead: string | null;
     technology: { value: string; label: string };
     severity: { value: string; label: string };
+    is_dismissed: boolean;
     is_known_exploited: boolean;
     first_published: string | null;
     notices_count: number;

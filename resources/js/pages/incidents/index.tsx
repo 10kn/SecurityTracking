@@ -28,12 +28,15 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
     const searchRef = useRef<TableSearchHandle>(null);
     const urlOf = (incident: IncidentSummary) => show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } });
     const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.unknown !== null || table.dismissed !== null;
+    const technologyNames = technologies.map((technology) => technology.label).join(', ');
 
     return (
         <>
             <PageHeader
                 title={t('Sự kiện bảo mật')}
-                description={t('Tin bảo mật sớm của hãng, gom theo sự kiện. Xem gợi ý gộp, gộp hoặc tách tin, và đánh dấu đã đọc kèm mức ảnh hưởng cho từng team.')}
+                description={t('Tin bảo mật sớm từ trang chính thức của :technologies, gom theo sự kiện. Xem gợi ý gộp, gộp hoặc tách tin, và đánh dấu đã đọc kèm mức ảnh hưởng cho từng team.', {
+                    technologies: technologyNames,
+                })}
             />
             <Card>
                 <CardHeader>
@@ -82,7 +85,10 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                     isFiltered ? (
                         <EmptyState title={t('Không có sự kiện phù hợp')} description={t('Thử từ khóa hoặc bộ lọc khác.')} />
                     ) : (
-                        <EmptyState title={t('Chưa có sự kiện nào')} description={t('Sự kiện xuất hiện khi hãng đăng tin bảo mật sớm.')} />
+                        <EmptyState
+                            title={t('Chưa có sự kiện nào')}
+                            description={t('Sự kiện xuất hiện khi trang chính thức của :technologies đăng tin bảo mật sớm.', { technologies: technologyNames })}
+                        />
                     )
                 ) : (
                     <>

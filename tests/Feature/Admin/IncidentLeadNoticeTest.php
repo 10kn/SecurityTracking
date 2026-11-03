@@ -45,7 +45,7 @@ it('falls back to the summary of the source while the classifier has not run', f
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice.summary', ['text' => 'The PHP team announces the fourth release candidate of PHP 8.6.0.', 'is_ai' => false])
-        ->where('incident.lead_notice.severity_basis', 'Mức theo hãng')
+        ->where('incident.lead_notice.severity_basis', 'Mức theo trang chính thức PHP')
         ->where('incident.lead_notice.classifier', ['label' => 'AI chưa phân loại tin này', 'tone' => 'unknown']));
 });
 
@@ -77,4 +77,14 @@ it('explains the most severe pre-notice that is not dismissed', function () {
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice.summary.text', 'Bản RC4 sửa một lỗ hổng nghiêm trọng trong ext/phar.'));
+});
+
+it('marks an incident whose every pre-notice is not security news', function () {
+    actingAsAdmin();
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('incident.is_dismissed', false));
+
+    $this->notice->update(['is_dismissed' => true, 'severity' => Severity::Unknown, 'severity_basis' => null]);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('incident.is_dismissed', true));
 });

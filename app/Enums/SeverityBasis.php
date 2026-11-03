@@ -13,10 +13,13 @@ enum SeverityBasis: string
     case Classifier = 'classifier';
     case Kev = 'kev';
 
-    public function getLabel(): string
+    /**
+     * The vendor's rating is named after the technology's official site the pre-notice came from, when it is known.
+     */
+    public function getLabel(?Technology $technology = null): string
     {
         return match ($this) {
-            self::Vendor => __('Mức theo hãng'),
+            self::Vendor => $technology === null ? __('Mức theo trang chính thức') : __('Mức theo trang chính thức :technology', ['technology' => $technology->getLabel()]),
             self::Cvss => __('Mức theo điểm CVSS'),
             self::Classifier => __('Mức do AI đánh giá'),
             self::Kev => __('Mức theo CISA KEV'),

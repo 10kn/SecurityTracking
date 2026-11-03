@@ -5,6 +5,7 @@ use App\Actions\MergeIncidents;
 use App\Actions\SendPreNoticeAlerts;
 use App\Enums\ChatNotificationKind;
 use App\Enums\IncidentImpact;
+use App\Enums\IncidentScope;
 use App\Enums\IncidentSuggestionReason;
 use App\Enums\IncidentSuggestionStatus;
 use App\Enums\IncidentTeamEventType;
@@ -237,7 +238,7 @@ it('shows the incident with its notices, its teams and what the forms need', fun
             ->where('teams.1.is_actionable', true)
             ->where('teams.1.needs_acknowledgement', true)
             ->where('teams.1.told_severity.value', 'high')
-            ->where('teams.1.services.0', ['name' => 'shop-api', 'branch' => '8.3', 'scope' => 'chưa xác định', 'is_not_affected' => false, 'patch' => null])
+            ->where('teams.1.services.0', ['name' => 'shop-api', 'branch' => '8.3', 'scope' => 'chưa xác định', 'scope_hint' => IncidentScope::Unknown->getDescription(), 'is_not_affected' => false, 'patch' => null])
             ->where('teams.1.thread.status.label', 'Đã mở thread')
             ->where('teams.1.thread.url', fn (string $url): bool => str_starts_with($url, 'https://chat.google.com/room/COMMERCE/'))
             ->where('teams.1.exposure_hash', IncidentTeamExposure::for($this->incident, $this->commerce)->hash())

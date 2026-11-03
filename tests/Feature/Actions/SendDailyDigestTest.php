@@ -161,7 +161,7 @@ it('lists medium and low pre-notices of a technology the team runs', function ()
     Advisory::factory()->preNotice(Technology::Ruby)->create(['title' => 'Ruby security notice', 'severity' => Severity::Low]);
 
     expect(app(SendDailyDigest::class)->handle())->toBe(1)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Tin bảo mật từ hãng', '[Medium] PHP security notice', 'https://www.php.net/archive/2026.php#notice')
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Tin bảo mật từ trang chính thức', '[Medium] PHP security notice', 'https://www.php.net/archive/2026.php#notice')
         ->not->toContain('Upcoming Critical', 'Ruby security notice');
 });
 
@@ -319,7 +319,7 @@ it('lists the incidents waiting for a fix with the security releases that may be
     RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36', 'released_at' => '2026-10-21', 'created_at' => '2026-10-23 15:00:00']);
 
     expect(app(SendDailyDigest::class)->handle())->toBe(1)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Đang chờ bản vá', '[Critical] Upcoming Critical PHP Security Release', 'Nhánh 8.3 · có thể là bản vá: 8.3.36 (hãng chưa xác nhận)');
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Đang chờ bản vá', '[Critical] Upcoming Critical PHP Security Release', 'Nhánh 8.3 · có thể là bản vá: 8.3.36 (trang chính thức PHP chưa xác nhận)');
 
     $this->travelTo('2026-10-25 01:00:00');
 

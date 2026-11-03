@@ -400,7 +400,7 @@ class GoogleChatCards
             __('Nguồn: :source', ['source' => $advisory->technology->releaseSourceLabel()]),
             $advisory->published_at === null ? null : __('Đăng lúc :time', ['time' => LocalTime::format($advisory->published_at)]),
             $advisory->cvss_score === null ? null : "CVSS {$advisory->cvss_score}",
-            $advisory->severity_basis?->getLabel(),
+            $advisory->severity_basis?->getLabel($advisory->technology),
         ]);
 
         $plan = array_filter([
@@ -504,7 +504,7 @@ class GoogleChatCards
 
         if ($digest['pre_notices']->isNotEmpty()) {
             $sections[] = [
-                'header' => __('Tin bảo mật từ hãng'),
+                'header' => __('Tin bảo mật từ trang chính thức'),
                 'widgets' => [
                     ...$digest['pre_notices']
                         ->take($this->maxListedItems())
@@ -616,7 +616,7 @@ class GoogleChatCards
                         'text' => e($this->severityTitle($item['notice']->severity, $item['incident']->title)),
                         'bottomLabel' => implode(' · ', array_filter([
                             __('Nhánh :branches', ['branches' => implode(', ', $item['branches'])]),
-                            $item['candidates'] === [] ? null : __('có thể là bản vá: :versions (hãng chưa xác nhận)', ['versions' => implode(', ', $item['candidates'])]),
+                            $item['candidates'] === [] ? null : __('có thể là bản vá: :versions (trang chính thức :technology chưa xác nhận)', ['versions' => implode(', ', $item['candidates']), 'technology' => $item['incident']->technology->getLabel()]),
                             $item['needs_review'] ? __('cần rà soát: quá :days ngày chưa có bản vá', ['days' => config('psm.incidents.review_after_days')]) : null,
                         ])),
                         'wrapText' => true,
