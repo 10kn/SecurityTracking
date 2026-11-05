@@ -7,6 +7,7 @@ import { Card } from '@/components/admin/card';
 import { CellTitle, Table, Td, Th, Tr } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
 import { StatusDot } from '@/components/admin/status-dot';
+import { TechnologyLogo } from '@/components/admin/technology-logo';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
 import type { StatusDotData } from '@/types';
@@ -44,6 +45,7 @@ export default function TechnologiesIndex({ technologies }: { technologies: Tech
                             <Tr key={technology.value} href={show.url(technology.value)}>
                                 <Td>
                                     <CellTitle
+                                        icon={<TechnologyLogo technology={technology.value} className="mr-2 align-[-0.2em]" />}
                                         title={technology.name}
                                         sub={t('endoflife.date và :source', { source: technology.release_source })}
                                         href={show.url(technology.value)}

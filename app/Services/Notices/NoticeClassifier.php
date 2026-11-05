@@ -7,13 +7,15 @@ use Carbon\CarbonInterface;
 use Throwable;
 
 /**
- * Reads what the keyword filter cannot from a vendor feed entry: whether it is security news at all, the vendor's
- * severity, when the fixes are planned, which branches they affect and which incident it may be about.
+ * Reads a vendor feed entry, which has no fixed structure: whether it is security news at all, the vendor's severity,
+ * when the fixes are planned, which branches they affect, the versions that fix them, whether they are exploited and
+ * which incident it may be about. Nothing else reads the entry's words (see SyncNoticeFeed).
  */
 interface NoticeClassifier
 {
     /**
-     * Whether the classifier is configured. SyncNoticeFeed keeps the keyword result alone when it is not.
+     * Whether the classifier is configured. Without it, no entry counts as security news unless its CVSS score or a
+     * KEV listing says so.
      */
     public function isEnabled(): bool;
 

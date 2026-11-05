@@ -38,6 +38,11 @@ class ClaudeNoticeClassifier implements NoticeClassifier
           Empty when it names none.
         - unaffected_branches: the release branches the entry explicitly says are not affected. Empty unless the entry
           says so in words; a list of fixed versions does not say which branches are unaffected.
+        - patch_versions: the released versions the entry tells users to update to because they fix its
+          vulnerabilities, as full version numbers such as "8.3.36", one per branch, e.g. "Update to PHP 8.5.12, 8.4.27
+          or 8.3.36" or "PHP 8.3.36 is a security release fixing CVE-…". Leave out versions it only mentions, versions
+          it says do not fix them, versions still to come and pre-releases (alpha, beta, release candidate). Empty
+          when it names none.
         - related_incident_id: the id of the listed incident this entry is about (the same vulnerabilities or the same
           security release), or null when none clearly is. Only ids from <incidents>.
         - actively_exploited: true only when the entry states that the vulnerability is being exploited in real attacks.
@@ -136,16 +141,18 @@ class ClaudeNoticeClassifier implements NoticeClassifier
                 'related_incident_id' => ['anyOf' => [['type' => 'integer'], ['type' => 'null']]],
                 'actively_exploited' => ['anyOf' => [['type' => 'boolean'], ['type' => 'null']]],
                 'exploited_evidence' => ['anyOf' => [['type' => 'string'], ['type' => 'null']]],
+                'patch_versions' => ['type' => 'array', 'items' => ['type' => 'string']],
             ],
-            'required' => ['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence'],
+            'required' => ['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence', 'patch_versions'],
             'additionalProperties' => false,
         ];
     }
 
     /**
-     * Branches that are not version numbers, times that are not ISO 8601 and incidents that were not offered are
-     * dropped rather than trusted. Evidence of exploitation is kept as quoted: SyncNoticeFeed checks it against the
-     * entry.
+     * Branches and versions that are not version numbers, times that are not ISO 8601 and incidents that were not
+     * offered are dropped rather than trusted. Evidence of exploitation is kept as quoted: SyncNoticeFeed checks it
+     * against the entry. A patch version only counts once the catalog lists it as a security release (see
+     * Incident::confirmedPatches()).
      *
      * @param  list<int>  $incidentIds  The incidents offered.
      */
@@ -171,6 +178,7 @@ class ClaudeNoticeClassifier implements NoticeClassifier
             relatedIncidentId: is_int($relatedIncidentId) && in_array($relatedIncidentId, $incidentIds, true) ? $relatedIncidentId : null,
             activelyExploited: is_bool($answer['actively_exploited'] ?? null) ? $answer['actively_exploited'] : null,
             exploitedEvidence: $evidence === '' ? null : $evidence,
+            patchVersions: $this->matching($answer['patch_versions'] ?? [], '/^\d+\.\d+\.\d+$/'),
         );
     }
 
@@ -179,8 +187,18 @@ class ClaudeNoticeClassifier implements NoticeClassifier
      */
     private function branches(mixed $branches): array
     {
-        return collect((array) $branches)
-            ->filter(fn (mixed $branch): bool => is_string($branch) && preg_match('/^\d+(?:\.\d+)?$/', $branch) === 1)
+        return $this->matching($branches, '/^\d+(?:\.\d+)?$/');
+    }
+
+    /**
+     * The strings of the list that match the pattern, once each.
+     *
+     * @return list<string>
+     */
+    private function matching(mixed $values, string $pattern): array
+    {
+        return collect((array) $values)
+            ->filter(fn (mixed $value): bool => is_string($value) && preg_match($pattern, $value) === 1)
             ->unique()
             ->values()
             ->all();

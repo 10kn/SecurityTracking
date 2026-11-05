@@ -80,15 +80,14 @@ return [
     | Vendor pre-notices
     |--------------------------------------------------------------------------
     |
-    | psm:watch-notices polls the security news feed of each technology (php.net, nodejs.org, ruby-lang.org) every
-    | 15 minutes. Entries whose title matches one of `ignored_title_patterns` are left out: release announcements are
-    | left to the hourly catalog sync, which already alerts on each security release with the exact version to upgrade
-    | to. The classifier decides which of the others are security news; the keyword rule only stands in until it has
-    | read the entry (not configured, failing, or the vendor edited the entry since): an entry is security news when
-    | its title or text contains one of `keywords` (case does not matter), or the feed only publishes security news.
-    | Its severity is the highest of the classifier, its CVSS score (9.0+ Critical, 7.0+ High, 4.0+ Medium) and a KEV
-    | listing; the vendor's words ("critical vulnerabilities", "Severity: High") stand in for the classifier until it
-    | has read the entry. So do the words saying the vulnerability is exploited.
+    | psm:watch-notices polls the news feed of each technology (php.net, nodejs.org, ruby-lang.org) every 15 minutes
+    | and keeps every entry published within `collect_days` of the poll, release announcements included: a feed's older
+    | history is never stored, as it is about versions no project runs any more. An entry without a date is kept, and
+    | one already stored keeps following the vendor's edits. `collect_days` is never shorter than `relevant_days`.
+    | News has no fixed structure, so only the classifier reads
+    | its words: whether it is security news, the vendor's rating, the versions to update to and whether the
+    | vulnerability is exploited. No keyword or pattern stands in for it. Its severity is the highest of the
+    | classifier, its CVSS score (9.0+ Critical, 7.0+ High, 4.0+ Medium) and a KEV listing.
     |
     | Pre-notices published within `relevant_days` are sent right away to every team running the technology when they
     | are Critical, High or of unknown severity (vendors often give none), one card per incident (see `incidents`);
@@ -96,22 +95,23 @@ return [
     | ones still within `relevant_days`. A feed that has not been polled successfully within `stale_after_minutes`
     | alerts the admin.
     |
-    | When `classifier.api_key` is set, Claude (`classifier.model`) reads each entry once, older ones included, and
-    | again when the vendor edits one younger than `relevant_days`: whether it is security news, the severity, the
-    | planned release time, the affected branches, whether it is exploited and a summary in the alert locale. It can
-    | drop an entry as not security news unless a CVSS score or a KEV listing says otherwise. Entries wait for it,
-    | except those a CVSS score or a KEV listing makes Critical. When the API fails, the entry keeps the other results:
-    | it is sent marked as not classified when it has a keyword and left out otherwise, and is classified on a later
-    | poll. The admin is told right away when the API fails, with the error, once per outage, and again once it
-    | classifies an entry. psm:check-sources also tells the admin about an entry still not classified after
-    | `classifier.alert_after_minutes`.
+    | When `classifier.api_key` is set, Claude (`classifier.model`) reads each entry published within `collect_days`
+    | once, and again when the vendor edits one younger than `relevant_days`: whether it is security news, the
+    | severity, the planned release time, the affected branches, the versions to update to, whether it is exploited and
+    | a summary in the alert locale. It can drop an entry as not security news unless a CVSS score or a KEV listing says
+    | otherwise.
+    |
+    | Entries wait for the classifier, except those a CVSS score or a KEV listing makes Critical. When the API fails, an
+    | entry keeps what it read before, one it never read waits, and both are classified on a later poll. Without an API
+    | key, no entry is security news unless its CVSS score or a KEV listing says so. The admin is told right away when
+    | the API fails, with the error, once per outage, and again once it classifies an entry. psm:check-sources also
+    | tells the admin about an entry still not classified after `classifier.alert_after_minutes`.
     |
     */
 
     'notices' => [
-        'keywords' => array_values(array_filter(array_map('trim', explode(',', (string) env('PSM_NOTICE_KEYWORDS', 'security,vulnerab,cve-,exploit,advance notice,pre-announce,pre-notice'))))),
-        'ignored_title_patterns' => ['/\breleased!?\s*$/i'],
         'relevant_days' => (int) env('PSM_NOTICE_RELEVANT_DAYS', 14),
+        'collect_days' => (int) env('PSM_NOTICE_COLLECT_DAYS', 90),
         'stale_after_minutes' => (int) env('PSM_NOTICE_STALE_AFTER_MINUTES', 120),
         'summary_length' => 500,
         'classifier' => [

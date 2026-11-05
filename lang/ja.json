@@ -585,7 +585,6 @@
     "Tin khác của cùng sự kiện": "同じインシデントの他の情報",
     "Tin mở thread": "スレッドを開くメッセージ",
     "Tin thử từ Security Manager: space này sẽ nhận cảnh báo bảo mật của team :team.": "Security Manager からのテストメッセージ: このスペースでチーム :team のセキュリティ通知を受け取ります。",
-    "Tin vẫn được xử lý theo từ khoá và điểm CVSS. Kiểm tra ANTHROPIC_API_KEY và log lỗi.": "記事はキーワードと CVSS スコアに基づいて処理されています。ANTHROPIC_API_KEY とエラーログを確認してください。",
     "Tin xếp gửi gần nhất": "最後にキューに入れたメッセージ",
     "Tin đã gửi nhưng không mở được thread; cập nhật quan trọng tiếp theo sẽ gửi card đầy đủ.": "メッセージは送信されましたがスレッドを開けませんでした。次の重要な更新では完全なカードを送ります。",
     "Tin đầu tiên của sự kiện": "インシデントの最初の情報",
@@ -790,7 +789,7 @@
     "Giải thích: :label": "説明: :label",
     "Tin trên trang chính thức ghi rõ nhánh này bị ảnh hưởng.": "公式サイトの情報で、このブランチが影響を受けると明記されています。",
     "Tin trên trang chính thức không nói nhánh này có bị ảnh hưởng hay không, hoặc nhánh đã hết hỗ trợ (EOL). Không có nghĩa là an toàn: đọc tin rồi đánh giá cho team.": "公式サイトの情報では、このブランチが影響を受けるかどうか書かれていないか、ブランチがサポート終了（EOL）です。安全という意味ではありません。情報を読んでチームについて評価してください。",
-    "Tin trên trang chính thức ghi rõ nhánh này không bị ảnh hưởng.": "公式サイトの情報で、このブランチは影響を受けないと明記されています。",
+    "Tin trên trang chính thức ghi rõ nhánh này không bị ảnh hưởng, hoặc nhánh ra đời sau tin cuối cùng của sự kiện nên đã có sẵn bản sửa.": "公式サイトの情報で、このブランチは影響を受けないと明記されています。または、このブランチはインシデントの最新情報より後にリリースされたため、修正が既に含まれています。",
     "Mức cao nhất trong các tin của sự kiện, không tính tin được xếp là “Không phải tin bảo mật”. Mức lấy theo trang chính thức, điểm CVSS, CISA KEV hoặc do AI đánh giá; nguồn của mức ghi ngay dưới phần tóm tắt.": "インシデントの情報のうち最も高い深刻度です。「セキュリティ情報ではない」とされた情報は含みません。公式サイト、CVSS スコア、CISA KEV、または AI の評価によるもので、根拠は要約のすぐ下に表示されます。",
     "Các nhánh mà tin trên trang chính thức ghi rõ là bị ảnh hưởng. Trống khi tin không nêu nhánh nào; danh sách bản vá không được tính là danh sách nhánh.": "公式サイトの情報で影響を受けると明記されたブランチです。情報がブランチを挙げていなければ空です。修正版の一覧はブランチの一覧として扱いません。",
     "Các nhánh mà tin trên trang chính thức ghi rõ là không bị ảnh hưởng. Nhánh đã hết hỗ trợ (EOL) không bao giờ được loại trừ.": "公式サイトの情報で影響を受けないと明記されたブランチです。サポート終了（EOL）のブランチは対象外になりません。",
@@ -800,5 +799,13 @@
     "Có, Không và Chưa rõ đều dừng nhắc hằng ngày. “Không” còn ngừng nhắc team về sự kiện này và bỏ nó khỏi danh sách “Đang chờ bản vá”. Đánh giá hết hiệu lực khi tin mới, phạm vi, mức độ hoặc bản vá thay đổi.": "「あり」「なし」「不明」のどれでも毎日のリマインドが止まります。「なし」はさらに、このインシデントについてのチームへのリマインドを止め、「修正版待ち」の一覧から外します。新しい情報、影響範囲、深刻度、修正版が変わると評価は無効になります。",
     "Mức theo trang chính thức": "深刻度: 公式サイトによる",
     "Tin tức, không phải tin bảo mật": "ニュース（セキュリティ情報ではありません）",
-    "Mọi tin của sự kiện này đều được xếp là không phải tin bảo mật, nên không có mức độ, nhánh bị ảnh hưởng hay bản vá, và không còn được báo cho team. Thẻ đã gửi trước khi tin được xếp lại vẫn còn trong Google Chat.": "このインシデントの情報はすべてセキュリティ情報ではないと分類されたため、深刻度、影響を受けるブランチ、修正版はなく、チームへの通知もされなくなります。再分類の前に送信したカードは Google Chat に残ります。"
+    "Mọi tin của sự kiện này đều được xếp là không phải tin bảo mật, nên không có mức độ, nhánh bị ảnh hưởng hay bản vá, và không còn được báo cho team. Thẻ đã gửi trước khi tin được xếp lại vẫn còn trong Google Chat.": "このインシデントの情報はすべてセキュリティ情報ではないと分類されたため、深刻度、影響を受けるブランチ、修正版はなく、チームへの通知もされなくなります。再分類の前に送信したカードは Google Chat に残ります。",
+    "Tin chưa được AI đọc sẽ chờ, trừ khi điểm CVSS hoặc CISA KEV xác định là tin bảo mật; tin đã sửa giữ kết quả AI đọc lần trước. Kiểm tra ANTHROPIC_API_KEY và log lỗi.": "AI がまだ読んでいない記事は、CVSS スコアまたは CISA KEV でセキュリティ情報と判断されない限り待機します。編集された記事は前回 AI が読んだ結果を保持します。ANTHROPIC_API_KEY とエラーログを確認してください。",
+    "Không tính là tin bảo mật": "セキュリティ情報として扱わない",
+    "Sự kiện sẽ xoá": "削除するインシデント",
+    "Tin sẽ xoá": "削除するニュース",
+    "Sự kiện giữ lại vì đã gửi hoặc đánh giá": "送信・評価済みのため残すインシデント",
+    "Không có tin nào đăng trước :date.": ":date より前に公開されたニュースはありません。",
+    "Xoá vĩnh viễn các tin đăng trước :date? Không khôi phục được.": ":date より前に公開されたニュースを完全に削除しますか？元に戻せません。",
+    "Đã xoá :incidents sự kiện và :notices tin.": "インシデント :incidents 件とニュース :notices 件を削除しました。"
 }

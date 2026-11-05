@@ -161,8 +161,8 @@ class Advisory extends Model
     }
 
     /**
-     * Critical by its CVSS score or a KEV listing, which the classifier cannot lower, rather than by the vendor's
-     * words alone, which it replaces once it has read them (see SyncNoticeFeed).
+     * Critical by its CVSS score, a KEV listing or the classifier, rather than by the vendor's words alone, which only
+     * pre-notices rated before the classifier became the only reader of the words have (see SeverityBasis::Vendor).
      */
     public function isCriticalBeyondWords(): bool
     {

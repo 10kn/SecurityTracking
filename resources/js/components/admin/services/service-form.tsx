@@ -7,6 +7,7 @@ import { store as syncLockfiles } from '@/actions/App/Http/Controllers/Admin/Ser
 import { Combobox } from '@/components/admin/combobox';
 import { Field, FormFields, FormSection } from '@/components/admin/form-section';
 import { StatusDot } from '@/components/admin/status-dot';
+import { TechnologyLogo } from '@/components/admin/technology-logo';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input, inputClassName } from '@/components/ui/input';
@@ -514,7 +515,7 @@ function RuntimeRowFields({
             <div className="min-w-0 max-sm:col-span-1">
                 <Combobox
                     value={row.technology}
-                    options={technologies}
+                    options={technologies.map((option) => ({ ...option, icon: <TechnologyLogo technology={option.value} /> }))}
                     onChange={(technology) => onChange({ technology })}
                     placeholder={t('Chọn công nghệ')}
                     searchPlaceholder={t('Tìm công nghệ')}

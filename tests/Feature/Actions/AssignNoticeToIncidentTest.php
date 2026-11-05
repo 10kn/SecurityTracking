@@ -31,25 +31,26 @@ function assignedNotice(array $attributes = []): Advisory
     return $notice->refresh();
 }
 
-it('keeps the php.net pre-announcement and its advisory apart, and suggests they belong together once the release time is known', function () {
+it('keeps the php.net pre-announcement and its advisory apart, puts the release announcement in the advisory\'s incident, and suggests they belong together once the release time is known', function () {
     fakeNoticeFeeds();
     $this->travelTo('2026-10-23 10:00:00');
-    classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(
-        isSecurityNews: true,
-        severity: Severity::Critical,
-        plannedReleaseAt: $entry->title === 'Upcoming Critical PHP Security Release' ? CarbonImmutable::parse('2026-10-21 14:00:00') : null,
-    ));
+    classifyNoticeFixtures([
+        'Upcoming Critical PHP Security Release' => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical, plannedReleaseAt: CarbonImmutable::parse('2026-10-21 14:00:00')),
+    ]);
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
 
     $announcement = Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole();
     $advisory = Advisory::where('title', 'like', 'Security advisory%')->sole();
+    $release = Advisory::where('title', 'PHP 8.3.36 Released!')->sole();
 
     expect($announcement->incident_id)->not->toBe($advisory->incident_id)
         ->and($announcement->incident_basis)->toBe(IncidentBasis::Own)
         ->and($advisory->incident_basis)->toBe(IncidentBasis::Own)
-        ->and(IncidentSuggestion::sole())
-        ->advisory_id->toBe($advisory->id)
+        ->and($release)
+        ->incident_id->toBe($advisory->incident_id)
+        ->incident_basis->toBe(IncidentBasis::SharedId)
+        ->and(IncidentSuggestion::where('advisory_id', $advisory->id)->sole())
         ->incident_id->toBe($announcement->incident_id)
         ->reason->toBe(IncidentSuggestionReason::ReleaseWindow)
         ->status->toBe(IncidentSuggestionStatus::Pending)

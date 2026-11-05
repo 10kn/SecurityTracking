@@ -90,6 +90,7 @@ it('tells the team in the incident thread once CISA KEV lists the CVEs after the
     $this->travelTo('2026-10-20 22:00:00');
     $php = syncedTechnology(Technology::Php);
     fakeNoticeFeeds();
+    classifyNoticeFixtures();
     fakeKevCatalog();
     runtimeAt($this->commerce, 'shop-api', $php, '8.3.35');
     artisan('psm:evaluate-runtimes')->assertSuccessful();
@@ -116,7 +117,7 @@ it('tells the team in the incident thread once CISA KEV lists the CVEs after the
         ->and(IncidentTeam::whereNotNull('told_known_exploited')->sole()->told_known_exploited)->toBe(['CVE-2026-109618', 'CVE-2026-109619'])
         ->and(Advisory::where('title', 'like', 'Security advisory%')->sole())
         ->severity->toBe(Severity::Critical)
-        ->severity_basis->toBe(SeverityBasis::Vendor)
+        ->severity_basis->toBe(SeverityBasis::Classifier)
         ->and(Advisory::where('title', 'like', 'Security advisory%')->sole()->known_exploited)->toEqual([
             ['cve' => 'CVE-2026-109618', 'name' => 'PHP Memory Corruption Vulnerability', 'date_added' => '2026-10-26', 'due_date' => '2026-10-29', 'listed' => true],
             ['cve' => 'CVE-2026-109619', 'name' => 'PHP Stale Internal Request-State Vulnerability', 'date_added' => '2026-10-26', 'due_date' => '2026-10-29', 'listed' => true],

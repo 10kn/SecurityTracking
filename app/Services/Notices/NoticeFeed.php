@@ -21,9 +21,4 @@ interface NoticeFeed
      * @throws UnexpectedValueException When the response is not an Atom or RSS feed.
      */
     public function entries(): array;
-
-    /**
-     * Whether every entry is security news, so entries are kept without the keyword filter.
-     */
-    public function isSecurityOnly(): bool;
 }

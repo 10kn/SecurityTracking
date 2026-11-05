@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\DB;
  * One security issue of a technology, told by one or more vendor pre-notices (see AssignNoticeToIncident). Its title,
  * severity, dates and branches are derived from its pre-notices that were not dismissed (see refreshFromNotices()).
  */
-#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'merged_into_id', 'fingerprint', 'changed_at'])]
+#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'merged_into_id', 'fingerprint', 'changed_at'])]
 class Incident extends Model
 {
     /** @use HasFactory<IncidentFactory> */
@@ -40,6 +40,7 @@ class Incident extends Model
             'technology' => Technology::class,
             'severity' => Severity::class,
             'first_published_at' => 'datetime',
+            'last_published_at' => 'datetime',
             'planned_release_at' => 'datetime',
             'affected_branches' => 'array',
             'unaffected_branches' => 'array',
@@ -60,7 +61,8 @@ class Incident extends Model
     }
 
     /**
-     * Incidents whose every pre-notice was dismissed as not security news (see SyncNoticeFeed).
+     * Incidents whose every pre-notice does not count as security news: the classifier dismissed it, or it has not read
+     * it, e.g. news stored before `psm.notices.collect_days` limited what the classifier reads (see SyncNoticeFeed).
      *
      * @param  Builder<Incident>  $query
      * @return Builder<Incident>
@@ -99,7 +101,8 @@ class Incident extends Model
      * Whether the vendor said the incident affects the branch a runtime runs. Only a branch the vendor names as affected
      * is confirmed, and only one it names as not affected is ruled out: a list of affected or fixed branches is often
      * incomplete. An end-of-life branch is never ruled out, as vendors stop assessing it, but one the vendor names as
-     * affected is confirmed.
+     * affected is confirmed. A branch first released after the incident's latest pre-notice and its planned release is
+     * ruled out too, end of life or not: it came out with the fix, e.g. PHP 8.5 for news about PHP 7.3 from 2019.
      */
     public function scopeFor(Runtime $runtime): IncidentScope
     {
@@ -107,10 +110,29 @@ class Incident extends Model
 
         return match (true) {
             self::listsBranch($this->affected_branches ?? [], $versions) => IncidentScope::Confirmed,
+            $this->predates($runtime->branch) => IncidentScope::NotAffected,
             $runtime->status === RuntimeStatus::Eol => IncidentScope::Unknown,
             self::listsBranch($this->unaffected_branches ?? [], $versions) => IncidentScope::NotAffected,
             default => IncidentScope::Unknown,
         };
+    }
+
+    /**
+     * Whether the branch was first released after the day of the incident's latest pre-notice and of its planned
+     * release, by the technology's version catalog. Without those dates, or a branch the catalog does not date, nothing
+     * says so.
+     */
+    public function predates(?string $branch): bool
+    {
+        $told = collect([$this->last_published_at ?? $this->first_published_at, $this->planned_release_at])->filter()->max();
+
+        if ($branch === null || $told === null) {
+            return false;
+        }
+
+        $releasedAt = RuntimeBranch::releaseDates($this->technology)->get($branch);
+
+        return $releasedAt !== null && $releasedAt->toDateString() > $told->toDateString();
     }
 
     /**
@@ -162,6 +184,7 @@ class Incident extends Model
                 'title' => $first?->title ?? $this->title,
                 'severity' => $severity,
                 'first_published_at' => $first?->published_at ?? $this->first_published_at,
+                'last_published_at' => $notices->max('published_at') ?? $this->last_published_at,
                 'planned_release_at' => $notices->whereNotNull('planned_release_at')->sortBy('published_at')->last()?->planned_release_at,
                 'affected_branches' => $affected,
                 'unaffected_branches' => $unaffected,
@@ -180,8 +203,8 @@ class Incident extends Model
     }
 
     /**
-     * The branches the vendor has a fix for: a pre-notice of the incident that was not dismissed names the version in
-     * an "Update to …" sentence (see NoticeEntry::patchVersions()), and the catalog lists that version as a security
+     * The branches the vendor has a fix for: the classifier read in a pre-notice of the incident that was not dismissed
+     * that the version is the one to update to (`patch_versions`), and the catalog lists that version as a security
      * release of the branch. The highest such version of each branch, with the pre-notice that named it. Given the
      * incident's pre-notices, it reads them instead of loading them again; given the security releases (version =>
      * branch, e.g. read once for several incidents of the technology), it reads those too.

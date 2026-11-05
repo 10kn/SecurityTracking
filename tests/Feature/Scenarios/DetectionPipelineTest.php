@@ -174,6 +174,7 @@ it('turns php runtimes unknown and alerts the admin space once when php.net fail
 it('warns each team running php once when php.net pre-announces a critical security release, and not again on the next polls', function () {
     $this->travelTo('2026-10-20 20:45:00');
     fakeNoticeFeeds();
+    classifyNoticeFixtures();
     $inventory = app(UpdateProductionInventory::class);
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
     $booking = teamWithChatSpace('Booking', 'BOOKING');
@@ -205,7 +206,7 @@ it('warns each team running php once when php.net pre-announces a critical secur
 
     expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
         '[Critical] Upcoming Critical PHP Security Release',
-        '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+        '[Critical] PHP 8.3.36 Released!',
     ])
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(2)
         ->and(chatMessagesTo('ANALYTICS'))->toHaveCount(0);
@@ -217,6 +218,7 @@ it('tells each team once that the fix is out when the vendor names the version a
     fakePhpCatalogBefore8336($released);
     fakeCatalogSources();
     fakeNoticeFeeds();
+    classifyNoticeFixtures();
     artisan('psm:sync-runtimes')->assertSuccessful();
     $inventory = app(UpdateProductionInventory::class);
     $commerce = teamWithChatSpace('Commerce', 'COMMERCE');
@@ -231,7 +233,7 @@ it('tells each team once that the fix is out when the vendor names the version a
 
     expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
         '[Critical] Upcoming Critical PHP Security Release',
-        '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+        '[Critical] PHP 8.3.36 Released!',
     ]);
 
     $this->travelTo('2026-10-21 15:00:00');
@@ -249,13 +251,13 @@ it('tells each team once that the fix is out when the vendor names the version a
     $finding = Finding::where('rule', FindingRule::RuntimeOutdatedSecurity)->sole();
     expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
         '[Critical] Upcoming Critical PHP Security Release',
-        '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+        '[Critical] PHP 8.3.36 Released!',
         '[Critical] Đã có bản vá, nâng lên 8.3.36',
     ])
         ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('shop-api', 'PHP 8.3.35 → 8.3.36', 'Hạn xử lý: 24/10/2026.')
         ->and(chatMessagesTo('BOOKING')->pluck('text')->all())->toBe([
             '[Critical] Upcoming Critical PHP Security Release',
-            '[Critical] Security advisory: Critical remote code execution vulnerabilities, update now',
+            '[Critical] PHP 8.3.36 Released!',
         ])
         ->and($finding)->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical);
 });

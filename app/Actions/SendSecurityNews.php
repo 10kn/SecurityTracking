@@ -20,7 +20,7 @@ use Illuminate\Support\Traits\Localizable;
  * nothing new. A pre-notice of an incident merged into another goes to the thread of the one it was merged into.
  *
  * Like the team alerts, a pre-notice waits for the classifier, which may rate or dismiss it, unless its CVSS score or
- * a KEV listing makes it Critical, or the classifier is off or failed on it. Nothing is queued while neither space is
+ * a KEV listing makes it Critical. One it never read is dismissed until it does (see SyncNoticeFeed). Nothing is queued while neither space is
  * configured: the news of the last `psm.notices.relevant_days` goes out once one is.
  */
 class SendSecurityNews

@@ -18,6 +18,7 @@ import { FixStatus, type IncidentSummary } from '@/components/admin/incidents/fi
 import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
 import { StatusDot } from '@/components/admin/status-dot';
+import { withTechnologyName } from '@/components/admin/technology-logo';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -52,6 +53,7 @@ interface Notice {
     exploited_excerpt: string | null;
     known_exploited: KnownExploited[];
     is_dismissed: boolean;
+    is_classified: boolean;
     basis: string | null;
     severity_basis: string | null;
 }
@@ -153,7 +155,7 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
             <PageHeader
                 title={title}
                 breadcrumbs={[{ label: t('Sự kiện bảo mật'), href: index.url() }, { label: `#${incident.id}` }]}
-                description={t('#:id · :technology · :count tin', { id: incident.id, technology: incident.technology.label, count: incident.notices_count })}
+                description={withTechnologyName(t('#:id · :technology · :count tin', { id: incident.id, technology: incident.technology.label, count: incident.notices_count }), incident.technology)}
                 actions={<MergeDialog incidentId={incident.id} targets={mergeTargets} />}
             />
             <Card className="mb-6">
@@ -845,7 +847,7 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                             <Td className="max-w-[380px] align-top">
                                 {notice.url ? <ExternalLink href={notice.url}>{notice.title}</ExternalLink> : <span className="font-medium">{notice.title}</span>}
                                 <span className="mt-0.5 block text-sm text-muted-foreground">
-                                    {[notice.basis, notice.severity_basis, notice.is_dismissed ? t('Không phải tin bảo mật') : null].filter(Boolean).join(' · ')}
+                                    {[notice.basis, notice.severity_basis, notice.is_dismissed ? (notice.is_classified ? t('Không phải tin bảo mật') : t('AI chưa phân loại tin này')) : null].filter(Boolean).join(' · ')}
                                 </span>
                                 {notice.is_exploited && (
                                     <span className="mt-0.5 block text-sm">

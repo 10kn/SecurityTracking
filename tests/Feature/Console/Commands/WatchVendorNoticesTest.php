@@ -31,7 +31,7 @@ it('polls the news feed of every technology, once each', function () {
     artisan('psm:watch-notices')->assertSuccessful();
 
     expect(Advisory::groupBy('source')->selectRaw('source, count(*) as total')->pluck('total', 'source')->all())
-        ->toEqual(['notice:nodejs' => 3, 'notice:php' => 3, 'notice:ruby' => 2])
+        ->toEqual(['notice:nodejs' => 2, 'notice:php' => 6, 'notice:ruby' => 4])
         ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:nodejs', 'notice:php', 'notice:ruby'])
         ->and(Http::recorded(fn (Request $request): bool => ! str_starts_with($request->url(), Team::GOOGLE_CHAT_WEBHOOK_PREFIX)))->toHaveCount(3);
 });
@@ -43,7 +43,7 @@ it('keeps polling the other feeds when one fails, records the failure and alerts
 
     artisan('psm:watch-notices')->assertFailed();
 
-    expect(Advisory::where('source', 'notice:nodejs')->count())->toBe(3)
+    expect(Advisory::where('source', 'notice:nodejs')->count())->toBe(2)
         ->and(SourceHeartbeat::where('source', 'notice:php')->sole())
         ->last_failure_at->not->toBeNull()
         ->last_success_at->toBeNull();
@@ -57,6 +57,7 @@ it('warns the team about a critical pre-notice without raising the severity of i
     $this->travelTo('2026-10-20 22:00:00');
     $php = syncedTechnology(Technology::Php);
     fakeNoticeFeeds();
+    classifyNoticeFixtures();
     $commerce = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
     runtimeAt($commerce, 'shop-api', $php, '8.3.35');
     artisan('psm:evaluate-runtimes')->assertSuccessful();

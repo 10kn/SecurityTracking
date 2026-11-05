@@ -3,8 +3,8 @@
 namespace App\Enums;
 
 /**
- * What gave a pre-notice its severity: the vendor's own words, the CVSS score the entry gives, the classifier, or CISA
- * KEV listing one of its CVE ids.
+ * What gave a pre-notice its severity: the CVSS score the entry gives, the classifier, or CISA KEV listing one of its
+ * CVE ids. `Vendor`, the vendor's words read by keywords, is no longer given: it stays for pre-notices rated before.
  */
 enum SeverityBasis: string
 {

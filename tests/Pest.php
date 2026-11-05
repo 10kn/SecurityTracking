@@ -2,6 +2,7 @@
 
 use App\Actions\SyncTechnologyCatalog;
 use App\Enums\IncidentImpact;
+use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Incident;
 use App\Models\IncidentTeam;
@@ -577,4 +578,30 @@ function classifyNoticesWith(Closure $answer): ArrayObject
     });
 
     return $titles;
+}
+
+/**
+ * Classifies the entries of tests/Fixtures/notices as the classifier reads them: whether each is security news, the
+ * vendor's rating and the versions to update to. Any other entry is not security news. `$answers` replaces the answer
+ * for a title.
+ *
+ * @param  array<string, NoticeClassification>  $answers
+ */
+function classifyNoticeFixtures(array $answers = []): ArrayObject
+{
+    $security = fn (Severity $severity = Severity::Unknown, array $patchVersions = []): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: $severity, patchVersions: $patchVersions);
+    $answers += [
+        'Security advisory: Critical remote code execution vulnerabilities, update now' => $security(Severity::Critical, ['8.5.12', '8.4.27', '8.3.36', '8.2.35']),
+        'PHP 8.3.36 Released!' => $security(Severity::Critical, ['8.3.36']),
+        'Upcoming Critical PHP Security Release' => $security(Severity::Critical),
+        'PHP 8.3.35 Released!' => $security(patchVersions: ['8.3.35']),
+        'Wednesday, October 21, 2026 Security Releases' => $security(),
+        'Wednesday, July 29, 2026 Security Releases' => $security(),
+        'Developing a minimally HashDoS resistant, yet quickly reversible integer hash for V8' => $security(),
+        'Ruby 3.3.13 Released' => $security(patchVersions: ['3.3.13']),
+        "Regexp compilation fixes related to GitLab's CVE-2026-89078, CVE-2026-93577, CVE-2026-97229 and CVE-2026-110264" => $security(patchVersions: ['4.0.9', '3.4.12', '3.3.13']),
+        'Security advisories: CVE-2026-80212 and CVE-2026-80213' => $security(),
+    ];
+
+    return classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => $answers[$entry->title] ?? new NoticeClassification(isSecurityNews: false, severity: Severity::Unknown));
 }

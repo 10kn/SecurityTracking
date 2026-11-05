@@ -65,7 +65,7 @@ class ServiceResource extends JsonResource
      * since must show its runtimes as missing data, never as their old status.
      *
      * @param  Collection<int, Runtime>  $runtimes
-     * @return list<array{name: string, status: array{label: string, tone: string}, reason: string}>
+     * @return list<array{technology: string, name: string, status: array{label: string, tone: string}, reason: string}>
      */
     private function runtimes(Collection $runtimes, RuntimeEvaluator $evaluator): array
     {
@@ -75,6 +75,7 @@ class ServiceResource extends JsonResource
                 $evaluation = $evaluator->evaluate($runtime->technology, $runtime->raw_version);
 
                 return [
+                    'technology' => $runtime->technology->value,
                     'name' => $runtime->displayName(),
                     'status' => $evaluation->status->dot(),
                     'reason' => $evaluation->reasonText(),

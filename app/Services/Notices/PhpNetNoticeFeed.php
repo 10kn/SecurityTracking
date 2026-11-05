@@ -16,9 +16,4 @@ class PhpNetNoticeFeed implements NoticeFeed
     {
         return NewsFeedParser::parse(CatalogHttp::client()->get(self::URL)->body());
     }
-
-    public function isSecurityOnly(): bool
-    {
-        return false;
-    }
 }

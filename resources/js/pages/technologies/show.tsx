@@ -8,6 +8,7 @@ import { Card, CardBody, CardHeader, CardTitle } from '@/components/admin/card';
 import { EmptyState, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
 import { StatusDot } from '@/components/admin/status-dot';
+import { TechnologyLogo } from '@/components/admin/technology-logo';
 import { Button } from '@/components/ui/button';
 import { useTableQuery } from '@/hooks/use-table-query';
 import { useTranslation } from '@/lib/i18n';
@@ -46,6 +47,7 @@ export default function TechnologiesShow({ technology, branches, releases, table
         <>
             <PageHeader
                 title={technology.name}
+                titleIcon={<TechnologyLogo technology={technology.value} />}
                 breadcrumbs={[{ label: t('Công nghệ'), href: index.url() }, { label: technology.name }]}
                 description={t('Nhánh và ngày hết hỗ trợ lấy từ endoflife.date, danh sách bản phát hành lấy từ :source.', { source: technology.release_source })}
                 actions={

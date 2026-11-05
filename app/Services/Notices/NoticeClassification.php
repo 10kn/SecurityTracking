@@ -18,7 +18,8 @@ final readonly class NoticeClassification
      *                                   Only a suggestion for an admin.
      * @param  ?bool  $activelyExploited  Whether the entry says the vulnerability is exploited; null when it does not say.
      * @param  ?string  $exploitedEvidence  The sentence of the entry that says so, quoted. It only counts when it is in the
-     *                                      entry (see NoticeEntry::confirmsExploitation()).
+     *                                      entry (see NoticeEntry::quotes()).
+     * @param  list<string>  $patchVersions  The released versions the entry tells to update to, e.g. ["8.3.36", "8.4.27"].
      */
     public function __construct(
         public bool $isSecurityNews,
@@ -30,5 +31,6 @@ final readonly class NoticeClassification
         public ?int $relatedIncidentId = null,
         public ?bool $activelyExploited = null,
         public ?string $exploitedEvidence = null,
+        public array $patchVersions = [],
     ) {}
 }

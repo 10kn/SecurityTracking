@@ -9,6 +9,7 @@ import { FixStatus, type IncidentSummary } from '@/components/admin/incidents/fi
 import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
 import { StatusDot } from '@/components/admin/status-dot';
+import { TechnologyName } from '@/components/admin/technology-logo';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useTableQuery } from '@/hooks/use-table-query';
@@ -62,7 +63,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                             value={table.dismissed}
                             label={t('Loại tin')}
                             allLabel={t('Tin bảo mật')}
-                            options={[{ value: 1, label: t('Không phải tin bảo mật') }]}
+                            options={[{ value: 1, label: t('Không tính là tin bảo mật') }]}
                             onChange={(dismissed) => query({ dismissed })}
                         />
                         {isFiltered && (
@@ -119,7 +120,11 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                                             <Td className="min-w-[200px] max-w-[420px]">
                                                 <CellTitle
                                                     title={incident.lead ?? incident.title}
-                                                    sub={`#${incident.id} · ${incident.technology.label}`}
+                                                    sub={
+                                                        <>
+                                                            #{incident.id} · <TechnologyName technology={incident.technology.value} label={incident.technology.label} />
+                                                        </>
+                                                    }
                                                     href={urlOf(incident)}
                                                 />
                                             </Td>
@@ -211,9 +216,8 @@ function IncidentCards({ incidents, table, urlOf, onSort }: { incidents: Props['
                                 <FixStatus incident={incident} isCompact />
                             </span>
                             <span className="mt-1.5 block text-xs text-muted-foreground">
+                                #{incident.id} · <TechnologyName technology={incident.technology.value} label={incident.technology.label} /> ·{' '}
                                 {[
-                                    `#${incident.id}`,
-                                    incident.technology.label,
                                     incident.first_published,
                                     t(':count tin', { count: incident.notices_count }),
                                     t('Đã gửi tới team: :count', { count: incident.teams_delivered_count }),

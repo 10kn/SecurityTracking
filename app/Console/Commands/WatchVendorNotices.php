@@ -20,7 +20,7 @@ class WatchVendorNotices extends Command
      *
      * The classifier never delays an alert it could not change: every feed is polled and what the CVSS score or a KEV
      * listing makes Critical is sent first. Then the classifier reads the new and edited entries, and the rest is sent
-     * with what it read, the vendor's words standing in for it where it failed (see SendPreNoticeAlerts). The admin's
+     * with what it read; an entry it failed on waits for a later poll (see SyncNoticeFeed). The admin's
      * security news space gets every pre-notice that counts last, once the classifier has read it (see SendSecurityNews).
      */
     public function handle(SyncNoticeFeed $syncNoticeFeed, SendPreNoticeAlerts $sendPreNoticeAlerts, SendSecurityNews $sendSecurityNews): int

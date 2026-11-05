@@ -157,6 +157,7 @@ class IncidentController extends Controller
                 'exploited_excerpt' => $notice->exploited_basis['excerpt'] ?? null,
                 'known_exploited' => $this->knownExploited($notice->known_exploited ?? []),
                 'is_dismissed' => $notice->is_dismissed,
+                'is_classified' => $notice->classified_by !== null,
                 'basis' => $notice->incident_basis?->getLabel(),
                 'severity_basis' => $notice->severity_basis?->getLabel($notice->technology),
             ])->all(),
@@ -195,7 +196,8 @@ class IncidentController extends Controller
      *
      * The teams told (a card was queued) and those Google Chat accepted a message of the current thread for are
      * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again.
-     * `is_dismissed` when every pre-notice was dismissed as not security news (see Incident::dismissed()).
+     * `is_dismissed` when the classifier dismissed every pre-notice as not security news: one it has not read yet is
+     * dismissed too while it waits for it (see SyncNoticeFeed), which is no verdict.
      * `is_known_exploited` while CISA KEV still lists a CVE of a pre-notice that is not dismissed; one it removed
      * stays on the incident page only.
      *
@@ -216,7 +218,7 @@ class IncidentController extends Controller
             'lead' => $lead?->title,
             'technology' => ['value' => $incident->technology->value, 'label' => $incident->technology->getLabel()],
             'severity' => $this->severity($incident->severity),
-            'is_dismissed' => $notices->isNotEmpty() && $notices->every(fn (Advisory $notice): bool => $notice->is_dismissed),
+            'is_dismissed' => $notices->isNotEmpty() && $notices->every(fn (Advisory $notice): bool => $notice->is_dismissed && $notice->classified_by !== null),
             'is_known_exploited' => $notices->where('is_dismissed', false)->contains(fn (Advisory $notice): bool => collect($notice->known_exploited ?? [])->contains(fn (mixed $entry): bool => is_array($entry) && ($entry['listed'] ?? false) === true)),
             'first_published' => LocalTime::format($incident->first_published_at),
             'notices_count' => $notices->count(),

@@ -8,6 +8,7 @@ use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\Runtime;
+use App\Models\RuntimeBranch;
 
 it('confirms a branch only when the vendor names it, rules one out only when the vendor says so, and never rules out an end-of-life branch', function (?string $branch, string $version, RuntimeStatus $status, IncidentScope $scope) {
     $incident = Incident::factory()->make(['affected_branches' => ['8.3', '8.4'], 'unaffected_branches' => ['8.5', '8.1']]);
@@ -47,6 +48,29 @@ it('refreshes the incident a pre-notice is in now, even from a model loaded befo
         ->and($stale->refresh()->incident_id)->toBe($other->id);
 });
 
+it('rules out a branch first released after the latest pre-notice and the planned release, unless the vendor names it', function (array $incident, RuntimeStatus $status, IncidentScope $scope) {
+    RuntimeBranch::factory()->create(['technology' => Technology::Php, 'branch' => '8.5', 'released_at' => '2025-11-20']);
+    $runtime = Runtime::factory()->make(['technology' => Technology::Php, 'raw_version' => '8.5.1', 'version' => '8.5.1', 'branch' => '8.5', 'status' => $status]);
+
+    expect(Incident::factory()->make(['technology' => Technology::Php, 'planned_release_at' => null, ...$incident])->scopeFor($runtime))->toBe($scope);
+})->with([
+    'news about PHP 7.3 from 2019' => [['first_published_at' => '2019-08-29 11:55:58', 'last_published_at' => '2019-08-29 11:55:58', 'affected_branches' => ['7.3']], RuntimeStatus::Ok, IncidentScope::NotAffected],
+    'end of life, released after' => [['first_published_at' => '2019-08-29 11:55:58', 'last_published_at' => '2019-08-29 11:55:58'], RuntimeStatus::Eol, IncidentScope::NotAffected],
+    'released before the news' => [['first_published_at' => '2026-10-20 20:32:00', 'last_published_at' => '2026-10-21 12:30:00'], RuntimeStatus::Ok, IncidentScope::Unknown],
+    'released the day of the news' => [['first_published_at' => '2025-11-20 09:00:00', 'last_published_at' => '2025-11-20 09:00:00'], RuntimeStatus::Ok, IncidentScope::Unknown],
+    'a later pre-notice came after it' => [['first_published_at' => '2025-11-01 09:00:00', 'last_published_at' => '2025-12-01 09:00:00'], RuntimeStatus::Ok, IncidentScope::Unknown],
+    'the fix was planned after it' => [['first_published_at' => '2025-11-01 09:00:00', 'last_published_at' => '2025-11-01 09:00:00', 'planned_release_at' => '2025-11-25 14:00:00'], RuntimeStatus::Ok, IncidentScope::Unknown],
+    'named as affected' => [['first_published_at' => '2019-08-29 11:55:58', 'last_published_at' => '2019-08-29 11:55:58', 'affected_branches' => ['8.5']], RuntimeStatus::Ok, IncidentScope::Confirmed],
+    'only the first pre-notice known' => [['first_published_at' => '2019-08-29 11:55:58', 'last_published_at' => null], RuntimeStatus::Ok, IncidentScope::NotAffected],
+]);
+
+it('says nothing about a branch the catalog does not date', function () {
+    RuntimeBranch::factory()->create(['technology' => Technology::Php, 'branch' => '8.5', 'released_at' => null]);
+    $runtime = Runtime::factory()->make(['technology' => Technology::Php, 'raw_version' => '8.5.1', 'version' => '8.5.1', 'branch' => '8.5', 'status' => RuntimeStatus::Ok]);
+
+    expect(Incident::factory()->make(['first_published_at' => '2019-08-29 11:55:58'])->scopeFor($runtime))->toBe(IncidentScope::Unknown);
+});
+
 it('says nothing about a branch when the vendor names none', function () {
     $runtime = Runtime::factory()->make(['technology' => Technology::Php, 'raw_version' => '8.3.35', 'branch' => '8.3', 'status' => RuntimeStatus::Ok]);
 
@@ -69,6 +93,7 @@ it('derives itself from its pre-notices that were not dismissed, and moves chang
         ->title->toBe('Upcoming PHP Security Release')
         ->severity->toBe(Severity::High)
         ->first_published_at->toDateTimeString()->toBe('2026-10-20 20:32:00')
+        ->last_published_at->toDateTimeString()->toBe('2026-10-21 12:30:00')
         ->planned_release_at->toDateTimeString()->toBe('2026-10-21 14:00:00')
         ->affected_branches->toBe(['8.3', '8.4'])
         ->changed_at->toDateTimeString()->toBe(now()->toDateTimeString());

@@ -12,10 +12,13 @@ export interface Breadcrumb {
 export function PageHeader({
     title,
     description,
+    titleIcon,
     breadcrumbs = [],
     actions,
 }: {
     title: string;
+    /** Shown before the title, e.g. the technology's logo; the document title stays text only. */
+    titleIcon?: ReactNode;
     description?: ReactNode;
     breadcrumbs?: Breadcrumb[];
     actions?: ReactNode;
@@ -41,7 +44,10 @@ export function PageHeader({
             )}
             <header className="mb-6 flex flex-wrap items-end justify-between gap-4 max-sm:flex-col max-sm:items-start">
                 <div className="min-w-0">
-                    <h1 className="text-h1 font-semibold tracking-[-0.02em]">{title}</h1>
+                    <h1 className="flex items-center gap-2.5 text-h1 font-semibold tracking-[-0.02em]">
+                        {titleIcon}
+                        {title}
+                    </h1>
                     {description && <p className="mt-1 text-muted-foreground">{description}</p>}
                 </div>
                 {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

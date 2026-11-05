@@ -274,9 +274,10 @@ export function EmptyState({ title, description, action }: { title: string; desc
 }
 
 /** The title of a row with a muted line below, e.g. the team name and its slug. */
-export function CellTitle({ title, sub, href }: { title: string; sub?: ReactNode; href?: string }) {
+export function CellTitle({ title, sub, href, icon }: { title: string; sub?: ReactNode; href?: string; icon?: ReactNode }) {
     return (
         <>
+            {icon}
             {href ? (
                 <Link href={href} className="font-medium hover:underline hover:underline-offset-3">
                     {title}

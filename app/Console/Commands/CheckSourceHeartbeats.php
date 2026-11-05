@@ -97,8 +97,8 @@ class CheckSourceHeartbeats extends Command
 
     /**
      * The classifier has failed on the current text of a pre-notice for `psm.notices.classifier.alert_after_minutes`,
-     * whether the entry is new or was edited: it was sent with its keyword and CVSS severity only. One alert per
-     * pre-notice and outage.
+     * whether the entry is new or was edited: an entry it never read waits, and an edited one keeps what it read before.
+     * One alert per pre-notice and outage.
      */
     private function checkUnclassifiedNotices(SendAdminAlert $sendAdminAlert): void
     {
@@ -112,7 +112,7 @@ class CheckSourceHeartbeats extends Command
                 __('AI chưa phân loại được tin bảo mật'),
                 [
                     __('Tin: :title', ['title' => $advisory->title]),
-                    __('Tin vẫn được xử lý theo từ khoá và điểm CVSS. Kiểm tra ANTHROPIC_API_KEY và log lỗi.'),
+                    __('Tin chưa được AI đọc sẽ chờ, trừ khi điểm CVSS hoặc CISA KEV xác định là tin bảo mật; tin đã sửa giữ kết quả AI đọc lần trước. Kiểm tra ANTHROPIC_API_KEY và log lỗi.'),
                 ],
                 array_filter([__('Mở nguồn tin') => $advisory->url], filled(...)),
             ));

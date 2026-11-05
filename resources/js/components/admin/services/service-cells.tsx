@@ -1,4 +1,5 @@
 import { StatusDot } from '@/components/admin/status-dot';
+import { TechnologyName } from '@/components/admin/technology-logo';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { StatusDotData } from '@/types';
@@ -11,7 +12,7 @@ export interface ServiceRow {
     exposure: string;
     repository_path: string;
     project?: { id: number; name: string; team: string | null };
-    runtimes: { name: string; status: StatusDotData; reason: string }[];
+    runtimes: { technology: string; name: string; status: StatusDotData; reason: string }[];
     lockfiles: { path: string; state: StatusDotData | null; packages: string | null; vulnerable: StatusDotData | null; error: string | null }[];
     /** Why the last lockfile sync from the repository failed; the lockfiles below are then those of an earlier sync. */
     lockfiles_sync_error: string | null;
@@ -55,7 +56,7 @@ export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] })
             {runtimes.map((runtime) => (
                 <div key={runtime.name}>
                     <div className="flex flex-wrap items-center gap-x-2">
-                        <span className="font-mono text-sm">{runtime.name}</span>
+                        <TechnologyName technology={runtime.technology} label={runtime.name} className="font-mono text-sm" />
                         <StatusDot status={runtime.status} />
                     </div>
                     {runtime.status.tone !== 'success' && <span className="block max-w-[320px] text-sm text-muted-foreground">{runtime.reason}</span>}

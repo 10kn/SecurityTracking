@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronDownIcon, PlusIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { inputClassName } from '@/components/ui/input';
@@ -11,6 +11,8 @@ export interface ComboboxOption<TValue extends string | number> {
     value: TValue;
     label: string;
     description?: string;
+    /** Shown before the label, in the list and once chosen, e.g. a technology's logo. */
+    icon?: ReactNode;
     disabled?: boolean;
 }
 
@@ -105,8 +107,9 @@ export function Combobox<TValue extends string | number>({
                     aria-invalid={invalid || undefined}
                     className={cn(inputClassName, 'flex items-center justify-between gap-2 text-left', isOpen && 'border-primary shadow-[0_0_0_3px_var(--focus)]', className)}
                 >
-                    <span className={cn('truncate', mono && 'font-mono text-[calc(var(--fs-sm)-0.5px)]', value === null && 'text-faint')}>
-                        {selected?.label ?? (value !== null ? String(value) : (placeholder ?? t('Chọn')))}
+                    <span className={cn('flex min-w-0 items-center gap-2', mono && 'font-mono text-[calc(var(--fs-sm)-0.5px)]', value === null && 'text-faint')}>
+                        {selected?.icon}
+                        <span className="truncate">{selected?.label ?? (value !== null ? String(value) : (placeholder ?? t('Chọn')))}</span>
                     </span>
                     <ChevronDownIcon className="size-4 shrink-0 text-faint" aria-hidden />
                 </button>
@@ -137,6 +140,7 @@ export function Combobox<TValue extends string | number>({
                                     close();
                                 }}
                             >
+                                {option.icon}
                                 <span className={cn('min-w-0 flex-1 truncate', mono && 'font-mono text-sm')}>{option.label}</span>
                                 {option.description && <span className="shrink-0 text-sm text-faint">{option.description}</span>}
                                 <CheckIcon className={cn('text-foreground', option.value !== value && 'invisible')} aria-hidden />

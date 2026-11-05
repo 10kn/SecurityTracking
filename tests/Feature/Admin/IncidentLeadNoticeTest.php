@@ -88,3 +88,19 @@ it('marks an incident whose every pre-notice is not security news', function () 
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('incident.is_dismissed', true));
 });
+
+it('does not mark an incident as news while the classifier has not read its pre-notices', function () {
+    actingAsAdmin();
+    $this->notice->update(['is_dismissed' => true, 'classified_by' => null, 'classified_severity' => null, 'severity' => Severity::Unknown, 'severity_basis' => null]);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('incident.is_dismissed', false));
+});
+
+it('tells a pre-notice the classifier dismissed from one it has not read', function () {
+    actingAsAdmin();
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('notices.0.is_classified', true));
+
+    $this->notice->update(['is_dismissed' => true, 'classified_by' => null]);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('notices.0.is_classified', false));
+});
