@@ -26,18 +26,36 @@ beforeEach(function () {
     ]);
 });
 
-it('explains the lead pre-notice with its AI summary, what gave its severity, its source and the classifier', function () {
+it('explains the lead pre-notice with its AI summary and its source, and says nothing more of a classifier that read it', function () {
     actingAsAdmin();
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice', [
             'summary' => ['text' => 'Bản RC4 sửa một lỗ hổng nghiêm trọng trong ext/phar.', 'is_ai' => true],
-            'severity_basis' => 'Mức do AI đánh giá',
             'url' => 'https://www.php.net/archive/2026.php#2026-10-20-2',
-            'classifier' => ['label' => 'AI đã phân loại tin này', 'tone' => 'neutral'],
+            'classifier' => null,
         ])
         ->where('notices.0.severity_basis', 'Mức do AI đánh giá'));
 });
+
+it('names what gave the incident its severity: CISA KEV, then the CVSS score, then the classifier, of the pre-notices at that severity', function (array $others, ?string $basis) {
+    actingAsAdmin();
+
+    foreach ($others as $attributes) {
+        Advisory::factory()->preNotice(Technology::Php)->create([...$attributes, 'published_at' => now()->subHour(), 'incident_id' => $this->incident->id]);
+    }
+
+    $this->incident->refreshFromNotices();
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page->where('incident.severity_basis', $basis));
+})->with([
+    'the classifier alone' => [[], 'Phân loại bởi AI'],
+    'CISA KEV at the same severity' => [[['severity' => Severity::Critical, 'severity_basis' => SeverityBasis::Kev]], 'CISA KEV'],
+    'a CVSS score at the same severity' => [[['severity' => Severity::Critical, 'severity_basis' => SeverityBasis::Cvss]], 'Điểm CVSS'],
+    'a CVSS score at a lower severity' => [[['severity' => Severity::High, 'severity_basis' => SeverityBasis::Cvss]], 'Phân loại bởi AI'],
+    'CISA KEV of a dismissed pre-notice' => [[['severity' => Severity::Critical, 'severity_basis' => SeverityBasis::Kev, 'is_dismissed' => true]], 'Phân loại bởi AI'],
+    'the vendor\'s words of an older rating' => [[['severity' => Severity::Critical, 'severity_basis' => SeverityBasis::Vendor]], 'Phân loại bởi AI'],
+]);
 
 it('falls back to the summary of the source while the classifier has not run', function () {
     actingAsAdmin();
@@ -45,7 +63,7 @@ it('falls back to the summary of the source while the classifier has not run', f
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice.summary', ['text' => 'The PHP team announces the fourth release candidate of PHP 8.6.0.', 'is_ai' => false])
-        ->where('incident.lead_notice.severity_basis', 'Mức theo trang chính thức PHP')
+        ->where('incident.severity_basis', 'Trang chính thức PHP')
         ->where('incident.lead_notice.classifier', ['label' => 'AI chưa phân loại tin này', 'tone' => 'unknown']));
 });
 
@@ -68,7 +86,7 @@ it('says nothing it does not know: no summary and no severity basis', function (
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
         ->where('incident.lead_notice.summary', null)
-        ->where('incident.lead_notice.severity_basis', null));
+        ->where('incident.severity_basis', null));
 });
 
 it('explains the most severe pre-notice that is not dismissed', function () {

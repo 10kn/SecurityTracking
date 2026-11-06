@@ -238,7 +238,7 @@ it('shows the incident with its notices, its teams and what the forms need', fun
             ->where('teams.1.is_actionable', true)
             ->where('teams.1.needs_acknowledgement', true)
             ->where('teams.1.told_severity.value', 'high')
-            ->where('teams.1.services.0', ['name' => 'shop-api', 'branch' => '8.3', 'scope' => 'chưa xác định', 'scope_hint' => IncidentScope::Unknown->getDescription(), 'is_not_affected' => false, 'patch' => null])
+            ->where('teams.1.services.0', ['name' => 'shop-api', 'branch' => '8.3', 'versions' => ['8.3.35'], 'scope' => 'chưa xác định', 'scope_hint' => IncidentScope::Unknown->getDescription(), 'is_not_affected' => false, 'patch' => null, 'is_patched' => false])
             ->where('teams.1.thread.status.label', 'Đã mở thread')
             ->where('teams.1.thread.url', fn (string $url): bool => str_starts_with($url, 'https://chat.google.com/room/COMMERCE/'))
             ->where('teams.1.exposure_hash', IncidentTeamExposure::for($this->incident, $this->commerce)->hash())
@@ -252,6 +252,25 @@ it('shows the incident with its notices, its teams and what the forms need', fun
             ])
             ->where('update.request_id', fn (string $id): bool => Str::isUuid($id)));
 });
+
+it('shows the version each service runs, and whether it runs the fix of its branch already', function (string $version, bool $isPatched) {
+    actingAsAdmin();
+    RuntimeRelease::factory()->security()->create(['technology' => Technology::Php, 'branch' => '8.3', 'version' => '8.3.36']);
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+    pageRuntime(Team::factory()->create(['name' => 'Ops']), 'ops-api', $version);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.2.name', 'Ops')
+        ->where('teams.2.services.0.versions', [$version])
+        ->where('teams.2.services.0.patch', '8.3.36')
+        ->where('teams.2.services.0.is_patched', $isPatched)
+        ->where('teams.0.services.0.patch', null)
+        ->where('teams.0.services.0.is_patched', false));
+})->with([
+    'an older release' => ['8.3.35', false],
+    'the fix' => ['8.3.36', true],
+    'a later release' => ['8.3.40', true],
+]);
 
 it('opens the incident a merged one went into', function () {
     actingAsAdmin();

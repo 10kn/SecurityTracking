@@ -172,9 +172,11 @@ class SyncNoticeFeed
     }
 
     /**
-     * The severity is the highest of the classifier, the CVSS score the entry gives and CISA KEV listing one of its CVE
-     * ids (see MatchKnownExploited). An entry is security news when the classifier says so, or its CVSS score or a KEV
-     * listing does: one the classifier never read is dismissed until it does, so it waits for it. Without a new
+     * The severity comes from the first that rates the entry of CISA KEV listing one of its CVE ids (see
+     * MatchKnownExploited), the CVSS score the entry gives and the classifier, even when a later one rates it higher
+     * (see SeverityBasis::precedence()). A severity that falls once the vendor adds a score tells no team again (see
+     * SendPreNoticeAlerts). An entry is security news when the classifier says so, or its CVSS score or a KEV listing
+     * does: one the classifier never read is dismissed until it does, so it waits for it. Without a new
      * classification, the previous one is kept, the versions it read to update to included. The KEV evidence is kept
      * apart from what the classifier read in the entry (`is_exploited`), so polling again never drops it.
      *
@@ -212,18 +214,16 @@ class SyncNoticeFeed
 
         $cvssScore = $entry->cvssScore();
         $isDismissed = $advisory->classified_by === null || $advisory->is_dismissed;
-        $ratings = [
+        $ratings = collect([
+            SeverityBasis::Kev->value => $advisory->isKnownExploited() ? $this->knownExploitation->severity() : Severity::Unknown,
             SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
             SeverityBasis::Classifier->value => $advisory->classified_severity ?? Severity::Unknown,
-            SeverityBasis::Kev->value => $advisory->isKnownExploited() ? $this->knownExploitation->severity() : Severity::Unknown,
-        ];
-        $basis = collect($ratings)
+        ])
             ->reject(fn (Severity $severity): bool => $severity === Severity::Unknown)
-            ->sortByDesc(fn (Severity $severity): int => $severity->rank())
-            ->keys()
-            ->first();
-        $severity = $basis === null ? Severity::Unknown : $ratings[$basis];
-        $withoutKev = collect($ratings)->except(SeverityBasis::Kev->value)->sortByDesc(fn (Severity $rating): int => $rating->rank())->first();
+            ->sortByDesc(fn (Severity $severity, string $basis): int => SeverityBasis::from($basis)->precedence());
+        $basis = $ratings->keys()->first();
+        $severity = $ratings->first() ?? Severity::Unknown;
+        $withoutKev = $ratings->except(SeverityBasis::Kev->value)->first() ?? Severity::Unknown;
 
         $advisory->fill([
             'kind' => AdvisoryKind::PreNotice,
@@ -232,7 +232,7 @@ class SyncNoticeFeed
             'severity' => $severity,
             'severity_basis' => $basis,
             'severity_before_kev' => $basis === SeverityBasis::Kev->value ? $withoutKev : null,
-            'is_dismissed' => $isDismissed && $ratings[SeverityBasis::Cvss->value] === Severity::Unknown && ! $advisory->isKnownExploited(),
+            'is_dismissed' => $isDismissed && ! $ratings->has(SeverityBasis::Cvss->value) && ! $advisory->isKnownExploited(),
             'cvss_score' => $cvssScore,
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,

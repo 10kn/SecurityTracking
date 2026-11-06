@@ -388,6 +388,23 @@ it('classifies an entry again only when the vendor edits it', function () {
         ->and($classified[6])->toBe('Upcoming Critical PHP Security Release');
 });
 
+it('rates an entry by its CVSS score before the classifier, higher or lower, and by the classifier without one', function (string $score, Severity $classified, Severity $severity) {
+    Http::fake([PhpNetNoticeFeed::URL => Http::response(str_replace('CVSS v4.0 9.2', "CVSS v4.0 {$score}", noticeFixture('php-feed.atom')))]);
+    classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: $classified));
+
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::where('title', 'Upcoming Critical PHP Security Release')->sole())
+        ->severity->toBe($severity)
+        ->severity_basis->toBe(SeverityBasis::Cvss)
+        ->and(Advisory::where('title', 'Dutch PHP Conference 2027')->sole())
+        ->severity->toBe($classified)
+        ->severity_basis->toBe(SeverityBasis::Classifier);
+})->with([
+    'a lower CVSS score' => ['5.3', Severity::Critical, Severity::Medium],
+    'a higher CVSS score' => ['9.2', Severity::Low, Severity::Critical],
+]);
+
 it('lets the classifier rate an entry, but not lower its CVSS score', function () {
     fakeNoticeFeeds();
     classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => new NoticeClassification(

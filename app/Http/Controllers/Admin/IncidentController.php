@@ -7,6 +7,7 @@ use App\Enums\IncidentImpact;
 use App\Enums\IncidentScope;
 use App\Enums\IncidentTeamEventType;
 use App\Enums\Severity;
+use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Http\Controllers\Controller;
 use App\Models\Advisory;
@@ -17,17 +18,20 @@ use App\Models\IncidentSuggestion;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamEvent;
 use App\Models\IncidentTeamNotice;
+use App\Models\Runtime;
 use App\Models\Team;
 use App\Services\IncidentFindings;
 use App\Services\IncidentOverview;
 use App\Support\LocalTime;
 use App\Support\TableQuery;
+use App\Support\Version;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -139,6 +143,7 @@ class IncidentController extends Controller
                 'planned_release' => LocalTime::format($incident->planned_release_at),
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
+                'severity_basis' => $this->severityBasis($incident, $notices),
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
                 'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->sortByDesc(fn (array $entry): bool => (bool) ($entry['listed'] ?? false))->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
@@ -239,10 +244,11 @@ class IncidentController extends Controller
 
     /**
      * The lead pre-notice explained: its summary, the AI one (written in the alerts language, not the viewer's) else
-     * the source's; what gave it its severity; its source; and where the classifier stands. A classifier that failed
-     * keeps an earlier result only when it had one; one that classified the entry may have read an earlier text.
+     * the source's; its source; and the classifier when it has not read the entry or failed to. A classifier that
+     * failed keeps an earlier result only when it had one. One that read the entry wrote the AI summary in the same
+     * step, so the summary says it already.
      *
-     * @return array{summary: array{text: string, is_ai: bool}|null, severity_basis: string|null, url: string|null, classifier: array{label: string, tone: string}}|null
+     * @return array{summary: array{text: string, is_ai: bool}|null, url: string|null, classifier: array{label: string, tone: string}|null}|null
      */
     private function leadNotice(?Advisory $notice): ?array
     {
@@ -256,13 +262,12 @@ class IncidentController extends Controller
                 filled($notice->summary) => ['text' => (string) $notice->summary, 'is_ai' => false],
                 default => null,
             },
-            'severity_basis' => $notice->severity_basis?->getLabel($notice->technology),
             'url' => $notice->url,
             'classifier' => match (true) {
                 $notice->classification_failed_at !== null && $notice->classified_by !== null => ['label' => __('AI phân loại lại bị lỗi, đang giữ kết quả lần trước'), 'tone' => 'danger'],
                 $notice->classification_failed_at !== null => ['label' => __('AI phân loại tin này bị lỗi'), 'tone' => 'danger'],
                 $notice->classified_by === null => ['label' => __('AI chưa phân loại tin này'), 'tone' => 'unknown'],
-                default => ['label' => __('AI đã phân loại tin này'), 'tone' => 'neutral'],
+                default => null,
             },
         ];
     }
@@ -299,7 +304,8 @@ class IncidentController extends Controller
     }
 
     /**
-     * A team of the incident page: its services with their branch, scope and fix, what it was told, its Google Chat
+     * A team of the incident page: its services with their branch, the versions they run, scope and fix, and whether
+     * they all run the fix of their branch already (shown only: the assessment snapshot keeps neither), what it was told, its Google Chat
      * thread and what Google Chat accepted of it, its assessment and history, and what the form posts back for it (the
      * exposure hash and the assessment revision shown).
      *
@@ -313,14 +319,20 @@ class IncidentController extends Controller
         return [
             'id' => $team['team']->id,
             'name' => $team['team']->name,
-            'services' => array_map(fn (array $service): array => [
-                'name' => $service['service'],
-                'branch' => $service['branch'],
-                'scope' => IncidentScope::from($service['scope'])->getLabel(),
-                'scope_hint' => IncidentScope::from($service['scope'])->getDescription(),
-                'is_not_affected' => $service['scope'] === IncidentScope::NotAffected->value,
-                'patch' => $service['patch'],
-            ], $team['exposure']->services),
+            'services' => array_map(function (array $service) use ($team): array {
+                $versions = $this->runningVersions($team['runtimes'], $service);
+
+                return [
+                    'name' => $service['service'],
+                    'branch' => $service['branch'],
+                    'versions' => $versions,
+                    'scope' => IncidentScope::from($service['scope'])->getLabel(),
+                    'scope_hint' => IncidentScope::from($service['scope'])->getDescription(),
+                    'is_not_affected' => $service['scope'] === IncidentScope::NotAffected->value,
+                    'patch' => $service['patch'],
+                    'is_patched' => $service['patch'] !== null && $versions !== [] && collect($versions)->every(fn (string $version): bool => ! Version::isNewer($service['patch'], $version)),
+                ];
+            }, $team['exposure']->services),
             'told_severity' => $team['told_severity'] === null ? null : $this->severity($team['told_severity']),
             'is_told' => $team['is_told'],
             'is_running' => $team['is_running'],
@@ -359,6 +371,26 @@ class IncidentController extends Controller
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * The versions the team's runtimes of the service run on the branch, naturally sorted: a service on several
+     * deployments may run more than one. A runtime whose version is not known gives none.
+     *
+     * @param  Collection<int, Runtime>  $runtimes  The team's runtimes of the technology, with `deployment`.
+     * @param  array{service_id: int, branch: string}  $service  A service of the team's exposure (see IncidentTeamExposure).
+     * @return list<string>
+     */
+    private function runningVersions(Collection $runtimes, array $service): array
+    {
+        return $runtimes
+            ->filter(fn (Runtime $runtime): bool => $runtime->deployment->service_id === $service['service_id'] && (string) ($runtime->branch ?? $runtime->version ?? $runtime->raw_version) === $service['branch'])
+            ->map(fn (Runtime $runtime): ?string => $runtime->version)
+            ->filter()
+            ->unique()
+            ->sort(SORT_NATURAL)
+            ->values()
+            ->all();
     }
 
     /**
@@ -480,6 +512,23 @@ class IncidentController extends Controller
     private function severity(Severity $severity): array
     {
         return ['value' => $severity->value, 'label' => $severity->getLabel()];
+    }
+
+    /**
+     * What gave the incident its severity, shown beside it: of its pre-notices at that severity that were not dismissed,
+     * the basis that comes first (see SeverityBasis::precedence()). Null when no basis rates it.
+     *
+     * @param  Collection<int, Advisory>  $notices
+     */
+    private function severityBasis(Incident $incident, Collection $notices): ?string
+    {
+        return $notices
+            ->filter(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->severity === $incident->severity)
+            ->pluck('severity_basis')
+            ->filter()
+            ->sortByDesc(fn (SeverityBasis $basis): int => $basis->precedence())
+            ->first()
+            ?->getSourceLabel($incident->technology);
     }
 
     /**

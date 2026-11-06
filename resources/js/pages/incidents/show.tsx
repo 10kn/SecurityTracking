@@ -90,7 +90,7 @@ interface Delivery {
 interface TeamRow {
     id: number;
     name: string;
-    services: { name: string; branch: string; scope: string; scope_hint: string; is_not_affected: boolean; patch: string | null }[];
+    services: { name: string; branch: string; versions: string[]; scope: string; scope_hint: string; is_not_affected: boolean; patch: string | null; is_patched: boolean }[];
     told_severity: Severity | null;
     is_told: boolean;
     is_running: boolean;
@@ -125,14 +125,14 @@ interface Props {
         planned_release: string | null;
         affected_branches: string[];
         unaffected_branches: string[];
+        severity_basis: string | null;
         is_exploited: boolean;
         known_exploited: KnownExploited[];
         merged_from: { id: number; title: string }[];
         lead_notice: {
             summary: { text: string; is_ai: boolean } | null;
-            severity_basis: string | null;
             url: string | null;
-            classifier: StatusDotData;
+            classifier: StatusDotData | null;
         } | null;
     };
     notices: Notice[];
@@ -188,14 +188,14 @@ function SecurityDetails({ incident }: { incident: Props['incident'] }) {
     return (
         <>
             <Detail
-                label={t('Mức cao nhất')}
+                label={t('Mức cảnh báo')}
                 hint={t(
-                    'Mức cao nhất trong các tin của sự kiện, không tính tin được xếp là “Không phải tin bảo mật”. Mức lấy theo trang chính thức, điểm CVSS, CISA KEV hoặc do AI đánh giá; nguồn của mức ghi ngay dưới phần tóm tắt.',
+                    'Mức cao nhất trong các tin của sự kiện, không tính tin được xếp là “Không phải tin bảo mật”. Mỗi tin lấy mức theo thứ tự ưu tiên: CISA KEV, rồi điểm CVSS hãng ghi trong tin, rồi phân loại bởi AI. Nguồn của mức ghi ngay bên cạnh.',
                 )}
             >
                 <SeverityBadge severity={incident.severity} />
+                {incident.severity_basis && <span className="ml-2 text-sm text-muted-foreground">{incident.severity_basis}</span>}
                 {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
-                {incident.is_known_exploited && <StatusDot status={{ label: 'CISA KEV', tone: 'danger' }} className="ml-2" />}
             </Detail>
             <Detail label={t('Bản vá')}>
                 <FixStatus incident={incident} />
@@ -227,9 +227,8 @@ function SecurityDetails({ incident }: { incident: Props['incident'] }) {
 }
 
 /**
- * The lead pre-notice explained: the AI summary or the source's, labelled as such, what gave it its severity (not why it
- * is that severe), its source and where the classifier stands. An incident that is not security news says so instead
- * of its severity.
+ * The lead pre-notice explained: the AI summary or the source's, labelled as such, its source, and the classifier when
+ * it has not read the pre-notice or failed to. An incident that is not security news says so.
  */
 function LeadNotice({ notice, isDismissed }: { notice: NonNullable<Props['incident']['lead_notice']>; isDismissed: boolean }) {
     const t = useTranslation();
@@ -238,20 +237,20 @@ function LeadNotice({ notice, isDismissed }: { notice: NonNullable<Props['incide
         <div className="mb-5 border-b border-border pb-5">
             <p className="text-sm text-muted-foreground">{notice.summary === null ? t('Chưa có tóm tắt') : notice.summary.is_ai ? t('Tóm tắt do AI tạo') : t('Tóm tắt của nguồn')}</p>
             {notice.summary && <p className="mt-1 max-w-[80ch] whitespace-pre-line">{notice.summary.text}</p>}
-            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                {isDismissed ? (
-                    <span className="inline-flex items-center gap-1">
-                        <span className="inline-flex h-6 items-center rounded-[5px] bg-neutral-soft px-2 text-xs font-medium whitespace-nowrap">{t('Tin tức, không phải tin bảo mật')}</span>
-                        <HelpTip label={t('Tin tức, không phải tin bảo mật')}>
-                            {t('Mọi tin của sự kiện này đều được xếp là không phải tin bảo mật, nên không có mức độ, nhánh bị ảnh hưởng hay bản vá, và không còn được báo cho team. Thẻ đã gửi trước khi tin được xếp lại vẫn còn trong Google Chat.')}
-                        </HelpTip>
-                    </span>
-                ) : (
-                    <span>{notice.severity_basis ?? t('Chưa xác định mức độ')}</span>
-                )}
-                <StatusDot status={notice.classifier} />
-                {notice.url && <ExternalLink href={notice.url}>{t('Xem nguồn')}</ExternalLink>}
-            </p>
+            {(isDismissed || notice.classifier || notice.url) && (
+                <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    {isDismissed && (
+                        <span className="inline-flex items-center gap-1">
+                            <span className="inline-flex h-6 items-center rounded-[5px] bg-neutral-soft px-2 text-xs font-medium whitespace-nowrap">{t('Tin tức, không phải tin bảo mật')}</span>
+                            <HelpTip label={t('Tin tức, không phải tin bảo mật')}>
+                                {t('Mọi tin của sự kiện này đều được xếp là không phải tin bảo mật, nên không có mức độ, nhánh bị ảnh hưởng hay bản vá, và không còn được báo cho team. Thẻ đã gửi trước khi tin được xếp lại vẫn còn trong Google Chat.')}
+                            </HelpTip>
+                        </span>
+                    )}
+                    {notice.classifier && <StatusDot status={notice.classifier} />}
+                    {notice.url && <ExternalLink href={notice.url}>{t('Xem nguồn')}</ExternalLink>}
+                </p>
+            )}
         </div>
     );
 }
@@ -579,12 +578,13 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                                     {team.services.length === 0
                                         ? '—'
                                         : team.services.map((service) => (
-                                              <span key={`${service.name}-${service.branch}`} className={cn('block', service.is_not_affected && 'text-muted-foreground')}>
-                                                  <span className="font-medium">{service.name}</span> · <span className="font-mono">{service.branch}</span> ·{' '}
+                                              <span key={`${service.name}-${service.branch}`} className={cn('block', (service.is_not_affected || service.is_patched) && 'text-muted-foreground')}>
+                                                  <span className="font-medium">{service.name}</span> ·{' '}
+                                                  <span className="font-mono">{service.versions.length > 0 ? service.versions.join(', ') : service.branch}</span> ·{' '}
                                                   <span className="whitespace-nowrap">
                                                       {service.scope} <HelpTip label={service.scope}>{service.scope_hint}</HelpTip>
                                                   </span>
-                                                  {service.patch && <span className="font-mono"> · {t('vá :version', { version: service.patch })}</span>}
+                                                  {service.patch && (service.is_patched ? <> · {t('đã vá')}</> : <span className="font-mono"> · {t('cần lên :version', { version: service.patch })}</span>)}
                                               </span>
                                           ))}
                                 </Td>

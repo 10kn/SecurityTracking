@@ -117,7 +117,8 @@ it('tells the team in the incident thread once CISA KEV lists the CVEs after the
         ->and(IncidentTeam::whereNotNull('told_known_exploited')->sole()->told_known_exploited)->toBe(['CVE-2026-109618', 'CVE-2026-109619'])
         ->and(Advisory::where('title', 'like', 'Security advisory%')->sole())
         ->severity->toBe(Severity::Critical)
-        ->severity_basis->toBe(SeverityBasis::Classifier)
+        ->severity_basis->toBe(SeverityBasis::Kev)
+        ->severity_before_kev->toBe(Severity::Critical)
         ->and(Advisory::where('title', 'like', 'Security advisory%')->sole()->known_exploited)->toEqual([
             ['cve' => 'CVE-2026-109618', 'name' => 'PHP Memory Corruption Vulnerability', 'date_added' => '2026-10-26', 'due_date' => '2026-10-29', 'listed' => true],
             ['cve' => 'CVE-2026-109619', 'name' => 'PHP Stale Internal Request-State Vulnerability', 'date_added' => '2026-10-26', 'due_date' => '2026-10-29', 'listed' => true],
@@ -181,6 +182,21 @@ it('raises a pre-notice the vendor did not rate to the KEV severity, saying CISA
         ->severity->toBe(Severity::Critical)
         ->severity_basis->toBe(SeverityBasis::Kev)
         ->and($notice->incident->severity)->toBe(Severity::Critical);
+});
+
+it('gives a pre-notice the KEV severity before the one it had, also a higher one, and keeps that one apart', function () {
+    $this->travelTo('2026-10-27 10:00:00');
+    config(['psm.kev.severity' => 'high']);
+    $notice = kevNotice(['CVE-2026-109618'], attributes: ['severity' => Severity::Critical, 'severity_basis' => SeverityBasis::Classifier]);
+    fakeKevCatalog();
+
+    artisan('psm:sync-kev')->assertSuccessful();
+    artisan('psm:sync-kev')->assertSuccessful();
+
+    expect($notice->refresh())
+        ->severity->toBe(Severity::High)
+        ->severity_basis->toBe(SeverityBasis::Kev)
+        ->severity_before_kev->toBe(Severity::Critical);
 });
 
 it('sends a first card about an old incident once CISA adds its CVE, to a team that runs no fix yet', function (string $dateAdded, int $cards) {
