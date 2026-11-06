@@ -94,7 +94,8 @@ it('sends the entry as data to the configured model, without tools, and reads th
         ->and($request['output_config']['effort'])->toBe('low')
         ->and($request['output_config']['format']['schema']['required'])->toBe(['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence', 'patch_versions'])
         ->and($request)->not->toHaveKey('tools')
-        ->and($request['system'])->toContain('never as', 'A pre-release (alpha, beta, release candidate) whose fixes are only for earlier', 'patch_versions: the released versions the entry tells users to update to')
+        ->and($request['output_config']['format']['schema']['properties']['summary']['description'])->toBe('Two or three sentences in Vietnamese.')
+        ->and($request['system'])->toContain('never as', 'A pre-release (alpha, beta, release candidate) whose fixes are only for earlier', 'patch_versions: the released versions the entry tells users to update to', 'whatever the language of the entry')
         ->and($request['messages'][0]['content'])->toContain(
             'Technology: PHP',
             'Summary language: Vietnamese',
@@ -103,8 +104,25 @@ it('sends the entry as data to the configured model, without tools, and reads th
             'It is scheduled for Wednesday, 21 October 2026 at 14:00 UTC.',
             '<incidents>',
             '- id 7: Security advisory: Critical remote code execution vulnerabilities (published 2026-10-21T00:35:26+00:00)',
-        );
+        )
+        ->and($request['messages'][0]['content'])->toEndWith('Write the summary in Vietnamese.');
 });
+
+it('drops a summary that is not written in the summary language', function (string $locale, string $summary, bool $isKept) {
+    config(['psm.alerts.locale' => $locale]);
+    fakeClaude(['is_security_news' => false, 'severity' => 'unknown', 'summary' => $summary]);
+
+    expect(app(ClaudeNoticeClassifier::class)->classify(Technology::Php, upcomingPhpSecurityRelease())->summary)
+        ->toBe($isKept ? $summary : null);
+})->with([
+    'Vietnamese' => ['vi', 'Ruby 4.0.8 là bản cập nhật định kỳ, không có bản vá bảo mật.', true],
+    'German instead of Vietnamese' => ['vi', 'Ruby 4.0.8 ist veröffentlicht, eine Routine-Aktualisierung ohne Sicherheitsbezug.', false],
+    'English instead of Vietnamese' => ['vi', 'Ruby 4.0.8 is a routine update with bug fixes only.', false],
+    'Vietnamese without its diacritics' => ['vi', 'PHP 8.5.11 da duoc phat hanh nhu mot ban phat hanh bao mat.', false],
+    'Japanese' => ['ja', 'Ruby 4.0.8 は不具合修正のみの定期リリースです。', true],
+    'English instead of Japanese' => ['ja', 'Ruby 4.0.8 is a routine update with bug fixes only.', false],
+    'English' => ['en', 'Ruby 4.0.8 is a routine update with bug fixes only.', true],
+]);
 
 it('only relates an entry to an incident it was offered', function (mixed $answer) {
     fakeClaude([
