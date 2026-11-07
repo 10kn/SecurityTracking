@@ -97,8 +97,13 @@ export interface SavedService {
     lockfile_sync: LockfileSync | null;
 }
 
+/** A counter, not crypto.randomUUID(): that only exists on HTTPS or localhost, and the key only has to be unique on the page. */
+let lastRuntimeRowKey = 0;
+
 export function newRuntimeRow(technology: string | null = null, rawVersion = ''): RuntimeRow {
-    return { key: crypto.randomUUID(), technology, raw_version: rawVersion };
+    lastRuntimeRowKey += 1;
+
+    return { key: `runtime-${lastRuntimeRowKey}`, technology, raw_version: rawVersion };
 }
 
 /** The form data as the server expects it: runtimes without their React keys. */
