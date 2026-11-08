@@ -27,7 +27,7 @@ class User extends Authenticatable
      */
     protected $attributes = [
         'is_admin' => false,
-        'theme' => 'graphite',
+        'theme' => 'ocean',
         'locale' => 'vi',
     ];
 

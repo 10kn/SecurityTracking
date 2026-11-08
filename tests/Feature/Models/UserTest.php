@@ -21,10 +21,10 @@ it('forbids team members who are not admins from the admin panel', function () {
         ->assertForbidden();
 });
 
-it('defaults new users to the graphite theme and the vietnamese locale', function () {
+it('defaults new users to the ocean theme and the vietnamese locale', function () {
     $user = User::factory()->create()->refresh();
 
-    expect($user->theme)->toBe(Theme::Graphite)
+    expect($user->theme)->toBe(Theme::Ocean)
         ->and($user->locale)->toBe(Locale::Vietnamese);
 });
 

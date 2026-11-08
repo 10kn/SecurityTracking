@@ -18,7 +18,7 @@ enum Theme: string
     {
         $user = auth()->user();
 
-        return $user instanceof User ? $user->theme : self::Graphite;
+        return $user instanceof User ? $user->theme : self::Ocean;
     }
 
     public function getLabel(): string
