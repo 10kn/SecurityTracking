@@ -1,7 +1,9 @@
+import { Link } from '@inertiajs/react';
+
+import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { StatusDot } from '@/components/admin/status-dot';
 import { TechnologyName } from '@/components/admin/technology-logo';
 import { useTranslation } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import type { StatusDotData } from '@/types';
 
 export interface ServiceRow {
@@ -101,6 +103,15 @@ export function LockfilesCell({ lockfiles, syncError }: { lockfiles: ServiceRow[
     );
 }
 
-export function OpenFindingsCell({ count }: { count: number }) {
-    return <span className={cn(count > 0 ? 'font-medium text-danger-text' : 'text-faint')}>{count}</span>;
+/** The open findings of the service, linking to them on the findings page. */
+export function OpenFindingsCell({ count, serviceId }: { count: number; serviceId: number }) {
+    if (count === 0) {
+        return <span className="text-faint">{count}</span>;
+    }
+
+    return (
+        <Link href={findingsIndex.url({ query: { service: serviceId } })} className="font-medium text-danger-text underline-offset-4 hover:underline">
+            {count}
+        </Link>
+    );
 }

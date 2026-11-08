@@ -31,6 +31,10 @@ return [
     | `news_webhook`, whether or not a team runs its technology, or to the admin space when it is not set. Messages are
     | written in `locale`, whatever language the admin who triggered them uses.
     |
+    | A service with at least `lockfile_summary_threshold` vulnerable packages (distinct advisories) to send in one
+    | run, e.g. a new service or a large lockfile change, gets one short card saying how many and the highest severity
+    | instead of one card per advisory; CISA KEV ones still get their own card. 0 turns the summary off.
+    |
     | Each finding has a handling deadline of `deadline_days` after it is first seen, by severity (calendar days). A
     | rise in severity can only bring it forward. An admin marks a finding as read ("Đã đọc") to stop its daily
     | reminder; it is reminded once more when the deadline passes.
@@ -58,6 +62,7 @@ return [
             'runtime_outdated_security' => env('PSM_SEVERITY_RUNTIME_OUTDATED_SECURITY', 'high'),
         ],
         'immediate_dev_dependencies' => (bool) env('PSM_IMMEDIATE_DEV_DEPENDENCIES', false),
+        'lockfile_summary_threshold' => (int) env('PSM_LOCKFILE_SUMMARY_THRESHOLD', 3),
         'tries' => (int) env('PSM_ALERT_TRIES', 5),
         'retry_hours' => (int) env('PSM_ALERT_RETRY_HOURS', 24),
         'backoff_seconds' => [60, 300, 900, 3600],

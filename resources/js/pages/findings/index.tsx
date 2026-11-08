@@ -35,17 +35,21 @@ interface FindingRow {
 
 interface Props {
     findings: Paginated<FindingRow>;
-    table: TableState & { team: number | null; status: string | null; priority: number | null; ids: string | null };
+    table: TableState & { team: number | null; project: number | null; service: number | null; status: string | null; priority: number | null; ids: string | null };
     teams: Option<number>[];
+    /** The projects of the team picked, or every project. */
+    projects: Option<number>[];
+    /** The services of the project picked; none until one is. */
+    services: Option<number>[];
     statuses: Option<string>[];
 }
 
-export default function FindingsIndex({ findings, table, teams, statuses }: Props) {
+export default function FindingsIndex({ findings, table, teams, projects, services, statuses }: Props) {
     const t = useTranslation();
-    const query = useTableQuery(table, ['findings']);
+    const query = useTableQuery(table, ['findings', 'projects', 'services']);
     const [selected, setSelected] = useState<number[]>([]);
     const [isSaving, setIsSaving] = useState(false);
-    const isFiltered = table.search !== '' || table.team !== null || table.status !== null || table.priority !== null || table.ids !== null;
+    const isFiltered = table.search !== '' || table.team !== null || table.project !== null || table.service !== null || table.status !== null || table.priority !== null || table.ids !== null;
     const unread = findings.data.filter((finding) => finding.acknowledged === null);
     const isAllSelected = unread.length > 0 && unread.every((finding) => selected.includes(finding.id));
 
@@ -79,7 +83,9 @@ export default function FindingsIndex({ findings, table, teams, statuses }: Prop
                 <CardHeader>
                     <div className="flex flex-1 flex-wrap items-center gap-2">
                         <TableSearch value={table.search} placeholder={t('Tìm finding')} onSearch={(search) => query({ search })} />
-                        <TableFilter value={table.team} label={t('Team')} allLabel={t('Mọi team')} options={teams} onChange={(team) => query({ team })} />
+                        <TableFilter value={table.team} label={t('Team')} allLabel={t('Mọi team')} options={teams} onChange={(team) => query({ team, project: null, service: null })} />
+                        <TableFilter value={table.project} label={t('Project')} allLabel={t('Mọi project')} options={projects} onChange={(project) => query({ project, service: null })} />
+                        {table.project !== null && <TableFilter value={table.service} label={t('Service')} allLabel={t('Mọi service')} options={services} onChange={(service) => query({ service })} />}
                         <TableFilter value={table.status} label={t('Trạng thái')} allLabel={t('Mọi trạng thái')} options={statuses} onChange={(status) => query({ status })} />
                         <TableFilter
                             value={table.priority}

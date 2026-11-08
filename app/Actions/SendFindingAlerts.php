@@ -11,6 +11,7 @@ use App\Models\Incident;
 use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\Project;
+use App\Models\Service;
 use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
@@ -27,6 +28,9 @@ use Illuminate\Support\Traits\Localizable;
  * service gets the same issue; the daily digest is the reminder. Running it again sends nothing new. A "thiếu bản vá"
  * finding a "Đã có bản vá" card stands for counts as sent without a card of its own (see isToldByIncident()), and a
  * new one may wait a few hours for that card (see isHeldForVendorPatch()).
+ *
+ * A service with many vulnerable packages to send at once, e.g. a new one, gets one short summary card instead of a
+ * card per advisory (see reachesSummaryThreshold()); those listed by CISA KEV still get their own.
  *
  * The findings of a paused project are neither sent nor counted as sent (see Finding::monitored()): the team's
  * projects are share-locked while a card is queued, so pausing one waits for it, or the card for the pause.
@@ -60,7 +64,7 @@ class SendFindingAlerts
             ->monitored()
             ->whereIn('severity', config('psm.alerts.immediate_severities'))
             ->where(fn ($query) => $query->whereNull('notified_severity')->orWhereColumn('notified_severity', '!=', 'severity'))
-            ->with('runtime')
+            ->with(['runtime', 'deployment'])
             ->get()
             ->filter(fn (Finding $finding): bool => $this->policy->awaitsImmediateAlert($finding))
             ->partition(fn (Finding $finding): bool => $this->isToldByIncident($finding));
@@ -70,11 +74,84 @@ class SendFindingAlerts
             ->where('context->covered_by_patch_id', $finding->context['covered_by_patch_id'])
             ->update(['notified_severity' => $finding->severity, 'notified_at' => now()]));
 
-        $groups = $pending
-            ->reject(fn (Finding $finding): bool => $this->isHeldForVendorPatch($finding))
-            ->groupBy(fn (Finding $finding): string => "{$finding->team_id}|{$finding->group_key}");
+        $pending = $pending->reject(fn (Finding $finding): bool => $this->isHeldForVendorPatch($finding));
 
-        return $groups->sum(fn (Collection $findings): int => (int) $this->send($findings->first()->team_id, $findings->first()->group_key));
+        $summaries = $pending
+            ->filter(fn (Finding $finding): bool => $this->isSummarizable($finding))
+            ->groupBy(fn (Finding $finding): string => "{$finding->team_id}|{$finding->deployment->service_id}")
+            ->filter(fn (Collection $findings): bool => $this->reachesSummaryThreshold($findings))
+            ->sum(fn (Collection $findings): int => (int) $this->sendLockfileSummary($findings->first()->team_id, $findings->first()->deployment->service_id));
+
+        // The findings a summary stood for are sent now, so their issues' cards leave them out of what is new (see send()).
+        $groups = $pending->groupBy(fn (Finding $finding): string => "{$finding->team_id}|{$finding->group_key}");
+
+        return $summaries + $groups->sum(fn (Collection $findings): int => (int) $this->send($findings->first()->team_id, $findings->first()->group_key));
+    }
+
+    /**
+     * One card for the vulnerable packages of a service (see reachesSummaryThreshold()), read again under the same
+     * locks as send(): a run that sent some of them meanwhile may leave too few for a summary, and the rest then get
+     * their issues' cards. The findings are locked in id order, as in send(), so the two never wait on each other.
+     */
+    private function sendLockfileSummary(int $teamId, int $serviceId): bool
+    {
+        return DB::transaction(function () use ($teamId, $serviceId): bool {
+            Project::where('team_id', $teamId)->orderBy('id')->sharedLock()->pluck('id');
+
+            $pending = Finding::open()
+                ->monitored()
+                ->where('team_id', $teamId)
+                ->where('rule', FindingRule::DependencyVulnerable)
+                ->whereHas('deployment', fn ($query) => $query->where('service_id', $serviceId))
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (Finding $finding): bool => $this->policy->awaitsImmediateAlert($finding) && ! $this->isToldByIncident($finding));
+
+            [$summarized, $knownExploited] = $pending->partition(fn (Finding $finding): bool => $this->isSummarizable($finding));
+
+            if (! $this->reachesSummaryThreshold($summarized)) {
+                return false;
+            }
+
+            $team = Team::findOrFail($teamId);
+            $service = Service::with('project')->findOrFail($serviceId);
+
+            $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->lockfileSummary(
+                $team,
+                $service,
+                $summarized,
+                $knownExploited->pluck('group_key')->unique()->count(),
+            ));
+
+            $this->queueChatNotification->handle($team, ChatNotificationKind::Immediate, $this->dedupeKey($teamId, "lockfile-summary:{$serviceId}", $summarized), $payload);
+
+            $summarized->each(fn (Finding $finding) => $finding->update(['notified_severity' => $finding->severity, 'notified_at' => now()]));
+
+            return true;
+        });
+    }
+
+    /**
+     * A vulnerable package can go into a service's summary; one CISA KEV lists a CVE of keeps its own card, which
+     * lists every service exploited the same way.
+     */
+    private function isSummarizable(Finding $finding): bool
+    {
+        return $finding->rule === FindingRule::DependencyVulnerable && ! $finding->isKnownExploited();
+    }
+
+    /**
+     * Whether a service's findings to send are enough advisories for one summary (`psm.alerts.lockfile_summary_threshold`).
+     * Advisories are counted, not findings: one advisory in several environments of the service is still one card.
+     *
+     * @param  Collection<int, Finding>  $findings
+     */
+    private function reachesSummaryThreshold(Collection $findings): bool
+    {
+        $threshold = (int) config('psm.alerts.lockfile_summary_threshold');
+
+        return $threshold > 0 && $findings->pluck('group_key')->unique()->count() >= $threshold;
     }
 
     private function send(int $teamId, string $groupKey): bool
@@ -87,6 +164,7 @@ class SendFindingAlerts
                 ->where('team_id', $teamId)
                 ->where('group_key', $groupKey)
                 ->with(['deployment.service.project', 'runtime'])
+                ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
 

@@ -205,3 +205,95 @@ it('does not mark as sent a covered finding that lost its card after it was read
     expect($finding->refresh()->notified_severity)->toBeNull()
         ->and($finding->severity)->toBe(Severity::High);
 });
+
+/**
+ * Vulnerable packages of `$service`, one finding per advisory of `$advisories` on its production deployment.
+ *
+ * @param  list<string>  $advisories
+ * @return list<Finding>
+ */
+function packageFindingsAt(Team $team, string $service, array $advisories, array $attributes = []): array
+{
+    $deployment = Deployment::whereHas('service', fn ($query) => $query->where('name', $service))->first()
+        ?? Deployment::factory()->for(Service::factory()->for(Project::factory()->for($team)->state(['name' => 'Shop']))->state(['name' => $service]))->create();
+
+    return array_map(fn (string $advisory): Finding => Finding::factory()->for($deployment)->create([
+        'rule' => FindingRule::DependencyVulnerable,
+        'group_key' => "dependency_vulnerable:{$advisory}",
+        'title' => "{$advisory} trong lodash",
+        'context' => ['package' => 'lodash', 'advisory' => $advisory, 'detail' => 'lodash 4.17.20 · nâng lên 4.17.21 · package-lock.json'],
+        ...$attributes,
+    ]), $advisories);
+}
+
+it('sends one short card for a service with many vulnerable packages, with how many and the highest severity', function () {
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-1', 'GHSA-2', 'GHSA-3']);
+    $critical = packageFindingsAt($this->team, 'shop-web', ['GHSA-4'], ['severity' => Severity::Critical])[0];
+    $service = $critical->deployment->service;
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(1);
+
+    $message = chatMessagesTo('COMMERCE')->sole();
+    expect($message['text'])->toBe('[Critical] shop-web: phát hiện 4 lỗ hổng trong lockfile')
+        ->and(chatJson($message))->toContain('Project Shop. Mức cao nhất: Critical.', 'Xem findings', "/admin/findings?service={$service->id}")
+        ->not->toContain('GHSA-1', 'lodash 4.17.20')
+        ->and(Finding::whereNull('notified_at')->count())->toBe(0);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(0);
+});
+
+it('keeps one card per advisory below the threshold, counting advisories rather than environments', function () {
+    $finding = packageFindingsAt($this->team, 'shop-web', ['GHSA-1'])[0];
+    foreach (['staging', 'development'] as $environment) {
+        $deployment = $finding->deployment->service->deployments()->create(['environment' => $environment]);
+        Finding::factory()->for($deployment)->create(['rule' => FindingRule::DependencyVulnerable, 'group_key' => 'dependency_vulnerable:GHSA-1', 'title' => 'GHSA-1 trong lodash']);
+    }
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-2']);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(2)
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toContain('[High] GHSA-1 trong lodash', '[High] GHSA-2 trong lodash');
+});
+
+it('says how many findings the advisories are when the service has several environments', function () {
+    $findings = packageFindingsAt($this->team, 'shop-web', ['GHSA-1', 'GHSA-2', 'GHSA-3']);
+    $staging = $findings[0]->deployment->service->deployments()->create(['environment' => 'staging']);
+    Finding::factory()->for($staging)->create(['rule' => FindingRule::DependencyVulnerable, 'group_key' => 'dependency_vulnerable:GHSA-1']);
+
+    app(SendFindingAlerts::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('phát hiện 3 lỗ hổng trong lockfile', 'Gồm 4 finding trên các môi trường của service.');
+});
+
+it('sends the CISA KEV packages of a summarized service on their own card, listing every service exploited the same way', function () {
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-1', 'GHSA-2', 'GHSA-3']);
+    $knownExploited = ['known_exploited' => [['cve' => 'CVE-2026-4242', 'name' => 'lodash prototype pollution', 'date_added' => '2026-11-01', 'due_date' => '2026-11-22', 'listed' => true]]];
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-KEV'], ['severity' => Severity::Critical, 'context' => $knownExploited]);
+    packageFindingsAt($this->team, 'shop-api', ['GHSA-KEV'], ['severity' => Severity::Critical, 'context' => $knownExploited]);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(2);
+
+    [$summary, $exploited] = chatMessagesTo('COMMERCE')->all();
+    expect($summary['text'])->toBe('[High] shop-web: phát hiện 3 lỗ hổng trong lockfile')
+        ->and(chatJson($summary))->toContain('Ngoài ra 1 lỗ hổng có trong danh sách CISA KEV được cảnh báo riêng.')
+        ->and($exploited['text'])->toBe('[Critical] GHSA-KEV trong lodash')
+        ->and(chatJson($exploited))->toContain('2 service bị ảnh hưởng', 'shop-web', 'shop-api', 'CVE-2026-4242');
+});
+
+it('leaves a summarized service out of what is new on the card of an issue another service shares', function () {
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-1', 'GHSA-2', 'GHSA-3']);
+    packageFindingsAt($this->team, 'shop-api', ['GHSA-1']);
+    packageFindingsAt($this->team, 'shop-admin', ['GHSA-1'], ['notified_severity' => Severity::High, 'notified_at' => now()]);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(2);
+
+    $issue = chatJson(chatMessagesTo('COMMERCE')->last());
+    expect($issue)->toContain('3 service bị ảnh hưởng', 'shop-api</b> · mới', 'shop-web</b>"')
+        ->and(Finding::whereNull('notified_at')->count())->toBe(0);
+});
+
+it('sends one card per advisory when the summary is turned off', function () {
+    config(['psm.alerts.lockfile_summary_threshold' => 0]);
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-1', 'GHSA-2', 'GHSA-3']);
+
+    expect(app(SendFindingAlerts::class)->handle())->toBe(3);
+});

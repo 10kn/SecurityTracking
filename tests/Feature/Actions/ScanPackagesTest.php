@@ -120,6 +120,7 @@ it('scans Gemfile.lock gems by their plain version', function () {
 });
 
 it('sends a dev dependency only in the digest unless configured otherwise', function () {
+    config(['psm.alerts.lockfile_summary_threshold' => 0]);
     fakeOsv();
     scanWithLockfiles($this->deployment, 'package-lock.json');
 

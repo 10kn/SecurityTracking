@@ -108,7 +108,7 @@ export default function ServicesIndex({ services, table, projects }: { services:
                                         <LockfilesCell lockfiles={service.lockfiles} syncError={service.lockfiles_sync_error} />
                                     </Td>
                                     <Td align="right">
-                                        <OpenFindingsCell count={service.open_findings_count} />
+                                        <OpenFindingsCell count={service.open_findings_count} serviceId={service.id} />
                                     </Td>
                                     <Td className="text-sm whitespace-nowrap text-muted-foreground">{service.updated_at ?? '—'}</Td>
                                 </Tr>

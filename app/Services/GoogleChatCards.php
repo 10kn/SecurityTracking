@@ -79,6 +79,42 @@ class GoogleChatCards
     }
 
     /**
+     * One short card for a service with many vulnerable packages to send at once (see SendFindingAlerts), e.g. a new
+     * service: how many advisories and the highest severity, with a link to its findings instead of one card each.
+     *
+     * @param  Service  $service  With `project`.
+     * @param  Collection<int, Finding>  $findings  The service's findings the card stands for.
+     * @param  int  $knownExploited  The advisories of the service listed by CISA KEV, sent on cards of their own.
+     * @return array<string, mixed>
+     */
+    public function lockfileSummary(Team $team, Service $service, Collection $findings, int $knownExploited): array
+    {
+        /** @var Finding $first */
+        $first = $findings->sortByDesc(fn (Finding $finding): int => $finding->severity->rank())->first();
+        $advisories = $findings->pluck('group_key')->unique()->count();
+
+        $lines = array_filter([
+            __('Project :project. Mức cao nhất: :severity.', ['project' => $service->project->name, 'severity' => $first->severity->getLabel()]),
+            $findings->count() > $advisories ? __('Gồm :count finding trên các môi trường của service.', ['count' => $findings->count()]) : null,
+            $knownExploited > 0 ? __('Ngoài ra :count lỗ hổng có trong danh sách CISA KEV được cảnh báo riêng.', ['count' => $knownExploited]) : null,
+            __('Nhắc lại trong bản tổng hợp mỗi ngày cho tới khi admin đánh dấu đã đọc. Hạn xử lý sớm nhất: :date.', ['date' => $this->date($findings->min('sla_due_at'))]),
+        ]);
+
+        return $this->card(
+            "lockfile-summary-{$service->id}",
+            $this->severityTitle($first->severity, __(':service: phát hiện :count lỗ hổng trong lockfile', ['service' => $service->name, 'count' => $advisories])),
+            $team->name,
+            [['widgets' => [
+                ...array_map(fn (string $line): array => ['textParagraph' => ['text' => e($line)]], array_values($lines)),
+                $this->buttons([
+                    __('Xem findings') => $this->findingsUrl(['service' => $service->id]),
+                    __('Mở service') => $this->serviceUrl($service),
+                ]),
+            ]]],
+        );
+    }
+
+    /**
      * What CISA KEV says about the findings of a card: every CVE id it lists, when it added them and the date it asks
      * them fixed by, the fixes of the branches that address them for runtimes, and the severity the sources gave.
      *

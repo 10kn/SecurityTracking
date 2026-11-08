@@ -73,6 +73,41 @@ it('filters on a team, the read state and the findings of one card, as the links
     get('/admin/findings?status=read')->assertInertia(fn (Assert $page) => $page->has('findings.data', 1)->where('findings.data.0.title', 'Read'));
 });
 
+it('filters on a project and one of its services, the service selecting its project as the lockfile summary link does', function () {
+    actingAsAdmin();
+    $shop = $this->deployment->service->project;
+    $shopWeb = Deployment::factory()->for(Service::factory()->for($shop)->state(['name' => 'shop-web']))->create();
+    $cms = Deployment::factory()->for(Service::factory()->for(Project::factory()->for($this->commerce)->state(['name' => 'CMS'])))->create();
+    Finding::factory()->for($this->deployment)->create(['title' => 'shop-api finding']);
+    Finding::factory()->for($shopWeb)->create(['title' => 'shop-web finding']);
+    Finding::factory()->for($cms)->create(['title' => 'cms finding']);
+
+    get("/admin/findings?project={$shop->id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('findings.data', 2)
+            ->where('table.project', $shop->id)
+            ->where('services', [['value' => $this->deployment->service_id, 'label' => 'shop-api'], ['value' => $shopWeb->service_id, 'label' => 'shop-web']]));
+
+    get("/admin/findings?service={$shopWeb->service_id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('findings.data', 1)
+            ->where('findings.data.0.title', 'shop-web finding')
+            ->where('table.project', $shop->id)
+            ->where('table.service', $shopWeb->service_id));
+
+    get('/admin/findings')->assertInertia(fn (Assert $page) => $page->where('table.project', null)->where('services', []));
+});
+
+it('offers the projects of the team picked', function () {
+    actingAsAdmin();
+    Project::factory()->for(Team::factory())->create(['name' => 'Booking']);
+
+    get("/admin/findings?team={$this->commerce->id}")
+        ->assertInertia(fn (Assert $page) => $page->where('projects', [['value' => $this->deployment->service->project_id, 'label' => $this->deployment->service->project->name]]));
+
+    get('/admin/findings')->assertInertia(fn (Assert $page) => $page->has('projects', 2));
+});
+
 it('shows titles in the admin language, keeping the stored one for Google Chat', function () {
     actingAsAdmin()->update(['locale' => Locale::Japanese]);
     Finding::factory()->for($this->deployment)->create(['rule' => FindingRule::DependencyVulnerable, 'severity' => Severity::Critical, 'title' => 'GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt', 'context' => ['advisory' => 'GHSA-8xf4-w7qw-pjjw', 'package' => 'firebase/php-jwt']]);

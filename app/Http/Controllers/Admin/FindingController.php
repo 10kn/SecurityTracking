@@ -7,6 +7,8 @@ use App\Enums\Severity;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\FindingResource;
 use App\Models\Finding;
+use App\Models\Project;
+use App\Models\Service;
 use App\Models\Team;
 use App\Support\FindingSearch;
 use App\Support\TableQuery;
@@ -17,8 +19,9 @@ use Inertia\Response;
 
 /**
  * The open findings, where an admin marks them as read ("Đã đọc") to stop their daily reminder. The links in the
- * Google Chat cards open it filtered on one team, and on the findings of one card (`ids`) for an immediate alert. The
- * Overview opens it on the priority findings (`priority`, see Finding::priority()).
+ * Google Chat cards open it filtered on one team, on the findings of one card (`ids`) for an immediate alert, and on one
+ * service for a lockfile summary. A service filter also selects its project, and the projects offered are those of the
+ * team picked. The Overview opens it on the priority findings (`priority`, see Finding::priority()).
  */
 class FindingController extends Controller
 {
@@ -31,6 +34,8 @@ class FindingController extends Controller
     {
         $table = TableQuery::fromRequest($request, ['severity', 'title', 'sla_due_at', 'first_seen_at'], 'severity');
         $teamId = $request->integer('team') ?: null;
+        $serviceId = $request->integer('service') ?: null;
+        $projectId = ($serviceId === null ? null : Service::whereKey($serviceId)->value('project_id')) ?? ($request->integer('project') ?: null);
         $status = in_array($request->string('status')->toString(), self::STATUSES, true) ? $request->string('status')->toString() : null;
         $isPriority = $request->boolean('priority');
         $ids = collect(explode(',', $request->string('ids')->toString()))->filter(fn (string $id): bool => ctype_digit($id))->map(fn (string $id): int => (int) $id)->take(200)->values()->all();
@@ -39,6 +44,8 @@ class FindingController extends Controller
             ->with(['deployment.service.project', 'team', 'acknowledgedBy'])
             ->withMax(['events as version' => fn (Builder $query) => $query->whereIn('type', AcknowledgeFindings::VERSION_EVENTS)], 'id')
             ->when($teamId !== null, fn (Builder $query) => $query->where('team_id', $teamId))
+            ->when($projectId !== null, fn (Builder $query) => $query->whereHas('deployment.service', fn (Builder $query) => $query->where('project_id', $projectId)))
+            ->when($serviceId !== null, fn (Builder $query) => $query->whereHas('deployment', fn (Builder $query) => $query->where('service_id', $serviceId)))
             ->when($ids !== [], fn (Builder $query) => $query->whereKey($ids))
             ->when($isPriority, fn (Builder $query) => $query->priority())
             ->when($status === 'unread', fn (Builder $query) => $query->whereNull('acknowledged_at'))
@@ -56,8 +63,10 @@ class FindingController extends Controller
 
         return Inertia::render('findings/index', [
             'findings' => FindingResource::collection($findings),
-            'table' => [...$table->toArray(), 'team' => $teamId, 'status' => $status, 'priority' => $isPriority ? 1 : null, 'ids' => $ids === [] ? null : implode(',', $ids)],
+            'table' => [...$table->toArray(), 'team' => $teamId, 'project' => $projectId, 'service' => $serviceId, 'status' => $status, 'priority' => $isPriority ? 1 : null, 'ids' => $ids === [] ? null : implode(',', $ids)],
             'teams' => Team::orderBy('name')->get()->map(fn (Team $team): array => ['value' => $team->id, 'label' => $team->name])->all(),
+            'projects' => Project::when($teamId !== null, fn (Builder $query) => $query->where('team_id', $teamId))->orderBy('name')->get()->map(fn (Project $project): array => ['value' => $project->id, 'label' => $project->name])->all(),
+            'services' => $projectId === null ? [] : Service::where('project_id', $projectId)->orderBy('name')->get()->map(fn (Service $service): array => ['value' => $service->id, 'label' => $service->name])->all(),
             'statuses' => [
                 ['value' => 'unread', 'label' => __('Chưa đọc')],
                 ['value' => 'read', 'label' => __('Đã đọc')],
