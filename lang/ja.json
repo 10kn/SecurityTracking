@@ -930,5 +930,8 @@
     "Không có thay đổi nào.": "変更はありません。",
     "Đã lưu :count cài đặt.": "設定を :count 件保存しました。",
     "Đã dùng lại webhook trong .env.": ".env の Webhook に戻しました。",
-    "Chưa có webhook.": "Webhook がありません。"
+    "Chưa có webhook.": "Webhook がありません。",
+    "Theo hệ thống": "システムに合わせる",
+    "Sáng hoặc tối theo hệ điều hành": "OS の設定に合わせてライト／ダーク",
+    "Theme khi hệ thống ở chế độ sáng": "ライトモード時のテーマ"
 }

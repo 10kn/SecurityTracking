@@ -28,8 +28,18 @@ it('renders vietnamese by default, without the japanese font', function () {
 it('renders the theme the user chose', function (Theme $theme) {
     actingAs(User::factory()->admin()->create(['theme' => $theme]));
 
-    get('/admin/teams')->assertSee('data-theme="'.$theme->value.'"', escape: false);
-})->with(Theme::cases());
+    get('/admin/teams')
+        ->assertSee('data-theme="'.$theme->value.'"', escape: false)
+        ->assertDontSee('prefers-color-scheme', escape: false);
+})->with(array_filter(Theme::cases(), fn (Theme $theme): bool => $theme !== Theme::System));
+
+it('renders the light theme chosen for the system theme and lets the browser switch to night when the system is dark', function () {
+    actingAs(User::factory()->admin()->create(['theme' => Theme::System, 'system_light_theme' => Theme::Forest]));
+
+    get('/admin/teams')
+        ->assertSee('data-theme="forest"', escape: false)
+        ->assertSee("matchMedia('(prefers-color-scheme: dark)')", escape: false);
+});
 
 it('keeps the chosen language and theme after signing in again', function () {
     User::factory()->admin()->create([

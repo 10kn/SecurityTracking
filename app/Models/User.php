@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'is_admin', 'theme', 'locale'])]
+#[Fillable(['name', 'email', 'password', 'is_admin', 'theme', 'system_light_theme', 'locale'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -28,6 +28,7 @@ class User extends Authenticatable
     protected $attributes = [
         'is_admin' => false,
         'theme' => 'ocean',
+        'system_light_theme' => 'ocean',
         'locale' => 'vi',
     ];
 
@@ -43,6 +44,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'theme' => Theme::class,
+            'system_light_theme' => Theme::class,
             'locale' => Locale::class,
         ];
     }

@@ -25,6 +25,7 @@ it('defaults new users to the ocean theme and the vietnamese locale', function (
     $user = User::factory()->create()->refresh();
 
     expect($user->theme)->toBe(Theme::Ocean)
+        ->and($user->system_light_theme)->toBe(Theme::Ocean)
         ->and($user->locale)->toBe(Locale::Vietnamese);
 });
 

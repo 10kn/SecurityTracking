@@ -24,6 +24,7 @@ class UpdatePreferencesRequest extends FormRequest
     {
         return [
             'theme' => ['sometimes', Rule::enum(Theme::class)],
+            'system_light_theme' => ['sometimes', Rule::enum(Theme::class)->only(Theme::lightThemes())],
             'locale' => ['sometimes', Rule::enum(Locale::class)],
         ];
     }

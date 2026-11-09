@@ -45,7 +45,7 @@ export interface Toast {
 
 export interface SharedProps {
     auth: { user: { name: string; email: string; initials: string } | null };
-    preferences: { theme: string; locale: string };
+    preferences: { theme: string; system_light_theme: string; locale: string };
     themes: ThemeOption[];
     locales: Option<string>[];
     translations: Record<string, string> | null;

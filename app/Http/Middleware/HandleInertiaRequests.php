@@ -55,6 +55,7 @@ class HandleInertiaRequests extends Middleware
             ],
             'preferences' => [
                 'theme' => Theme::current()->value,
+                'system_light_theme' => Theme::currentSystemLight()->value,
                 'locale' => App::getLocale(),
             ],
             'themes' => Inertia::once(fn (): array => array_map(fn (Theme $theme): array => [
