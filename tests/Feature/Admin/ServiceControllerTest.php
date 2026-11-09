@@ -7,6 +7,7 @@ use App\Events\DeploymentInventoryChanged;
 use App\Jobs\SyncServiceLockfilesJob;
 use App\Models\AccessibleRepository;
 use App\Models\Deployment;
+use App\Models\Finding;
 use App\Models\Lockfile;
 use App\Models\Project;
 use App\Models\Runtime;
@@ -157,6 +158,17 @@ it('fills the edit form with the production runtime versions and lockfiles', fun
             ->component('services/edit')
             ->where('service.runtimes', [['technology' => $runtime->technology->value, 'raw_version' => '3.3.6']])
             ->where('service.lockfiles.0.path', 'Gemfile.lock'));
+});
+
+it('counts the open findings of the service on the edit page, so it can link to them', function () {
+    actingAsAdmin();
+    $deployment = Deployment::factory()->create();
+    Finding::factory()->count(2)->for($deployment)->create();
+    Finding::factory()->for($deployment)->resolved()->create();
+    Finding::factory()->create();
+
+    get("/admin/services/{$deployment->service_id}/edit")
+        ->assertInertia(fn (Assert $page) => $page->where('service.open_findings_count', 2));
 });
 
 it('queues an evaluation only when the saved version changed', function (string $newVersion, bool $shouldEvaluate) {

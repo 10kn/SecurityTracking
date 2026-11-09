@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 
 import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
+import { LockfileName } from '@/components/admin/lockfile-logo';
 import { StatusDot } from '@/components/admin/status-dot';
 import { TechnologyName } from '@/components/admin/technology-logo';
 import { useTranslation } from '@/lib/i18n';
@@ -91,7 +92,7 @@ export function LockfilesCell({ lockfiles, syncError }: { lockfiles: ServiceRow[
             {lockfiles.map((lockfile) => (
                 <div key={lockfile.path}>
                     <div className="flex flex-wrap items-center gap-x-2">
-                        <span className="font-mono text-sm">{lockfile.path}</span>
+                        <LockfileName path={lockfile.path} className="font-mono text-sm" />
                         {lockfile.state && <StatusDot status={lockfile.state} />}
                         {lockfile.packages && <span className="text-sm text-muted-foreground">{lockfile.packages}</span>}
                         {lockfile.vulnerable && <StatusDot status={lockfile.vulnerable} />}

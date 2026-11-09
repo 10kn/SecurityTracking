@@ -113,6 +113,7 @@ class ServiceController extends Controller
                     ->all(),
                 'lockfile_excludes' => implode("\n", $service->lockfile_excludes ?? []),
                 'lockfile_sync' => $this->lockfileSync($service),
+                'open_findings_count' => $service->findings()->where('state', FindingState::Open)->count(),
             ],
         ]);
     }

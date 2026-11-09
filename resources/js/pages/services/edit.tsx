@@ -1,5 +1,7 @@
 import { Link, router, useForm } from '@inertiajs/react';
+import { ShieldAlertIcon } from 'lucide-react';
 
+import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import { show as showProject } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { destroy, index, update } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { Card, CardBody } from '@/components/admin/card';
@@ -27,6 +29,7 @@ interface Props extends ServiceFormOptions {
         runtimes: { technology: string; raw_version: string }[];
         lockfiles: ExistingLockfile[];
         lockfile_sync: LockfileSync | null;
+        open_findings_count: number;
     };
 }
 
@@ -57,6 +60,16 @@ export default function ServicesEdit({ service, ...options }: Props) {
                 title={service.name}
                 description={t('Project :project · team :team', { project: service.project.name, team: service.project.team })}
                 breadcrumbs={[{ label: t('Services'), href: index.url() }, { label: service.project.name, href: showProject.url(service.project.id) }, { label: service.name }]}
+                actions={
+                    service.open_findings_count > 0 && (
+                        <Button variant="secondary" asChild>
+                            <Link href={findingsIndex.url({ query: { service: service.id } })}>
+                                <ShieldAlertIcon />
+                                {t('Mở :count finding đang mở', { count: service.open_findings_count })}
+                            </Link>
+                        </Button>
+                    )
+                }
             />
             <form
                 className="rounded-lg border border-border bg-surface"

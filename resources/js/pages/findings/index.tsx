@@ -1,11 +1,12 @@
 import { router } from '@inertiajs/react';
 import { CheckIcon, XIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
 import { store as acknowledge } from '@/actions/App/Http/Controllers/Admin/FindingAcknowledgementController';
 import { edit as editService } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { Card, CardHeader } from '@/components/admin/card';
 import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
+import { LockfileName } from '@/components/admin/lockfile-logo';
 import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
 import { StatusDot } from '@/components/admin/status-dot';
@@ -161,7 +162,12 @@ export default function FindingsIndex({ findings, table, teams, projects, servic
                                             sub={
                                                 <>
                                                     {finding.rule}
-                                                    {finding.lockfiles.length > 0 && <span className="font-mono"> · {finding.lockfiles.join(', ')}</span>}
+                                                    {finding.lockfiles.map((path) => (
+                                                        <Fragment key={path}>
+                                                            {' · '}
+                                                            <LockfileName path={path} className="font-mono" />
+                                                        </Fragment>
+                                                    ))}
                                                 </>
                                             }
                                         />

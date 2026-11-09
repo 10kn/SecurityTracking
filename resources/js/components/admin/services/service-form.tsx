@@ -1,11 +1,12 @@
 import { type InertiaFormProps, router } from '@inertiajs/react';
-import { FileIcon, PlusIcon, RefreshCwIcon, Trash2Icon, UploadIcon, XIcon } from 'lucide-react';
+import { PlusIcon, RefreshCwIcon, Trash2Icon, UploadIcon, XIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { store as syncRepositories } from '@/actions/App/Http/Controllers/Admin/AccessibleRepositorySyncController';
 import { store as syncLockfiles } from '@/actions/App/Http/Controllers/Admin/ServiceLockfileSyncController';
 import { Combobox } from '@/components/admin/combobox';
 import { Field, FormFields, FormSection } from '@/components/admin/form-section';
+import { LockfileLogo, LockfileName } from '@/components/admin/lockfile-logo';
 import { StatusDot } from '@/components/admin/status-dot';
 import { TechnologyLogo } from '@/components/admin/technology-logo';
 import { Button } from '@/components/ui/button';
@@ -214,8 +215,8 @@ export function ServiceFields({
                             ) : (
                                 <ul className="grid gap-2">
                                     {existingLockfiles.map((lockfile) => (
-                                        <li key={lockfile.path} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                                            <span className="font-mono text-sm whitespace-nowrap">{lockfile.path}</span>
+                                        <li key={lockfile.path} className="flex min-w-0 flex-wrap items-center gap-x-2">
+                                            <LockfileName path={lockfile.path} className="font-mono text-sm whitespace-nowrap" />
                                             <LockfileOrigin lockfile={lockfile} />
                                         </li>
                                     ))}
@@ -238,10 +239,8 @@ export function ServiceFields({
                                                 )
                                             }
                                         />
-                                        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                                            <span className={cn('font-mono text-sm whitespace-nowrap', form.data.removed_lockfiles.includes(lockfile.path) && 'text-faint line-through')}>
-                                                {lockfile.path}
-                                            </span>
+                                        <span className="flex min-w-0 flex-wrap items-center gap-x-2">
+                                            <LockfileName path={lockfile.path} className={cn('font-mono text-sm whitespace-nowrap', form.data.removed_lockfiles.includes(lockfile.path) && 'text-faint line-through')} />
                                             <LockfileOrigin lockfile={lockfile} />
                                         </span>
                                     </label>
@@ -648,7 +647,7 @@ function LockfileUpload({ form, errors }: { form: InertiaFormProps<ServiceFormDa
 
                         return (
                             <li key={`${index}:${file.name}`} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2">
-                                <FileIcon className="size-4 shrink-0 text-faint" aria-hidden />
+                                <LockfileLogo path={file.name} />
                                 <Input
                                     className="h-8 w-44 font-mono text-[calc(var(--fs-sm)-0.5px)]"
                                     placeholder={t('Thư mục (để trống nếu ở gốc)')}
