@@ -12,12 +12,62 @@ use Throwable;
 use UnexpectedValueException;
 
 /**
- * Reads an Atom or RSS 2.0 feed into plain-text entries. Feeds come from the internet, so the parser never uses the
- * network and refuses documents with a DOCTYPE: no external entities, and no internal ones to expand.
+ * Reads an Atom or RSS 2.0 feed into plain-text entries, and the post of an entry whose feed gives a title only.
+ * Feeds come from the internet, so the parser never uses the network and refuses feeds with a DOCTYPE: no external
+ * entities, and no internal ones to expand.
  */
 final class NewsFeedParser
 {
     private const string ATOM = 'http://www.w3.org/2005/Atom';
+
+    /**
+     * The most a post's text keeps, in characters: a long post still fits the classifier's prompt.
+     */
+    public const int POST_LENGTH = 20000;
+
+    /**
+     * The blocks of a post's text, in the order of the page.
+     */
+    private const string POST_BLOCKS = 'self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6 or self::p or self::li or self::pre or self::blockquote or self::td or self::th';
+
+    /**
+     * Reads a vendor's post (an HTML page) into plain text and the links it gives, e.g. a nodejs.org vulnerability post
+     * the feed lists by title only. The text is that of the headings, paragraphs, list items, code, quotes and table
+     * cells of the page's `<main>` (its `<article>` or `<body>` without one), in order: the site's banners, menus and
+     * links to the previous and next posts are no such blocks, so neither they nor the dates they carry change the text
+     * once the next post is out. At most POST_LENGTH characters.
+     *
+     * @return array{text: string, links: list<string>}
+     */
+    public static function post(string $html, ?string $url): array
+    {
+        $document = new DOMDocument;
+        $useInternalErrors = libxml_use_internal_errors(true);
+
+        try {
+            $isLoaded = trim($html) !== '' && $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($useInternalErrors);
+        }
+
+        if (! $isLoaded) {
+            return ['text' => '', 'links' => []];
+        }
+
+        $xpath = new DOMXPath($document);
+        $content = collect(['//main', '//article', '//body'])->map(fn (string $query): ?DOMNode => ($xpath->query($query) ?: null)?->item(0))->first(fn (?DOMNode $node): bool => $node instanceof DOMElement);
+
+        if (! $content instanceof DOMElement) {
+            return ['text' => '', 'links' => []];
+        }
+
+        $blocks = iterator_to_array($xpath->query('.//*['.self::POST_BLOCKS.'][not(ancestor::*['.self::POST_BLOCKS.'])]', $content) ?: []);
+        $text = Str::squish(implode(' ', array_map(fn (DOMNode $block): string => $block->textContent, $blocks)));
+        $hrefs = array_merge(...array_map(fn (DOMNode $block): array => array_map(fn (DOMNode $href): string => (string) $href->nodeValue, iterator_to_array($xpath->query('.//a/@href', $block) ?: [])), $blocks));
+
+        return ['text' => Str::limit($text, self::POST_LENGTH), 'links' => self::links(array_values(array_filter($hrefs, fn (string $href): bool => ! str_starts_with($href, '#'))), $url)];
+    }
 
     /**
      * @return list<NoticeEntry>

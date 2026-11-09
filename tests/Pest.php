@@ -226,7 +226,8 @@ function noticeFixture(string $name, ?string $asOf = null): string
 
 /**
  * Fakes the php.net, nodejs.org and ruby-lang.org security feeds with their fixtures. Each response reads as the feed
- * did at the current (travelled) time: entries published later are left out.
+ * did at the current (travelled) time: entries published later are left out. The nodejs.org posts the feed lists by
+ * title only are served from tests/Fixtures/notices/nodejs-posts (see nodejsPostFixture()).
  */
 function fakeNoticeFeeds(): void
 {
@@ -236,8 +237,20 @@ function fakeNoticeFeeds(): void
     Http::fake([
         PhpNetNoticeFeed::URL => $feed('php-feed.atom'),
         NodejsNoticeFeed::URL => $feed('nodejs-vulnerability.xml'),
+        NodejsNoticeFeed::POSTS.'*' => fn (Request $request) => Http::response(nodejsPostFixture($request->url()) ?? 'Not Found', nodejsPostFixture($request->url()) === null ? 404 : 200),
         RubyLangNoticeFeed::URL => $feed('ruby-news.rss'),
     ]);
+}
+
+/**
+ * A nodejs.org vulnerability post from tests/Fixtures/notices/nodejs-posts, by its address: the real pages fetched on
+ * 2026-11-09, the October one with the details of the releases, trimmed to their `<main>`. Null for another post.
+ */
+function nodejsPostFixture(string $url): ?string
+{
+    $path = base_path('tests/Fixtures/notices/nodejs-posts/'.basename((string) parse_url($url, PHP_URL_PATH)).'.html');
+
+    return is_file($path) ? (string) file_get_contents($path) : null;
 }
 
 /**

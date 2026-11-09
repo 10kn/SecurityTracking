@@ -9,9 +9,11 @@ use App\Models\Finding;
 use App\Models\FindingEvent;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
+use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
+use App\Services\Notices\RubyLangNoticeFeed;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
@@ -33,7 +35,13 @@ it('polls the news feed of every technology, once each', function () {
     expect(Advisory::groupBy('source')->selectRaw('source, count(*) as total')->pluck('total', 'source')->all())
         ->toEqual(['notice:nodejs' => 2, 'notice:php' => 6, 'notice:ruby' => 4])
         ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:nodejs', 'notice:php', 'notice:ruby'])
-        ->and(Http::recorded(fn (Request $request): bool => ! str_starts_with($request->url(), Team::GOOGLE_CHAT_WEBHOOK_PREFIX)))->toHaveCount(3);
+        ->and(Http::recorded(fn (Request $request): bool => ! str_starts_with($request->url(), Team::GOOGLE_CHAT_WEBHOOK_PREFIX))->map(fn (array $pair): string => $pair[0]->url())->sort()->values()->all())->toBe([
+            'https://nodejs.org/en/blog/vulnerability/july-2026-security-releases',
+            'https://nodejs.org/en/blog/vulnerability/october-2026-security-releases',
+            NodejsNoticeFeed::URL,
+            PhpNetNoticeFeed::URL,
+            RubyLangNoticeFeed::URL,
+        ]);
 });
 
 it('keeps polling the other feeds when one fails, records the failure and alerts the admin once it is stale', function () {

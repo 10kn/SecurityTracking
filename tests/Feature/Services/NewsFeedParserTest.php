@@ -29,6 +29,33 @@ it('reads the nodejs.org vulnerability feed, keyed by link because its guids car
         ->publishedAt->toIso8601String()->toBe('2026-10-21T22:00:00+00:00');
 });
 
+it('reads a nodejs.org post as the text and links of its article, without the banner, menus or links to the previous and next posts', function () {
+    $url = 'https://nodejs.org/en/blog/vulnerability/october-2026-security-releases';
+    $post = NewsFeedParser::post((string) nodejsPostFixture($url), $url);
+
+    expect($post['text'])
+        ->toStartWith('Wednesday, October 21, 2026 Security Releases The Node.js Project Security releases available Updates are now available for the 26.x, 24.x, 22.x Node.js release lines')
+        ->toContain('dns.resolve truncates names containing NUL char (CVE-2026-105482) - (high)', 'This vulnerability affects Node.js 26.x and 24.x.', 'fullwidth digits (１２７.0.0.1)', 'The highest severity issue fixed in this release is HIGH.')
+        ->not->toContain('Commercial support', 'Previous', 'Wednesday, November 11, 2026', 'Wednesday, July 29, 2026', '©', '<')
+        ->and($post['links'])->toContain('https://nodejs.org/en/blog/release/v24.22.1/', 'https://nodejs.org/en/security/')
+        ->not->toContain('https://nodejs.org/en/blog/vulnerability/november-2026-security-releases', 'https://nodejs.org/en/about/eol', "{$url}#security-releases-available");
+});
+
+it('reads a post without a main element from its body, and an empty page as no text', function () {
+    expect(NewsFeedParser::post('<html><body><p>Security release on <a href="/en/blog/release/v24.22.1">Monday</a>.</p></body></html>', 'https://nodejs.org/en/blog/vulnerability/x'))
+        ->toBe(['text' => 'Security release on Monday.', 'links' => ['https://nodejs.org/en/blog/release/v24.22.1']])
+        ->and(NewsFeedParser::post('', null))->toBe(['text' => '', 'links' => []]);
+});
+
+it('keeps at most the post length of a long post', function () {
+    $html = '<main>'.str_repeat('<p>'.str_repeat('a', 99).'</p>', 300).'</main>';
+
+    $text = NewsFeedParser::post($html, null)['text'];
+
+    expect(mb_strlen($text))->toBeGreaterThan(NewsFeedParser::POST_LENGTH - 100)->toBeLessThanOrEqual(NewsFeedParser::POST_LENGTH + 3)
+        ->and($text)->toEndWith('...');
+});
+
 it('reads the ruby-lang.org news feed as plain text', function () {
     $entries = NewsFeedParser::parse(noticeFixture('ruby-news.rss'));
 

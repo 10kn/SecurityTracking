@@ -12,12 +12,14 @@ use App\Models\ChatNotification;
 use App\Models\IncidentTeamNotice;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
+use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
 use Carbon\CarbonImmutable;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
@@ -57,6 +59,47 @@ it('stores every entry of php.net published within the collection window as a pr
         ->aliases->toBe(['CVE-2026-109618', 'CVE-2026-109619', 'GHSA-w8hw-w9fx-j79w', 'GHSA-6wmf-4rv5-p3rp'])
         ->links->toContain('https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w', 'https://www.php.net/downloads.php?source=Y')
         ->summary->toHaveLength(503);
+});
+
+it('reads each nodejs.org entry of the collection window from its post, as the feed gives its title alone', function () {
+    fakeNoticeFeeds();
+    $texts = [];
+    classifyNoticesWith(function (NoticeEntry $entry) use (&$texts): NoticeClassification {
+        $texts[$entry->title] = $entry->text;
+
+        return new NoticeClassification(isSecurityNews: true, severity: Severity::High);
+    });
+
+    app(SyncNoticeFeed::class)->handle(Technology::Nodejs);
+
+    expect(array_keys($texts))->toBe(['Wednesday, October 21, 2026 Security Releases', 'Wednesday, July 29, 2026 Security Releases'])
+        ->and($texts['Wednesday, October 21, 2026 Security Releases'])->toContain('(CVE-2026-105482) - (high)', 'This vulnerability affects Node.js 26.x, 24.x, and 22.x.')
+        ->and(Advisory::where('title', 'Wednesday, October 21, 2026 Security Releases')->sole())
+        ->aliases->toContain('CVE-2026-105482', 'CVE-2026-106073')
+        ->summary->toStartWith('Wednesday, October 21, 2026 Security Releases The Node.js Project Security releases available')
+        ->links->toContain('https://nodejs.org/en/blog/release/v24.22.1/');
+
+    Http::assertNotSent(fn (ClientRequest $request): bool => str_contains($request->url(), 'march-2026-hashdos'));
+});
+
+it('fails the poll when a nodejs.org post cannot be read, rather than storing its title alone', function () {
+    Sleep::fake();
+    $failing = false;
+    Http::preventStrayRequests();
+    Http::fake([
+        NodejsNoticeFeed::URL => Http::response(noticeFixture('nodejs-vulnerability.xml')),
+        NodejsNoticeFeed::POSTS.'*' => function (ClientRequest $request) use (&$failing) {
+            return $failing ? Http::response('Service Unavailable', 503) : Http::response(nodejsPostFixture($request->url()));
+        },
+    ]);
+
+    app(SyncNoticeFeed::class)->handle(Technology::Nodejs);
+    $failing = true;
+    $this->travel(15)->minutes();
+
+    expect(fn () => app(SyncNoticeFeed::class)->handle(Technology::Nodejs))->toThrow(RequestException::class)
+        ->and(SourceHeartbeat::where('source', 'notice:nodejs')->sole()->last_error)->toStartWith('RequestException')
+        ->and(Advisory::where('title', 'Wednesday, October 21, 2026 Security Releases')->sole()->summary)->toStartWith('Wednesday, October 21, 2026 Security Releases The Node.js Project');
 });
 
 it('stores every recent entry of the nodejs.org vulnerability feed and of the ruby-lang.org news', function () {
