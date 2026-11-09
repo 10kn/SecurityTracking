@@ -36,6 +36,8 @@ export function WebhookDialog({ teamId, hasWebhook }: { teamId: number; hasWebho
                 <form
                     onSubmit={(event) => {
                         event.preventDefault();
+                        // The dialog sits inside the team form; React bubbles portal events, so without this the team form also submits and cancels this visit.
+                        event.stopPropagation();
                         form.submit(updateWebhook(teamId), { preserveScroll: true, onSuccess: () => setIsOpen(false) });
                     }}
                     noValidate
