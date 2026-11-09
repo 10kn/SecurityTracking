@@ -5,7 +5,8 @@ namespace App\Services\Catalog;
 use Carbon\CarbonImmutable;
 
 /**
- * One release branch (endoflife.date calls it a cycle), e.g. PHP "8.3" or Node.js "20".
+ * One release branch (endoflife.date calls it a cycle), e.g. PHP "8.3" or Node.js "20". `label` is the name people
+ * know it by, e.g. "13 (Trixie)" for Debian 13.
  */
 final readonly class BranchData
 {
@@ -16,5 +17,6 @@ final readonly class BranchData
         public ?CarbonImmutable $activeSupportUntil,
         public ?CarbonImmutable $securitySupportUntil,
         public bool $isEol,
+        public ?string $label = null,
     ) {}
 }

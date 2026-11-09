@@ -40,7 +40,7 @@ import { SeverityBadge } from '@/components/admin/severity-badge';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-type ScheduleKey = 'notices' | 'catalog' | 'kev' | 'packages' | 'end_of_life' | 'runner_images' | 'repository_connections' | 'lockfiles' | 'digest' | 'sources';
+type ScheduleKey = 'notices' | 'os_advisories' | 'catalog' | 'kev' | 'packages' | 'end_of_life' | 'runner_images' | 'repository_connections' | 'lockfiles' | 'digest' | 'sources';
 
 interface ScheduleRow {
     key: ScheduleKey;
@@ -144,6 +144,7 @@ export default function GuideIndex({ vendor_sources = [], timezone, schedule, di
 
     const scheduleText: Record<ScheduleKey, { title: string; description: string }> = {
         notices: { title: t('Tin bảo mật từ vendor'), description: t('php.net, nodejs.org, ruby-lang.org. AI đọc và phân loại từng tin.') },
+        os_advisories: { title: t('Tin hệ điều hành'), description: t('Tin bảo mật của Amazon Linux (ALAS), Ubuntu (USN) và Debian (DSA).') },
         catalog: { title: t('Danh mục version'), description: t('endoflife.date và trang phát hành chính thức: bản mới, ngày hết hỗ trợ.') },
         kev: { title: t('CISA KEV'), description: t('Danh sách lỗ hổng đang bị khai thác thực tế.') },
         packages: { title: t('Quét lỗ hổng package'), description: t('Package trong lockfile, đối chiếu với Packagist, RubySec và OSV.') },

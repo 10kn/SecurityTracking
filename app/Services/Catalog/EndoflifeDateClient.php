@@ -31,6 +31,7 @@ class EndoflifeDateClient
             activeSupportUntil: self::date($release['eoasFrom'] ?? null),
             securitySupportUntil: self::date($release['eolFrom'] ?? null),
             isEol: (bool) ($release['isEol'] ?? false),
+            label: isset($release['label']) ? (string) $release['label'] : null,
         ), $releases);
     }
 

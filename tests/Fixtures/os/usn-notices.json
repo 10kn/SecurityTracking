@@ -1,0 +1,557 @@
+{
+  "notices": [
+    {
+      "id": "USN-9001-1",
+      "title": "ca-certificates update",
+      "summary": "ca-certificates would not properly update the JKS keystore.",
+      "published": "2026-11-05T14:46:13.174976",
+      "is_hidden": false,
+      "description": "It was discovered that the ca-certificates JKS integration was not working\nproperly, resulting in CA certificates removed from the system bundle not\nbeing removed from the JKS keystore. This update corrects the feature and\nresyncs the keystore with the system CA certificates list.",
+      "cves_ids": [],
+      "releases": [
+        {
+          "codename": "stonking",
+          "version": "26.10"
+        },
+        {
+          "codename": "resolute",
+          "version": "26.04"
+        },
+        {
+          "codename": "noble",
+          "version": "24.04"
+        },
+        {
+          "codename": "jammy",
+          "version": "22.04"
+        }
+      ],
+      "release_packages": {
+        "jammy": [
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.22.04.2",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates-java",
+            "version": "20190909ubuntu1.4",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.22.04.2",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ],
+        "noble": [
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.24.04.2",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates-java",
+            "version": "20240118ubuntu0.24.04.1",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.24.04.2",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ],
+        "resolute": [
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.26.04.2",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates-java",
+            "version": "20260311ubuntu0.26.04.1",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.26.04.2",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ],
+        "stonking": [
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.26.10.2",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates-java",
+            "version": "20260311ubuntu0.26.10.1",
+            "is_source": true
+          },
+          {
+            "name": "ca-certificates",
+            "version": "20260816ubuntu0.26.10.2",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ]
+      }
+    },
+    {
+      "id": "USN-8955-2",
+      "title": "nginx vulnerabilities",
+      "summary": "Several security issues were fixed in nginx.",
+      "published": "2026-11-05T14:40:26.223286",
+      "is_hidden": false,
+      "description": "USN-8955-1 fixed vulnerabilities in nginx in Ubuntu 26.10, Ubuntu 26.04\nLTS, Ubuntu 24.04 LTS, and Ubuntu 22.04 LTS. This update provides the\ncorresponding update for Ubuntu 20.04 LTS, Ubuntu 18.04 LTS, Ubuntu 16.04\nLTS, and Ubuntu 14.04 LTS.\n\nIn addition, this update fixes CVE-2026-42533 for these releases.\n\nIt was discovered that nginx incorrectly handled certain map directives\nusing regex match",
+      "cves_ids": [
+        "CVE-2026-97205",
+        "CVE-2026-42533",
+        "CVE-2026-93479",
+        "CVE-2026-15176"
+      ],
+      "releases": [
+        {
+          "codename": "focal",
+          "version": "20.04"
+        },
+        {
+          "codename": "bionic",
+          "version": "18.04"
+        },
+        {
+          "codename": "xenial",
+          "version": "16.04"
+        },
+        {
+          "codename": "trusty",
+          "version": "14.04"
+        }
+      ],
+      "release_packages": {
+        "bionic": [
+          {
+            "name": "nginx",
+            "version": "1.14.0-0ubuntu1.11+esm5",
+            "is_source": true
+          },
+          {
+            "name": "libnginx-mod-http-auth-pam",
+            "version": "1.14.0-0ubuntu1.11+esm5",
+            "is_source": false,
+            "pocket": "esm-infra"
+          },
+          {
+            "name": "libnginx-mod-http-cache-purge",
+            "version": "1.14.0-0ubuntu1.11+esm5",
+            "is_source": false,
+            "pocket": "esm-infra"
+          }
+        ],
+        "focal": [
+          {
+            "name": "nginx",
+            "version": "1.18.0-0ubuntu1.7+esm4",
+            "is_source": true
+          },
+          {
+            "name": "libnginx-mod-http-auth-pam",
+            "version": "1.18.0-0ubuntu1.7+esm4",
+            "is_source": false,
+            "pocket": "esm-infra"
+          },
+          {
+            "name": "libnginx-mod-http-cache-purge",
+            "version": "1.18.0-0ubuntu1.7+esm4",
+            "is_source": false,
+            "pocket": "esm-infra"
+          }
+        ],
+        "trusty": [
+          {
+            "name": "nginx",
+            "version": "1.4.6-1ubuntu3.9+esm9",
+            "is_source": true
+          },
+          {
+            "name": "nginx",
+            "version": "1.4.6-1ubuntu3.9+esm9",
+            "is_source": false,
+            "pocket": "esm-infra-legacy"
+          },
+          {
+            "name": "nginx-common",
+            "version": "1.4.6-1ubuntu3.9+esm9",
+            "is_source": false,
+            "pocket": "esm-infra-legacy"
+          }
+        ],
+        "xenial": [
+          {
+            "name": "nginx",
+            "version": "1.10.3-0ubuntu0.16.04.5+esm10",
+            "is_source": true
+          },
+          {
+            "name": "nginx",
+            "version": "1.10.3-0ubuntu0.16.04.5+esm10",
+            "is_source": false,
+            "pocket": "esm-infra-legacy"
+          },
+          {
+            "name": "nginx-common",
+            "version": "1.10.3-0ubuntu0.16.04.5+esm10",
+            "is_source": false,
+            "pocket": "esm-infra-legacy"
+          }
+        ]
+      }
+    },
+    {
+      "id": "USN-7230-3",
+      "title": "FRR regression",
+      "summary": "USN-7230-2 introduced a regression in FRR",
+      "published": "2026-11-05T13:39:13.836978",
+      "is_hidden": false,
+      "description": "USN-7230-2 fixed vulnerabilities in FRR. Unfortunately, the fix for\nCVE-2024-55553 introduced a regression in RPKI support, causing FRR to stop\nprocessing RPKI updates after the first one, so routes were not revalidated\nwhen RPKI data changed. In Ubuntu 20.04 LTS, the BGP daemon also failed to\nstart when the RPKI module was enabled. This update fixes the problem.\n\nWe apologize for the inconvenienc",
+      "cves_ids": [
+        "CVE-2024-55553"
+      ],
+      "releases": [
+        {
+          "codename": "noble",
+          "version": "24.04"
+        },
+        {
+          "codename": "jammy",
+          "version": "22.04"
+        },
+        {
+          "codename": "focal",
+          "version": "20.04"
+        }
+      ],
+      "release_packages": {
+        "focal": [
+          {
+            "name": "frr",
+            "version": "7.2.1-1ubuntu0.2+esm5",
+            "is_source": true
+          },
+          {
+            "name": "frr",
+            "version": "7.2.1-1ubuntu0.2+esm5",
+            "is_source": false,
+            "pocket": "esm-apps"
+          },
+          {
+            "name": "frr-doc",
+            "version": "7.2.1-1ubuntu0.2+esm5",
+            "is_source": false,
+            "pocket": "esm-apps"
+          }
+        ],
+        "jammy": [
+          {
+            "name": "frr",
+            "version": "8.1-1ubuntu1.17",
+            "is_source": true
+          },
+          {
+            "name": "frr",
+            "version": "8.1-1ubuntu1.17",
+            "is_source": false,
+            "pocket": "security"
+          },
+          {
+            "name": "frr-doc",
+            "version": "8.1-1ubuntu1.17",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ],
+        "noble": [
+          {
+            "name": "frr",
+            "version": "8.4.4-1.1ubuntu6.8",
+            "is_source": true
+          },
+          {
+            "name": "frr",
+            "version": "8.4.4-1.1ubuntu6.8",
+            "is_source": false,
+            "pocket": "security"
+          },
+          {
+            "name": "frr-doc",
+            "version": "8.4.4-1.1ubuntu6.8",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ]
+      }
+    },
+    {
+      "id": "USN-8999-1",
+      "title": "Pillow vulnerabilities",
+      "summary": "Several security issues were fixed in Pillow.",
+      "published": "2026-11-04T15:49:54.336366",
+      "is_hidden": false,
+      "description": "It was discovered that Pillow incorrectly handled map stride values\nwhen loading certain McIdas AREA images. An attacker could possibly\nuse this issue to obtain sensitive information or cause a denial of\nservice. (CVE-2026-54058)\n\nIt was discovered that Pillow did not properly check for decompression\nbombs when processing font files. An attacker could possibly use this\nissue to cause Pillow to con",
+      "cves_ids": [
+        "CVE-2026-54060",
+        "CVE-2026-54059",
+        "CVE-2026-59200",
+        "CVE-2026-59203",
+        "CVE-2026-54058",
+        "CVE-2026-59197",
+        "CVE-2026-55380",
+        "CVE-2026-59204",
+        "CVE-2026-59205",
+        "CVE-2026-55379",
+        "CVE-2026-59199"
+      ],
+      "releases": [
+        {
+          "codename": "resolute",
+          "version": "26.04"
+        },
+        {
+          "codename": "noble",
+          "version": "24.04"
+        },
+        {
+          "codename": "jammy",
+          "version": "22.04"
+        }
+      ],
+      "release_packages": {
+        "jammy": [
+          {
+            "name": "pillow",
+            "version": "9.0.1-1ubuntu0.6",
+            "is_source": true
+          },
+          {
+            "name": "python-pil-doc",
+            "version": "9.0.1-1ubuntu0.6",
+            "is_source": false,
+            "pocket": "security"
+          },
+          {
+            "name": "python3-pil",
+            "version": "9.0.1-1ubuntu0.6",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ],
+        "noble": [
+          {
+            "name": "pillow",
+            "version": "10.2.0-1ubuntu1.4",
+            "is_source": true
+          },
+          {
+            "name": "python-pil-doc",
+            "version": "10.2.0-1ubuntu1.4",
+            "is_source": false,
+            "pocket": "security"
+          },
+          {
+            "name": "python3-pil",
+            "version": "10.2.0-1ubuntu1.4",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ],
+        "resolute": [
+          {
+            "name": "pillow",
+            "version": "12.1.1-2ubuntu1.4",
+            "is_source": true
+          },
+          {
+            "name": "python-pil-doc",
+            "version": "12.1.1-2ubuntu1.4",
+            "is_source": false,
+            "pocket": "security"
+          },
+          {
+            "name": "python3-pil",
+            "version": "12.1.1-2ubuntu1.4",
+            "is_source": false,
+            "pocket": "security"
+          }
+        ]
+      }
+    },
+    {
+      "id": "USN-8994-1",
+      "title": "libvips vulnerabilities",
+      "summary": "Several security issues were fixed in libvips.",
+      "published": "2026-11-03T17:39:43.471205",
+      "is_hidden": false,
+      "description": "It was discovered that libvips incorrectly handled certain PDF files with a\npage that defines a width but not a height. An attacker could possibly use\nthis issue to cause libvips to crash, resulting in a denial of service, or\nobtain sensitive information. This issue only affected Ubuntu 16.04 LTS,\nUbuntu 18.04 LTS, Ubuntu 20.04 LTS, Ubuntu 22.04 LTS, and Ubuntu 24.04 LTS.\n(CVE-2025-59933)\n\nIt was ",
+      "cves_ids": [
+        "CVE-2026-33327",
+        "CVE-2026-35590",
+        "CVE-2025-59933",
+        "CVE-2026-35591",
+        "CVE-2026-70653",
+        "CVE-2026-33328",
+        "CVE-2026-70654",
+        "CVE-2026-69242",
+        "CVE-2026-70651"
+      ],
+      "releases": [
+        {
+          "codename": "resolute",
+          "version": "26.04"
+        },
+        {
+          "codename": "noble",
+          "version": "24.04"
+        },
+        {
+          "codename": "jammy",
+          "version": "22.04"
+        },
+        {
+          "codename": "focal",
+          "version": "20.04"
+        },
+        {
+          "codename": "bionic",
+          "version": "18.04"
+        },
+        {
+          "codename": "xenial",
+          "version": "16.04"
+        }
+      ],
+      "release_packages": {
+        "bionic": [
+          {
+            "name": "vips",
+            "version": "8.4.5-1ubuntu0.1~esm2",
+            "is_source": true
+          },
+          {
+            "name": "gir1.2-vips-8.0",
+            "version": "8.4.5-1ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          },
+          {
+            "name": "libvips-dev",
+            "version": "8.4.5-1ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          }
+        ],
+        "focal": [
+          {
+            "name": "vips",
+            "version": "8.9.1-2ubuntu0.1~esm2",
+            "is_source": true
+          },
+          {
+            "name": "gir1.2-vips-8.0",
+            "version": "8.9.1-2ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          },
+          {
+            "name": "libvips-dev",
+            "version": "8.9.1-2ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          }
+        ],
+        "jammy": [
+          {
+            "name": "vips",
+            "version": "8.12.1-1ubuntu0.1~esm3",
+            "is_source": true
+          },
+          {
+            "name": "gir1.2-vips-8.0",
+            "version": "8.12.1-1ubuntu0.1~esm3",
+            "is_source": false,
+            "pocket": "esm-apps"
+          },
+          {
+            "name": "libvips-dev",
+            "version": "8.12.1-1ubuntu0.1~esm3",
+            "is_source": false,
+            "pocket": "esm-apps"
+          }
+        ],
+        "noble": [
+          {
+            "name": "vips",
+            "version": "8.15.1-1.1ubuntu0.1~esm2",
+            "is_source": true
+          },
+          {
+            "name": "gir1.2-vips-8.0",
+            "version": "8.15.1-1.1ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          },
+          {
+            "name": "libvips-dev",
+            "version": "8.15.1-1.1ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          }
+        ],
+        "resolute": [
+          {
+            "name": "vips",
+            "version": "8.18.0-1ubuntu0.1~esm2",
+            "is_source": true
+          },
+          {
+            "name": "gir1.2-vips-8.0",
+            "version": "8.18.0-1ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          },
+          {
+            "name": "libvips-dev",
+            "version": "8.18.0-1ubuntu0.1~esm2",
+            "is_source": false,
+            "pocket": "esm-apps"
+          }
+        ],
+        "xenial": [
+          {
+            "name": "vips",
+            "version": "8.2.2-1ubuntu0.1~esm1",
+            "is_source": true
+          },
+          {
+            "name": "gir1.2-vips-8.0",
+            "version": "8.2.2-1ubuntu0.1~esm1",
+            "is_source": false,
+            "pocket": "esm-apps-legacy"
+          },
+          {
+            "name": "libvips-dev",
+            "version": "8.2.2-1ubuntu0.1~esm1",
+            "is_source": false,
+            "pocket": "esm-apps-legacy"
+          }
+        ]
+      }
+    }
+  ],
+  "offset": 0,
+  "limit": 50,
+  "total_results": 5
+}

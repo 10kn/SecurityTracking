@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+    <title>Amazon Linux AMI Security Bulletins</title>
+    <description>Amazon Linux AMI Security Bulletins</description>
+    <link>https://alas.aws.amazon.com</link>
+    <language>en-us</language>
+    <ttl>35</ttl>
+<item>
+        <title>ALAS2ECS-2026-152 (medium): containerd</title>
+        <description>
+            CVE-2026-111943
+        </description>
+        <pubDate>Fri, 30 Oct 2026 23:20:00 GMT</pubDate>
+        <lastBuildDate>Mon, 02 Nov 2026 09:00:00 GMT</lastBuildDate>
+        <guid>https://alas.aws.amazon.com/AL2/ALAS2ECS-2026-152.html</guid>
+        <link>https://alas.aws.amazon.com/AL2/ALAS2ECS-2026-152.html</link>
+    </item>
+<item>
+        <title>ALAS2ECS-2026-153 (medium): amazon-ecr-credential-helper</title>
+        <description>
+            CVE-2026-111943
+        </description>
+        <pubDate>Fri, 30 Oct 2026 23:20:00 GMT</pubDate>
+        <lastBuildDate>Mon, 02 Nov 2026 09:00:00 GMT</lastBuildDate>
+        <guid>https://alas.aws.amazon.com/AL2/ALAS2ECS-2026-153.html</guid>
+        <link>https://alas.aws.amazon.com/AL2/ALAS2ECS-2026-153.html</link>
+    </item>
+<item>
+        <title>ALAS2-2023-2376 (medium): openssh</title>
+        <description>
+            CVE-2023-48795
+        </description>
+        <pubDate>Mon, 18 Dec 2023 19:19:00 GMT</pubDate>
+        <lastBuildDate>Tue, 19 Dec 2023 14:20:00 GMT</lastBuildDate>
+        <guid>https://alas.aws.amazon.com/AL2/ALAS2-2023-2376.html</guid>
+        <link>https://alas.aws.amazon.com/AL2/ALAS2-2023-2376.html</link>
+    </item>
+</channel>
+</rss>
