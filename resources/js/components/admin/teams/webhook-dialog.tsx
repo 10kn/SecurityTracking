@@ -1,17 +1,20 @@
 import { useForm } from '@inertiajs/react';
 import { useState } from 'react';
 
-import { update as updateWebhook } from '@/actions/App/Http/Controllers/Admin/TeamWebhookController';
 import { Field } from '@/components/admin/form-section';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/lib/i18n';
+import type { RouteDefinition } from '@/wayfinder';
 
 export const GOOGLE_CHAT_WEBHOOK_PREFIX = 'https://chat.googleapis.com/v1/spaces/';
 
-/** Adds or replaces the webhook. The server sends a test message to the new URL and saves it only if Google Chat accepts it. */
-export function WebhookDialog({ teamId, hasWebhook }: { teamId: number; hasWebhook: boolean }) {
+/**
+ * Adds or replaces a webhook: a team's, or one of the admin's spaces on the settings screen. `action` saves it; the
+ * server sends a test message to the new URL and saves it only if Google Chat accepts it.
+ */
+export function WebhookDialog({ action, hasWebhook, title }: { action: RouteDefinition<'put'>; hasWebhook: boolean; title?: string }) {
     const t = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
     const form = useForm({ google_chat_webhook_url: '' });
@@ -36,14 +39,14 @@ export function WebhookDialog({ teamId, hasWebhook }: { teamId: number; hasWebho
                 <form
                     onSubmit={(event) => {
                         event.preventDefault();
-                        // The dialog sits inside the team form; React bubbles portal events, so without this the team form also submits and cancels this visit.
+                        // The dialog sits inside a form; React bubbles portal events, so without this the team form also submits and cancels this visit.
                         event.stopPropagation();
-                        form.submit(updateWebhook(teamId), { preserveScroll: true, onSuccess: () => setIsOpen(false) });
+                        form.submit(action, { preserveScroll: true, onSuccess: () => setIsOpen(false) });
                     }}
                     noValidate
                 >
                     <DialogHeader>
-                        <DialogTitle>{t('Webhook Google Chat')}</DialogTitle>
+                        <DialogTitle>{title ?? t('Webhook Google Chat')}</DialogTitle>
                         <DialogDescription>{t('Trong Google Chat: Space → Apps & integrations → Webhooks.')}</DialogDescription>
                     </DialogHeader>
                     <DialogBody>

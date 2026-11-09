@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { show as showProject } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { destroy, index, update } from '@/actions/App/Http/Controllers/Admin/TeamController';
 import { store as sendTestMessage } from '@/actions/App/Http/Controllers/Admin/TeamTestMessageController';
+import { update as updateWebhook } from '@/actions/App/Http/Controllers/Admin/TeamWebhookController';
 import { Card, CardBody } from '@/components/admin/card';
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { CellTitle, EmptyState, Table, Td, Th, Tr } from '@/components/admin/data-table';
@@ -84,13 +85,13 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
                                             >
                                                 {t('Gửi thử')}
                                             </Button>
-                                            <WebhookDialog teamId={team.id} hasWebhook />
+                                            <WebhookDialog action={updateWebhook(team.id)} hasWebhook />
                                         </div>
                                     </Field>
                                 ) : (
                                     <div>
                                         <p className="mb-3 text-muted-foreground">{t('Chưa có webhook. Team chưa nhận được cảnh báo.')}</p>
-                                        <WebhookDialog teamId={team.id} hasWebhook={false} />
+                                        <WebhookDialog action={updateWebhook(team.id)} hasWebhook={false} />
                                     </div>
                                 )}
                             </FormSection>

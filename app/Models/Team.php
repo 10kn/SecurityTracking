@@ -120,11 +120,19 @@ class Team extends Model
      */
     public function maskedGoogleChatWebhookUrl(): ?string
     {
-        if (blank($this->google_chat_webhook_url)) {
+        return self::maskGoogleChatWebhookUrl($this->google_chat_webhook_url);
+    }
+
+    /**
+     * Any Google Chat webhook URL masked like the team's, e.g. one of the admin's spaces. Null without one.
+     */
+    public static function maskGoogleChatWebhookUrl(?string $webhookUrl): ?string
+    {
+        if (blank($webhookUrl)) {
             return null;
         }
 
-        $space = Str::of($this->google_chat_webhook_url)
+        $space = Str::of($webhookUrl)
             ->after(self::GOOGLE_CHAT_WEBHOOK_PREFIX)
             ->before('/')
             ->limit(4, '…');

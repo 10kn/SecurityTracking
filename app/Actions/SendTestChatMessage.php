@@ -51,6 +51,16 @@ class SendTestChatMessage
     }
 
     /**
+     * Send a test message to a webhook that belongs to no team, e.g. one of the admin's spaces. Nothing is logged.
+     *
+     * @return string|null The error shown to the admin, or null when Google Chat accepted the message.
+     */
+    public function toWebhook(string $webhookUrl, string $text): ?string
+    {
+        return $this->deliver($webhookUrl, ['text' => $text]);
+    }
+
+    /**
      * The error never contains the webhook URL, because the URL holds the space's key and token.
      *
      * @param  array<string, mixed>  $message

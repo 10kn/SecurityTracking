@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\AccessibleRepositorySyncController;
+use App\Http\Controllers\Admin\AdminWebhookController;
+use App\Http\Controllers\Admin\AdminWebhookTestMessageController;
 use App\Http\Controllers\Admin\FindingAcknowledgementController;
 use App\Http\Controllers\Admin\FindingController;
 use App\Http\Controllers\Admin\IncidentAcknowledgementController;
@@ -18,6 +20,7 @@ use App\Http\Controllers\Admin\SearchController;
 use App\Http\Controllers\Admin\ServiceController;
 use App\Http\Controllers\Admin\ServiceLockfileSyncController;
 use App\Http\Controllers\Admin\SessionController;
+use App\Http\Controllers\Admin\SystemSettingController;
 use App\Http\Controllers\Admin\TeamController;
 use App\Http\Controllers\Admin\TeamTestMessageController;
 use App\Http\Controllers\Admin\TeamWebhookController;
@@ -71,5 +74,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::resource('technologies', TechnologyController::class)->only(['index', 'show']);
         Route::post('technologies/{technology}/sync', [TechnologyCatalogSyncController::class, 'store'])->name('technologies.sync.store');
+
+        Route::get('settings', [SystemSettingController::class, 'edit'])->name('settings.edit');
+        Route::put('settings', [SystemSettingController::class, 'update'])->name('settings.update');
+        Route::put('settings/webhooks/{webhook}', [AdminWebhookController::class, 'update'])->name('settings.webhooks.update');
+        Route::delete('settings/webhooks/{webhook}', [AdminWebhookController::class, 'destroy'])->name('settings.webhooks.destroy');
+        Route::post('settings/webhooks/{webhook}/test-message', [AdminWebhookTestMessageController::class, 'store'])->name('settings.webhooks.test-message.store');
     });
 });

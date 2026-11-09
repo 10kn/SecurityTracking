@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { CpuIcon, FolderIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import { CpuIcon, FolderIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
@@ -9,6 +9,7 @@ import OverviewController from '@/actions/App/Http/Controllers/Admin/OverviewCon
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { destroy as logout } from '@/actions/App/Http/Controllers/Admin/SessionController';
+import { edit as settingsEdit } from '@/actions/App/Http/Controllers/Admin/SystemSettingController';
 import { index as teamsIndex } from '@/actions/App/Http/Controllers/Admin/TeamController';
 import { index as technologiesIndex } from '@/actions/App/Http/Controllers/Admin/TechnologyController';
 import { AppearanceMenu, LanguageSwitch } from '@/components/admin/appearance-menu';
@@ -67,6 +68,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             items: [
                 { label: t('Teams'), href: teamsIndex.url(), icon: UsersIcon },
                 { label: t('Công nghệ'), href: technologiesIndex.url(), icon: CpuIcon },
+                { label: t('Hệ thống'), href: settingsEdit.url(), icon: SlidersHorizontalIcon },
             ],
         },
     ];
