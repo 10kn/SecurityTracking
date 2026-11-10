@@ -92,20 +92,54 @@ class AssignNoticeToIncident
     }
 
     /**
-     * Recent incidents of the technology the classifier may relate an entry to, newest first.
+     * The most pre-notices of an incident whose facts the classifier is given, the latest ones: a long incident would
+     * otherwise crowd out the others (see ClaudeNoticeClassifier::INCIDENT_FACTS_LENGTH for the size of the whole list).
+     */
+    public const int CLASSIFIER_NOTICES_PER_INCIDENT = 5;
+
+    /**
+     * Recent incidents of the technology the classifier may relate an entry to: those with a pre-notice published
+     * within `psm.notices.relevant_days`, so an older incident that just got a follow-up is offered too, the latest
+     * publication first. Each comes with the facts read from its latest pre-notices that were not dismissed (at most
+     * CLASSIFIER_NOTICES_PER_INCIDENT, oldest first) and how many such pre-notices it has. Only what tells two pieces
+     * of news apart, one pre-notice at a time: its title, dates, CVE / GHSA ids, branches and patch versions. Not its
+     * severity, summary or words, which the classifier could copy into what it reads from the entry. Two queries,
+     * however many incidents.
      *
-     * @return list<array{id: int, title: string, published_at: ?CarbonInterface}>
+     * @return list<array{id: int, title: string, published_at: ?CarbonInterface, notice_count: int, notices: list<array{title: string, published_at: ?CarbonInterface, aliases: list<string>, planned_release_at: ?CarbonInterface, affected_branches: list<string>, unaffected_branches: list<string>, patch_versions: list<string>}>}>
      */
     public function recentIncidents(Technology $technology, ?int $exceptId): array
     {
+        $listed = fn ($query) => $query->where('is_dismissed', false);
+
         return Incident::current()
             ->where('technology', $technology)
             ->when($exceptId !== null, fn ($query) => $query->whereKeyNot($exceptId))
-            ->where('first_published_at', '>=', now()->subDays(config('psm.notices.relevant_days')))
-            ->orderByDesc('first_published_at')
+            ->whereRaw('coalesce(last_published_at, first_published_at) >= ?', [now()->subDays(config('psm.notices.relevant_days'))])
+            ->orderByRaw('coalesce(last_published_at, first_published_at) desc')
             ->limit(20)
+            ->withCount(['notices' => $listed])
+            ->with(['notices' => fn ($query) => $listed($query)
+                ->orderByDesc('published_at')
+                ->orderByDesc('id')
+                ->limit(self::CLASSIFIER_NOTICES_PER_INCIDENT)
+                ->select(['id', 'incident_id', 'title', 'published_at', 'aliases', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'patch_versions'])])
             ->get()
-            ->map(fn (Incident $incident): array => ['id' => $incident->id, 'title' => $incident->title, 'published_at' => $incident->first_published_at])
+            ->map(fn (Incident $incident): array => [
+                'id' => $incident->id,
+                'title' => $incident->title,
+                'published_at' => $incident->first_published_at,
+                'notice_count' => $incident->notices_count,
+                'notices' => $incident->notices->reverse()->map(fn (Advisory $notice): array => [
+                    'title' => $notice->title,
+                    'published_at' => $notice->published_at,
+                    'aliases' => $notice->aliases ?? [],
+                    'planned_release_at' => $notice->planned_release_at,
+                    'affected_branches' => $notice->affected_branches ?? [],
+                    'unaffected_branches' => $notice->unaffected_branches ?? [],
+                    'patch_versions' => $notice->patch_versions ?? [],
+                ])->values()->all(),
+            ])
             ->all();
     }
 

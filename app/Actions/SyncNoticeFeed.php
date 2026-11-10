@@ -146,12 +146,21 @@ class SyncNoticeFeed
      * on the next poll, and the admin is told once per outage (see ReportClassifierOutage); `classification_failed_at`
      * keeps when the errors started, for psm:check-sources. Meanwhile what it read before stands: an entry it never
      * read waits for it.
+     *
+     * An entry an earlier revision of the classifier read (see NoticeClassifier::revision(); none stored is the first)
+     * is read again while it is within `psm.notices.collect_days`, even when its text did not change: what the
+     * classifier reads changed.
      */
     private function classification(Technology $technology, NoticeEntry $entry, Advisory $advisory): ?NoticeClassification
     {
+        $isReadByEarlierRevision = $advisory->content_hash !== null
+            && ($advisory->classifier_revision ?? 1) < $this->classifier->revision()
+            && $this->isWithinCollectWindow($entry);
+
         if (! $this->classifier->isEnabled()
-            || $advisory->content_hash === $this->contentHash($entry)
-            || (! $this->isFresh($entry) && ($advisory->content_hash !== null || ! $this->isWithinCollectWindow($entry)) && ! $this->isOfToldIncident($advisory))) {
+            || (! $isReadByEarlierRevision
+                && ($advisory->content_hash === $this->contentHash($entry)
+                    || (! $this->isFresh($entry) && ($advisory->content_hash !== null || ! $this->isWithinCollectWindow($entry)) && ! $this->isOfToldIncident($advisory))))) {
             return null;
         }
 
@@ -198,6 +207,7 @@ class SyncNoticeFeed
             $advisory->fill([
                 'content_hash' => $this->contentHash($entry),
                 'classified_by' => $this->classifier->name(),
+                'classifier_revision' => $this->classifier->revision(),
                 'classified_severity' => $classification->severity,
                 'classification_failed_at' => null,
                 'is_dismissed' => ! $classification->isSecurityNews,
@@ -239,6 +249,7 @@ class SyncNoticeFeed
             'links' => $entry->links,
             'published_at' => $entry->publishedAt,
             ...$this->exploitation($entry, $advisory, $classification),
+            ...$this->platforms($entry, $advisory, $classification),
         ]);
 
         $isOngoingCritical = ($severity === Severity::Critical && $this->isFresh($entry)) || KnownExploitation::isFresh($advisory->known_exploited);
@@ -273,6 +284,24 @@ class SyncNoticeFeed
         $basis = $quoted !== null && $entry->quotes($quoted) ? ['method' => 'classifier', 'excerpt' => $quoted] : null;
 
         return ['is_exploited' => $basis !== null, 'exploited_basis' => $basis === null ? null : [...$basis, 'content_hash' => $this->contentHash($entry)]];
+    }
+
+    /**
+     * The operating systems the entry says it is limited to (see Incident::scopeFor()): the classifier's, with a
+     * sentence it quoted from the entry, which only counts when the entry has it (see NoticeEntry::quotes()); without
+     * it, the entry states no limit (null). Without a new classification, the limit read before still counts while the
+     * entry still has its sentence.
+     *
+     * @return array{platforms: list<string>|null, platforms_evidence: string|null}
+     */
+    private function platforms(NoticeEntry $entry, Advisory $advisory, ?NoticeClassification $classification): array
+    {
+        [$platforms, $evidence] = $classification === null
+            ? [$advisory->platforms ?? [], $advisory->platforms_evidence]
+            : [$classification->platforms, $classification->platformsEvidence];
+        $isQuoted = $platforms !== [] && is_string($evidence) && $entry->quotes($evidence);
+
+        return ['platforms' => $isQuoted ? array_values($platforms) : null, 'platforms_evidence' => $isQuoted ? $evidence : null];
     }
 
     /**

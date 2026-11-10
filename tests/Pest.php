@@ -560,17 +560,22 @@ function gitHubRequests(string $path = ''): Collection
 
 /**
  * Classifies every entry with `$answer`, which may throw, and keeps the titles of the entries it was given. `$answer`
- * also gets the incidents offered to the classifier.
+ * also gets the incidents offered to the classifier. `$revision` is what the classifier gives as its revision.
  *
  * @param  Closure(NoticeEntry, list<array{id: int, title: string, published_at: ?CarbonInterface}>): NoticeClassification  $answer
  */
-function classifyNoticesWith(Closure $answer): ArrayObject
+function classifyNoticesWith(Closure $answer, int $revision = 1): ArrayObject
 {
     $titles = new ArrayObject;
 
-    app()->instance(NoticeClassifier::class, new class($answer, $titles) implements NoticeClassifier
+    app()->instance(NoticeClassifier::class, new class($answer, $titles, $revision) implements NoticeClassifier
     {
-        public function __construct(private Closure $answer, private ArrayObject $titles) {}
+        public function __construct(private Closure $answer, private ArrayObject $titles, private int $revision) {}
+
+        public function revision(): int
+        {
+            return $this->revision;
+        }
 
         public function isEnabled(): bool
         {

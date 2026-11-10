@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\ChatNotificationKind;
 use App\Enums\ChatThreadRole;
+use App\Enums\IncidentImpact;
+use App\Services\IncidentTeamExposure;
 use Database\Factories\ChatNotificationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -54,6 +56,34 @@ class ChatNotification extends Model
     public function payloadToSend(): array
     {
         return $this->sent_as === ChatThreadRole::Opener && $this->thread_role === ChatThreadRole::Reply && $this->opening_payload !== null ? $this->opening_payload : $this->payload;
+    }
+
+    /**
+     * Whether an admin's "Không" withholds the message: an alert of an incident thread to a team an admin said the
+     * incident does not affect, while that still holds (see IncidentTeam::isRuledOut()), read on the row of the incident
+     * its own was merged into. The admin's own updates ("Cập nhật khẩn") and the daily digest are never withheld.
+     */
+    public function isWithheldByAssessment(): bool
+    {
+        if ($this->kind !== ChatNotificationKind::PreNotice || $this->incident_team_id === null) {
+            return false;
+        }
+
+        $row = IncidentTeam::find($this->incident_team_id)?->canonical();
+
+        return $row?->impact === IncidentImpact::No && $row->incident !== null && $row->isRuledOut(IncidentTeamExposure::for($row->incident, $row->team_id));
+    }
+
+    /**
+     * Ends a withheld message without sending it: it stays undelivered and is never retried on its own, with the reason
+     * as its error, in the alert language.
+     */
+    public function withhold(): void
+    {
+        $this->update([
+            'failed_at' => $this->failed_at ?? now(),
+            'last_error' => __('Không gửi: admin đã đánh giá sự kiện không ảnh hưởng tới team (Không).', [], config('psm.alerts.locale')),
+        ]);
     }
 
     /**

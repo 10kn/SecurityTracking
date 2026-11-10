@@ -324,7 +324,7 @@ class IncidentOverview
             ->get()
             ->keyBy(fn (object $thread): string => "{$thread->thread_key}#{$thread->generation}");
 
-        $columns = ['id', 'thread_key', 'generation', 'thread_role', 'sent_at', 'failed_at', 'last_error', 'created_at'];
+        $columns = ['id', 'kind', 'thread_key', 'generation', 'thread_role', 'sent_at', 'failed_at', 'last_error', 'created_at'];
         $latest = $withDetails ? ChatNotification::whereKey($threads->pluck('latest_id')->all())->get($columns)->keyBy('id') : collect();
         $failures = $withDetails ? ChatNotification::fromSub(
             ChatNotification::whereIn('thread_key', $threadKeys)->whereNotNull('failed_at')->whereNull('sent_at')->select($columns)->selectRaw('row_number() over (partition by thread_key, generation order by id) as position'),

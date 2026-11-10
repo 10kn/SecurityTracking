@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Actions\UpdateProductionInventory;
 use App\Enums\Exposure;
 use App\Enums\FindingState;
+use App\Enums\OperatingSystem;
 use App\Enums\ServiceKind;
 use App\Enums\Technology;
 use App\Http\Controllers\Controller;
@@ -73,7 +74,7 @@ class ServiceController extends Controller
         $service = DB::transaction(function () use ($request): Service {
             $service = Service::create($request->serviceAttributes());
 
-            $this->updateProductionInventory->handle($service, $request->runtimeVersions(), $request->uploadedLockfiles());
+            $this->updateProductionInventory->handle($service, $request->runtimeVersions(), $request->uploadedLockfiles(), os: $request->operatingSystem());
 
             return $service;
         });
@@ -96,6 +97,7 @@ class ServiceController extends Controller
                 ...$service->only(['id', 'project_id', 'name', 'slug', 'repository_path', 'repository', 'repository_branch']),
                 'kind' => $service->kind->value,
                 'exposure' => $service->exposure->value,
+                'os' => $deployment?->os?->value,
                 'project' => ['id' => $service->project->id, 'name' => $service->project->name, 'team' => $service->project->team->name],
                 'runtimes' => ($deployment->runtimes ?? collect())
                     ->map(fn (Runtime $runtime): array => ['technology' => $runtime->technology->value, 'raw_version' => $runtime->raw_version])
@@ -135,6 +137,7 @@ class ServiceController extends Controller
                 $request->runtimeVersions(),
                 $request->uploadedLockfiles(),
                 $request->removedLockfilePaths(),
+                $request->operatingSystem(),
             );
         });
 
@@ -207,6 +210,7 @@ class ServiceController extends Controller
             'lockfileSkippedDirectories' => config('psm.github.lockfile_search.skip_directories'),
             'kinds' => array_map(fn (ServiceKind $kind): array => ['value' => $kind->value, 'label' => $kind->getLabel()], ServiceKind::cases()),
             'exposures' => array_map(fn (Exposure $exposure): array => ['value' => $exposure->value, 'label' => $exposure->getLabel()], Exposure::cases()),
+            'operatingSystems' => array_map(fn (OperatingSystem $system): array => ['value' => $system->value, 'label' => $system->getLabel()], OperatingSystem::cases()),
             'technologies' => collect(Technology::cases())
                 ->sortBy(fn (Technology $technology): string => $technology->getLabel())
                 ->map(fn (Technology $technology): array => [

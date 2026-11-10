@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\IncidentScope;
+use App\Enums\OperatingSystem;
 use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * One security issue of a technology, told by one or more vendor pre-notices (see AssignNoticeToIncident). Its title,
  * severity, dates and branches are derived from its pre-notices that were not dismissed (see refreshFromNotices()).
  */
-#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'merged_into_id', 'fingerprint', 'changed_at'])]
+#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platform_scopes', 'merged_into_id', 'fingerprint', 'changed_at'])]
 class Incident extends Model
 {
     /** @use HasFactory<IncidentFactory> */
@@ -44,6 +45,7 @@ class Incident extends Model
             'planned_release_at' => 'datetime',
             'affected_branches' => 'array',
             'unaffected_branches' => 'array',
+            'platform_scopes' => 'array',
             'changed_at' => 'datetime',
         ];
     }
@@ -103,18 +105,81 @@ class Incident extends Model
      * incomplete. An end-of-life branch is never ruled out, as vendors stop assessing it, but one the vendor names as
      * affected is confirmed. A branch first released after the incident's latest pre-notice and its planned release is
      * ruled out too, end of life or not: it came out with the fix, e.g. PHP 8.5 for news about PHP 7.3 from 2019.
+     *
+     * A runtime whose deployment runs an operating system every pre-notice excludes is ruled out, end of life or not
+     * (see excludedBy()). Otherwise, once a pre-notice is limited to some systems, only the pre-notices that apply to
+     * the runtime's system confirm or rule out its branch (see platform_scopes): news about PHP 8.4 on Windows does not
+     * confirm 8.4 on Linux. A runtime whose system is not known reads every pre-notice, as before.
      */
     public function scopeFor(Runtime $runtime): IncidentScope
     {
+        $scope = $this->platformScopeOf($runtime->deployment?->os);
+
+        if ($scope === false) {
+            return IncidentScope::NotAffected;
+        }
+
         $versions = array_values(array_filter([$runtime->branch, $runtime->version ?? $runtime->raw_version], filled(...)));
 
         return match (true) {
-            self::listsBranch($this->affected_branches ?? [], $versions) => IncidentScope::Confirmed,
+            self::listsBranch($scope['affected'] ?? $this->affected_branches ?? [], $versions) => IncidentScope::Confirmed,
             $this->predates($runtime->branch) => IncidentScope::NotAffected,
             $runtime->status === RuntimeStatus::Eol => IncidentScope::Unknown,
-            self::listsBranch($this->unaffected_branches ?? [], $versions) => IncidentScope::NotAffected,
+            self::listsBranch($scope['unaffected'] ?? $this->unaffected_branches ?? [], $versions) => IncidentScope::NotAffected,
             default => IncidentScope::Unknown,
         };
+    }
+
+    /**
+     * The operating systems the incident is limited to, when every pre-notice of it that was not dismissed excludes the
+     * system the runtime's deployment runs, e.g. [Windows] for a service on Linux; null when the runtime may be
+     * affected: no pre-notice is limited, one that is not limited or that names the system applies, or the system is
+     * not known.
+     *
+     * @return list<OperatingSystem>|null
+     */
+    public function excludedBy(Runtime $runtime): ?array
+    {
+        return $this->excludes($runtime->deployment?->os) ? $this->platforms() : null;
+    }
+
+    /**
+     * Whether every pre-notice of the incident that was not dismissed excludes the operating system. An unknown one is
+     * never excluded.
+     */
+    public function excludes(?OperatingSystem $system): bool
+    {
+        return $this->platformScopeOf($system) === false;
+    }
+
+    /**
+     * The operating systems some pre-notice of the incident that was not dismissed applies to, once one is limited to
+     * some (see refreshFromNotices()); empty when none is.
+     *
+     * @return list<OperatingSystem>
+     */
+    public function platforms(): array
+    {
+        return collect(array_keys($this->platform_scopes ?? []))
+            ->map(fn (int|string $value): ?OperatingSystem => OperatingSystem::tryFrom((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * What the pre-notices that apply to the operating system say of the branches; false when none applies, null when
+     * the incident reads every pre-notice for it: none is limited, or the system is not known.
+     *
+     * @return array{affected: list<string>, unaffected: list<string>}|false|null
+     */
+    private function platformScopeOf(?OperatingSystem $system): array|false|null
+    {
+        if ($this->platform_scopes === null || $system === null) {
+            return null;
+        }
+
+        return $this->platform_scopes[$system->value] ?? false;
     }
 
     /**
@@ -155,8 +220,9 @@ class Incident extends Model
 
     /**
      * Derives the title, severity, dates and branches from the pre-notices that were not dismissed: the title of the
-     * first one, the highest known severity, the release time of the latest one that gives one. `changed_at` moves only
-     * when what the incident asks of the teams changes, its severity, branches or the CVE ids of it CISA KEV lists, so news that only adds to it, a merge
+     * first one, the highest known severity, the release time of the latest one that gives one, and what they say per
+     * operating system once one of them is limited to some (see platformScopesOf()). `changed_at` moves only
+     * when what the incident asks of the teams changes, its severity, branches, operating systems or the CVE ids of it CISA KEV lists, so news that only adds to it, a merge
      * or a split of news at the same severity does not bring it back to the digest. An incident left with no such
      * pre-notice keeps its last title.
      *
@@ -179,6 +245,7 @@ class Incident extends Model
             $severity = self::highestSeverity($notices);
             $affected = $this->branches($notices, 'affected_branches');
             $unaffected = $this->branches($notices, 'unaffected_branches');
+            $platformScopes = $this->platformScopesOf($notices);
 
             $this->fill([
                 'title' => $first?->title ?? $this->title,
@@ -188,10 +255,11 @@ class Incident extends Model
                 'planned_release_at' => $notices->whereNotNull('planned_release_at')->sortBy('published_at')->last()?->planned_release_at,
                 'affected_branches' => $affected,
                 'unaffected_branches' => $unaffected,
+                'platform_scopes' => $platformScopes,
             ]);
 
             $knownExploited = $notices->flatMap(fn (Advisory $notice): array => KnownExploitation::cves($notice->known_exploited))->unique()->sort()->values()->all();
-            $fingerprint = hash('sha256', (string) json_encode([$severity->value, $affected, $unaffected, ...($knownExploited === [] ? [] : [$knownExploited])]));
+            $fingerprint = hash('sha256', (string) json_encode([$severity->value, $affected, $unaffected, ...($knownExploited === [] ? [] : [$knownExploited]), ...($platformScopes === null ? [] : [['platforms' => $platformScopes]])]));
 
             if ($this->fingerprint !== $fingerprint) {
                 $this->changed_at = $this->fingerprint === null ? ($this->changed_at ?? now()) : now();
@@ -205,7 +273,8 @@ class Incident extends Model
     /**
      * The branches the vendor has a fix for: the classifier read in a pre-notice of the incident that was not dismissed
      * that the version is the one to update to (`patch_versions`), and the catalog lists that version as a security
-     * release of the branch. The highest such version of each branch, with the pre-notice that named it. Given the
+     * release of the branch. A pre-notice limited to some operating systems confirms no fix: a Windows build such as
+     * 8.4.27-1 does not fix 8.4 on Linux, and the catalog's 8.4.27 is not that build. The highest such version of each branch, with the pre-notice that named it. Given the
      * incident's pre-notices, it reads them instead of loading them again; given the security releases (version =>
      * branch, e.g. read once for several incidents of the technology), it reads those too.
      *
@@ -216,7 +285,7 @@ class Incident extends Model
     public function confirmedPatches(?Collection $notices = null, ?Collection $securityReleases = null): array
     {
         $notices = ($notices ?? $this->notices()->get())
-            ->filter(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->patch_versions !== null)
+            ->filter(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->patch_versions !== null && $notice->platformLimit() === [])
             ->sortBy('id')
             ->values();
         $stated = $notices->flatMap(fn (Advisory $notice): array => $notice->patch_versions ?? [])->unique()->values();
@@ -303,6 +372,34 @@ class Incident extends Model
     public static function listsBranch(array $branches, array $versions): bool
     {
         return collect($branches)->contains(fn (string $branch): bool => collect($versions)->contains(fn (string $version): bool => $branch === $version || str_starts_with($version, "{$branch}.")));
+    }
+
+    /**
+     * What the pre-notices say per operating system once one of them is limited to some: for each system some
+     * pre-notice applies to, the branches named affected and not affected by those pre-notices only. A pre-notice that
+     * states no limit applies to every system. A system left out is one every pre-notice excludes. Null when no
+     * pre-notice is limited, so the incident reads them all for every runtime.
+     *
+     * @param  Collection<int, Advisory>  $notices
+     * @return array<string, array{affected: list<string>, unaffected: list<string>}>|null
+     */
+    private function platformScopesOf(Collection $notices): ?array
+    {
+        if (! $notices->contains(fn (Advisory $notice): bool => $notice->platformLimit() !== [])) {
+            return null;
+        }
+
+        $scopes = [];
+
+        foreach (OperatingSystem::cases() as $system) {
+            $applying = $notices->filter(fn (Advisory $notice): bool => $notice->platformLimit() === [] || in_array($system, $notice->platformLimit(), true));
+
+            if ($applying->isNotEmpty()) {
+                $scopes[$system->value] = ['affected' => $this->branches($applying, 'affected_branches'), 'unaffected' => $this->branches($applying, 'unaffected_branches')];
+            }
+        }
+
+        return $scopes;
     }
 
     /**

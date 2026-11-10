@@ -216,7 +216,8 @@ class SendFindingAlerts
      * release, and its "Đã có bản vá" card then stands for the finding (see CoverPatchedFindings). The team already
      * has the incident's card meanwhile, or a card from before incidents; after the wait the finding is sent as before.
      * An incident an admin validly assessed as not affecting the team ("Không") never sends it that card, so it holds
-     * nothing back.
+     * nothing back; nor does one limited to operating systems the finding's runtime does not run (see
+     * Incident::excludedBy()), as it confirms no fix for it.
      */
     private function isHeldForVendorPatch(Finding $finding): bool
     {
@@ -224,13 +225,15 @@ class SendFindingAlerts
             return false;
         }
 
-        return $this->heldTechnologies["{$finding->team_id}:{$finding->runtime->technology->value}"] ??= IncidentTeamNotice::firstToldAt(
+        $runtime = $finding->runtime;
+
+        return $this->heldTechnologies["{$finding->team_id}:{$runtime->technology->value}:{$runtime->deployment?->os?->value}"] ??= IncidentTeamNotice::firstToldAt(
             $finding->team_id,
             Advisory::alertable()
                 ->where('technology', $finding->runtime->technology)
                 ->get(['id', 'incident_id'])
                 ->groupBy('incident_id')
-                ->reject(fn (Collection $notices, int|string $incidentId): bool => $incidentId !== '' && ($incident = Incident::find($incidentId)) !== null && IncidentTeam::isRuledOutFor($incident, $finding->team_id))
+                ->reject(fn (Collection $notices, int|string $incidentId): bool => $incidentId !== '' && ($incident = Incident::find($incidentId)) !== null && ($incident->excludedBy($runtime) !== null || IncidentTeam::isRuledOutFor($incident, $finding->team_id)))
                 ->collapse()
                 ->pluck('id')
                 ->all(),

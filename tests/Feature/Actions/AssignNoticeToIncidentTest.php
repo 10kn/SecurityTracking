@@ -13,6 +13,7 @@ use App\Models\IncidentSuggestion;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeEntry;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->travelTo('2026-10-21 12:00:00');
@@ -190,3 +191,37 @@ it('finds a pre-notice by its address however the feed wrote it', function (stri
     'default port and case' => ['http://Vendor.test:80/notice', 'https://vendor.test/notice'],
     'empty path' => ['https://Vendor.test', 'https://vendor.test/'],
 ]);
+
+it('offers the classifier the incidents with a pre-notice within the relevant days, the latest publication first', function () {
+    config(['psm.notices.relevant_days' => 14]);
+    $followedUp = Incident::factory()->create(['technology' => Technology::Php, 'title' => 'Followed up', 'first_published_at' => now()->subDays(30), 'last_published_at' => now()->subDay()]);
+    $recent = Incident::factory()->create(['technology' => Technology::Php, 'title' => 'Recent', 'first_published_at' => now()->subDays(3), 'last_published_at' => null]);
+    Incident::factory()->create(['technology' => Technology::Php, 'title' => 'Quiet', 'first_published_at' => now()->subDays(30), 'last_published_at' => now()->subDays(20)]);
+    Incident::factory()->create(['technology' => Technology::Nodejs, 'title' => 'Other technology', 'first_published_at' => now()->subDay()]);
+
+    expect(collect(app(AssignNoticeToIncident::class)->recentIncidents(Technology::Php, null))->pluck('title')->all())->toBe(['Followed up', 'Recent'])
+        ->and(collect(app(AssignNoticeToIncident::class)->recentIncidents(Technology::Php, $followedUp->id))->pluck('id')->all())->toBe([$recent->id]);
+});
+
+it('offers the classifier the latest pre-notices of each recent incident that were not dismissed, in two queries', function () {
+    $older = assignedNotice(['title' => 'Older PHP notice', 'published_at' => '2026-10-09 10:00:00', 'aliases' => ['CVE-2026-2001'], 'patch_versions' => ['8.4.26']]);
+    foreach (range(1, 7) as $day) {
+        assignedNotice(['title' => "PHP notice {$day}", 'published_at' => "2026-10-1{$day} 12:00:00", 'aliases' => ['CVE-2026-1001'], 'affected_branches' => ["8.{$day}"]]);
+    }
+    assignedNotice(['title' => 'Dismissed PHP notice', 'published_at' => '2026-10-19 12:00:00', 'aliases' => ['CVE-2026-1001'], 'is_dismissed' => true]);
+    $queries = 0;
+    DB::listen(function () use (&$queries): void {
+        $queries++;
+    });
+
+    $incidents = app(AssignNoticeToIncident::class)->recentIncidents(Technology::Php, null);
+
+    expect($queries)->toBe(2)
+        ->and($incidents)->toHaveCount(2)
+        ->and($incidents[0])->toMatchArray(['title' => 'PHP notice 1', 'notice_count' => 7])
+        ->and(array_column($incidents[0]['notices'], 'title'))->toBe(['PHP notice 3', 'PHP notice 4', 'PHP notice 5', 'PHP notice 6', 'PHP notice 7'])
+        ->and($incidents[0]['notices'][0])->toMatchArray(['aliases' => ['CVE-2026-1001'], 'affected_branches' => ['8.3'], 'unaffected_branches' => [], 'patch_versions' => [], 'planned_release_at' => null])
+        ->and($incidents[0]['notices'][0])->not->toHaveKeys(['severity', 'summary', 'localized_summary'])
+        ->and($incidents[1])->toMatchArray(['id' => $older->incident_id, 'notice_count' => 1])
+        ->and($incidents[1]['notices'][0])->toMatchArray(['title' => 'Older PHP notice', 'patch_versions' => ['8.4.26']]);
+});

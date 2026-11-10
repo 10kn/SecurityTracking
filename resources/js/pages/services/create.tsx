@@ -4,18 +4,20 @@ import { index, store } from '@/actions/App/Http/Controllers/Admin/ServiceContro
 import { CardBody } from '@/components/admin/card';
 import { FormActions } from '@/components/admin/form-section';
 import { PageHeader } from '@/components/admin/page-header';
-import { ServiceFields, serviceRequestData, type ServiceFormData, type ServiceFormOptions } from '@/components/admin/services/service-form';
+import { defaultOperatingSystem, ServiceFields, serviceRequestData, type ServiceFormData, type ServiceFormOptions } from '@/components/admin/services/service-form';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
 
 export default function ServicesCreate({ defaultProjectId, ...options }: ServiceFormOptions & { defaultProjectId: number | null }) {
     const t = useTranslation();
+    const kind = options.kinds[0]?.value ?? '';
     const form = useForm<ServiceFormData>({
         project_id: defaultProjectId,
         name: '',
         slug: '',
-        kind: options.kinds[0]?.value ?? '',
+        kind,
         exposure: options.exposures.find((exposure) => exposure.value === 'internal')?.value ?? options.exposures[0]?.value ?? '',
+        os: defaultOperatingSystem(kind),
         repository_path: '/',
         repository: null,
         repository_branch: '',

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Enums\Ecosystem;
 use App\Enums\Exposure;
+use App\Enums\OperatingSystem;
 use App\Enums\ServiceKind;
 use App\Enums\Technology;
 use App\Models\AccessibleRepository;
@@ -24,7 +25,7 @@ use Illuminate\Validation\Validator;
 use Throwable;
 
 /**
- * The service and what it runs in production: one version per technology and the uploaded lockfiles. A service that
+ * The service and what it runs in production: its operating system, one version per technology and the uploaded lockfiles. A service that
  * reads its lockfiles from a GitHub repository takes no uploads.
  */
 class ServiceRequest extends FormRequest
@@ -62,6 +63,7 @@ class ServiceRequest extends FormRequest
             'repository_branch' => ['nullable', 'string', 'max:255', 'regex:'.Service::REPOSITORY_BRANCH_PATTERN, 'not_regex:/\.\./'],
             // Only a service reading its lockfiles from GitHub searches for them.
             'lockfile_excludes' => [Rule::excludeIf(! $syncsLockfiles), 'nullable', 'string', 'max:5000', $this->lockfileExcludesRule()],
+            'os' => ['nullable', Rule::enum(OperatingSystem::class)],
             'runtimes' => ['array'],
             'runtimes.*.technology' => ['required', 'distinct', Rule::enum(Technology::class)],
             'runtimes.*.raw_version' => ['required', 'string', 'max:'.Runtime::RAW_VERSION_MAX_LENGTH, 'regex:'.Runtime::RAW_VERSION_PATTERN],
@@ -166,6 +168,7 @@ class ServiceRequest extends FormRequest
             'repository_path' => __('Thư mục trong repository'),
             'repository' => __('Repository'),
             'repository_branch' => __('Branch'),
+            'os' => __('Hệ điều hành'),
             'runtimes.*.technology' => __('Công nghệ'),
             'runtimes.*.raw_version' => __('Version'),
             'lockfile_uploads.*' => __('Lockfile'),
@@ -208,6 +211,14 @@ class ServiceRequest extends FormRequest
             'repository_branch' => isset($attributes['repository']) ? ($attributes['repository_branch'] ?? null) : null,
             'lockfile_excludes' => isset($attributes['repository']) && $excludes !== [] ? $excludes : null,
         ];
+    }
+
+    /**
+     * The operating system of the production deployment, null when not known.
+     */
+    public function operatingSystem(): ?OperatingSystem
+    {
+        return OperatingSystem::tryFrom((string) $this->validated('os'));
     }
 
     /**

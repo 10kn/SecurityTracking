@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\ChatNotificationKind;
 use App\Enums\FindingState;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentScope;
 use App\Enums\IncidentTeamEventType;
+use App\Enums\OperatingSystem;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
@@ -303,7 +305,8 @@ class IncidentController extends Controller
     }
 
     /**
-     * A team of the incident page: its services with their branch, the versions they run, scope and fix, and whether
+     * A team of the incident page: its services with their branch, the versions they run, scope (with the operating
+     * systems the incident is limited to when it excludes the service's, e.g. "chỉ Windows") and fix, and whether
      * they all run the fix of their branch already (shown only: the assessment snapshot keeps neither), what it was told, its Google Chat
      * thread and what Google Chat accepted of it, its assessment and history, and what the form posts back for it (the
      * exposure hash and the assessment revision shown).
@@ -318,15 +321,20 @@ class IncidentController extends Controller
         return [
             'id' => $team['team']->id,
             'name' => $team['team']->name,
-            'services' => array_map(function (array $service) use ($team): array {
+            'services' => array_map(function (array $service) use ($incident, $team): array {
                 $versions = $this->runningVersions($team['runtimes'], $service);
+                $system = OperatingSystem::tryFrom((string) ($service['os'] ?? ''));
+                $isExcluded = $incident->excludes($system);
+                $systems = OperatingSystem::labels($incident->platforms());
 
                 return [
                     'name' => $service['service'],
                     'branch' => $service['branch'],
                     'versions' => $versions,
-                    'scope' => IncidentScope::from($service['scope'])->getLabel(),
-                    'scope_hint' => IncidentScope::from($service['scope'])->getDescription(),
+                    'scope' => $isExcluded ? __('đã xác nhận không ảnh hưởng (chỉ :systems)', ['systems' => $systems]) : IncidentScope::from($service['scope'])->getLabel(),
+                    'scope_hint' => $isExcluded
+                        ? __('Tin trên trang chính thức ghi rõ chỉ ảnh hưởng :systems, còn service chạy :system.', ['systems' => $systems, 'system' => $system?->getLabel()])
+                        : IncidentScope::from($service['scope'])->getDescription(),
                     'is_not_affected' => $service['scope'] === IncidentScope::NotAffected->value,
                     'patch' => $service['patch'],
                     'is_patched' => $service['patch'] !== null && $versions !== [] && collect($versions)->every(fn (string $version): bool => ! Version::isNewer($service['patch'], $version)),
@@ -337,7 +345,7 @@ class IncidentController extends Controller
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
             'thread' => $this->thread($row, $team['delivery']['is_webhook_changed']),
-            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row) : null,
+            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row, $row?->isRuledOut($team['exposure']) === true) : null,
             'assessment' => $row?->impact === null ? null : [
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
                 'note' => $row->impact_note,
@@ -450,12 +458,15 @@ class IncidentController extends Controller
      * What Google Chat accepted of the team's current thread: its opener, the message queued last (unless it is the
      * opener), the last one it accepted, and each message that failed and was not sent again, with the command that
      * sends it again. "Đã gửi" says Google Chat accepted the message, not that anyone read it. A team told before
-     * incident threads, or with no message in its current thread, shows what cannot be told from here.
+     * incident threads, or with no message in its current thread, shows what cannot be told from here. While an admin's
+     * "Không" for the team holds, its failed alerts get no command: psm:resend-notification would not send them (see
+     * ChatNotification::isWithheldByAssessment()); a failed admin update still does.
      *
      * @param  Delivery  $delivery
+     * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
      * @return array<string, mixed>
      */
-    private function delivery(array $delivery, ?IncidentTeam $row): array
+    private function delivery(array $delivery, ?IncidentTeam $row, bool $isRuledOut): array
     {
         return [
             'opener' => $this->messageStatus($delivery['opener']),
@@ -467,7 +478,7 @@ class IncidentController extends Controller
                 'id' => $notification->id,
                 'error' => Str::limit((string) $notification->last_error, 160),
                 'failed' => LocalTime::format($notification->failed_at),
-                'command' => "php artisan psm:resend-notification {$notification->id}",
+                'command' => $isRuledOut && $notification->kind === ChatNotificationKind::PreNotice ? null : "php artisan psm:resend-notification {$notification->id}",
             ])->values()->all(),
             'limit' => match (true) {
                 $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: dữ liệu thread cũ không tính cho webhook hiện tại; tin tiếp theo sẽ mở thread mới.'),

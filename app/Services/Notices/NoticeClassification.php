@@ -20,6 +20,10 @@ final readonly class NoticeClassification
      * @param  ?string  $exploitedEvidence  The sentence of the entry that says so, quoted. It only counts when it is in the
      *                                      entry (see NoticeEntry::quotes()).
      * @param  list<string>  $patchVersions  The released versions the entry tells to update to, e.g. ["8.3.36", "8.4.27"].
+     * @param  list<string>  $platforms  The operating systems the entry says it is limited to (see OperatingSystem), e.g.
+     *                                   ["windows"]; empty when it states no limit.
+     * @param  ?string  $platformsEvidence  The sentence of the entry that limits it, quoted. The limit only counts when
+     *                                      it is in the entry (see NoticeEntry::quotes()).
      */
     public function __construct(
         public bool $isSecurityNews,
@@ -32,5 +36,7 @@ final readonly class NoticeClassification
         public ?bool $activelyExploited = null,
         public ?string $exploitedEvidence = null,
         public array $patchVersions = [],
+        public array $platforms = [],
+        public ?string $platformsEvidence = null,
     ) {}
 }

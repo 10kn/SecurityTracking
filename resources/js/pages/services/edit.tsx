@@ -20,6 +20,7 @@ interface Props extends ServiceFormOptions {
         slug: string;
         kind: string;
         exposure: string;
+        os: string | null;
         repository_path: string;
         repository: string | null;
         repository_branch: string | null;
@@ -41,6 +42,7 @@ export default function ServicesEdit({ service, ...options }: Props) {
         slug: service.slug,
         kind: service.kind,
         exposure: service.exposure,
+        os: service.os ?? '',
         repository_path: service.repository_path,
         repository: service.repository,
         repository_branch: service.repository_branch ?? '',
