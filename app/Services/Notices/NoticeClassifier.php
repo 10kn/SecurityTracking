@@ -31,9 +31,11 @@ interface NoticeClassifier
     public function revision(): int;
 
     /**
-     * @param  list<array{id: int, title: string, published_at: ?CarbonInterface}>  $incidents  Recent incidents of the
-     *                                                                                          technology the entry may
-     *                                                                                          be about.
+     * The incidents are recent ones of the technology the entry may be about, with the facts read from their latest
+     * pre-notices (see AssignNoticeToIncident::recentIncidents()). They only help relate the entry to one of them: what
+     * the classifier reads from the entry comes from the entry alone.
+     *
+     * @param  list<array{id: int, title: string, published_at: ?CarbonInterface, notice_count?: int, notices?: list<array{title: string, published_at: ?CarbonInterface, aliases: list<string>, planned_release_at: ?CarbonInterface, affected_branches: list<string>, unaffected_branches: list<string>, patch_versions: list<string>}>}>  $incidents
      *
      * @throws Throwable When the entry could not be classified.
      */
