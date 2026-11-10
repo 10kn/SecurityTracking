@@ -147,7 +147,7 @@ it('confirms no fix from a pre-notice limited to an operating system, so it cove
 
     expect($incident->confirmedPatches())->toBe([])
         ->and(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
-        ->and(chatMessagesTo('WINDOWS')->sole()['text'])->toBe('[Critical] Updated PHP Windows builds for Brotli security fix')
+        ->and(chatMessagesTo('WINDOWS')->sole()['text'])->toBe('🔴 [Critical] Updated PHP Windows builds for Brotli security fix')
         ->and(IncidentTeamPatch::count())->toBe(0)
         ->and($finding->refresh()->context)->not->toHaveKey('covered_by_patch_id')
         ->and(app(SendFindingAlerts::class)->handle())->toBe(1);

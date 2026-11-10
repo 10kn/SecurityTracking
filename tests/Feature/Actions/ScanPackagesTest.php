@@ -130,7 +130,7 @@ it('sends a dev dependency only in the digest unless configured otherwise', func
     expect($alerts->join(''))->toContain('GHSA-xvch-5gv4-984h', 'GHSA-r5fr-rjxr-66jc')->not->toContain('GHSA-67hx-6x53-jw92');
 
     app(SendDailyDigest::class)->handle();
-    expect(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('[Critical] GHSA-67hx-6x53-jw92 trong @babel/traverse');
+    expect(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('🔴 [Critical] GHSA-67hx-6x53-jw92 trong @babel/traverse');
 
     config(['psm.alerts.immediate_dev_dependencies' => true]);
     app(SendFindingAlerts::class)->handle();

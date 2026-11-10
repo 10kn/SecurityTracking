@@ -99,7 +99,7 @@ it('tells the team in the incident thread once CISA KEV lists the CVEs after the
     artisan('psm:watch-notices')->assertSuccessful();
 
     $finding = Finding::where('rule', FindingRule::RuntimeOutdatedSecurity)->sole();
-    expect(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+    expect(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.36')
         ->and($finding->severity)->toBe(Severity::Critical)
         ->and($finding->sla_due_at->toDateTimeString())->toBe('2026-10-24 00:40:00');
 
@@ -215,7 +215,7 @@ it('sends a first card about an old incident once CISA adds its CVE, to a team t
         ->and(chatMessagesTo('BOOKING'))->toHaveCount($cards);
 
     if ($cards > 0) {
-        expect(chatMessagesTo('BOOKING')->sole()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+        expect(chatMessagesTo('BOOKING')->sole()['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.36')
             ->and(chatJson(chatMessagesTo('BOOKING')->sole()))->toContain('CISA KEV ghi nhận CVE-2026-109618 đã bị khai thác trong thực tế (CISA thêm vào danh sách ngày 19/11/2026, hạn khắc phục CISA đặt: 10/12/2026).', 'Hạn xử lý: 23/11/2026.');
     }
 
@@ -463,10 +463,10 @@ it('sends a package finding again once CISA lists its CVE, even one already sent
 
     $cards = chatMessagesTo('COMMERCE')->slice(1)->values();
     expect($cards->pluck('text')->sort()->values()->all())->toBe([
-        '[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt',
-        '[Critical] GHSA-vvj3-c3rp-c85p trong phpunit/phpunit',
+        '🔴 [Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt',
+        '🔴 [Critical] GHSA-vvj3-c3rp-c85p trong phpunit/phpunit',
     ])
-        ->and(chatJson($cards->firstWhere('text', '[Critical] GHSA-vvj3-c3rp-c85p trong phpunit/phpunit')))->toContain(
+        ->and(chatJson($cards->firstWhere('text', '🔴 [Critical] GHSA-vvj3-c3rp-c85p trong phpunit/phpunit')))->toContain(
             'CISA KEV ghi nhận CVE-2026-24765 đã bị khai thác trong thực tế (CISA thêm vào danh sách ngày 27/10/2026, hạn khắc phục CISA đặt: 03/11/2026).',
             'Mức theo nguồn: High.',
             'Mở CISA KEV',

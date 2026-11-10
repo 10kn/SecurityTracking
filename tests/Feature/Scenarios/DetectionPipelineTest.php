@@ -187,7 +187,7 @@ it('warns each team running php once when php.net pre-announces a critical secur
     artisan('psm:watch-notices')->assertSuccessful();
 
     $commerceMessage = chatMessagesTo('COMMERCE')->sole();
-    expect($commerceMessage['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+    expect($commerceMessage['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(chatJson($commerceMessage))->toContain('shop-api', 'PHP 8.3.35', 'shop-web', 'PHP 8.4.26', 'https://www.php.net/archive/2026.php#2026-10-20-1')
         ->and(chatJson(chatMessagesTo('BOOKING')->sole()))->toContain('Upcoming Critical PHP Security Release', 'booking-api', 'PHP 8.2.34')
         ->and(chatMessagesTo('ANALYTICS'))->toHaveCount(0);
@@ -205,8 +205,8 @@ it('warns each team running php once when php.net pre-announces a critical secur
     artisan('psm:watch-notices')->assertSuccessful();
 
     expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
-        '[Critical] Upcoming Critical PHP Security Release',
-        '[Critical] PHP 8.3.36 Released!',
+        '🔴 [Critical] Upcoming Critical PHP Security Release',
+        '🔴 [Critical] PHP 8.3.36 Released!',
     ])
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(2)
         ->and(chatMessagesTo('ANALYTICS'))->toHaveCount(0);
@@ -232,8 +232,8 @@ it('tells each team once that the fix is out when the vendor names the version a
     artisan('psm:watch-notices')->assertSuccessful();
 
     expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
-        '[Critical] Upcoming Critical PHP Security Release',
-        '[Critical] PHP 8.3.36 Released!',
+        '🔴 [Critical] Upcoming Critical PHP Security Release',
+        '🔴 [Critical] PHP 8.3.36 Released!',
     ]);
 
     $this->travelTo('2026-10-21 15:00:00');
@@ -250,14 +250,14 @@ it('tells each team once that the fix is out when the vendor names the version a
 
     $finding = Finding::where('rule', FindingRule::RuntimeOutdatedSecurity)->sole();
     expect(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe([
-        '[Critical] Upcoming Critical PHP Security Release',
-        '[Critical] PHP 8.3.36 Released!',
-        '[Critical] Đã có bản vá, nâng lên 8.3.36',
+        '🔴 [Critical] Upcoming Critical PHP Security Release',
+        '🔴 [Critical] PHP 8.3.36 Released!',
+        '🔴 [Critical] Đã có bản vá, nâng lên 8.3.36',
     ])
         ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('shop-api', 'PHP 8.3.35 → 8.3.36', 'Hạn xử lý: 24/10/2026.')
         ->and(chatMessagesTo('BOOKING')->pluck('text')->all())->toBe([
-            '[Critical] Upcoming Critical PHP Security Release',
-            '[Critical] PHP 8.3.36 Released!',
+            '🔴 [Critical] Upcoming Critical PHP Security Release',
+            '🔴 [Critical] PHP 8.3.36 Released!',
         ])
         ->and($finding)->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical);
 });
@@ -271,7 +271,7 @@ it('alerts the owning team right after a lockfile with a vulnerable package is u
     app(UpdateProductionInventory::class)->handle(serviceOfTeam($commerce, 'shop-api'), [], [['path' => 'composer.lock', 'content' => lockfileFixture('composer.lock')]]);
 
     $message = chatMessagesTo('COMMERCE')->sole();
-    expect($message['text'])->toBe('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
+    expect($message['text'])->toBe('🔴 [Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
         ->and(chatJson($message))->toContain('shop-api', 'firebase/php-jwt v5.5.1 · nâng lên 6.0.0 · composer.lock')
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(0)
         ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(4);
@@ -300,7 +300,7 @@ it('sends each team one card listing its affected services when Packagist publis
     artisan('psm:scan-packages')->assertSuccessful();
 
     $commerceMessage = chatMessagesTo('COMMERCE')->sole();
-    expect($commerceMessage['text'])->toBe('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
+    expect($commerceMessage['text'])->toBe('🔴 [Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
         ->and(chatJson($commerceMessage))->toContain('2 service bị ảnh hưởng', 'shop-api', 'shop-admin')->not->toContain('booking-api')
         ->and(chatJson(chatMessagesTo('BOOKING')->sole()))->toContain('GHSA-8xf4-w7qw-pjjw', 'booking-api')->not->toContain('shop-api');
 });
@@ -335,7 +335,7 @@ it('alerts once for a vulnerable package in a nested lockfile from github, and c
     artisan('psm:sync-lockfiles')->assertSuccessful();
 
     $message = chatMessagesTo('COMMERCE')->sole();
-    expect($message['text'])->toBe('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
+    expect($message['text'])->toBe('🔴 [Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt')
         ->and(chatJson($message))->toContain('firebase/php-jwt v5.5.1 · nâng lên 6.0.0 · admin/composer.lock')
         ->and(Finding::where('rule', FindingRule::DependencyVulnerable)->open()->count())->toBe(4);
 

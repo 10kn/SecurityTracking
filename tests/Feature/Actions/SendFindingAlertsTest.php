@@ -70,7 +70,7 @@ it('sends again when the severity rises', function () {
     app(SendFindingAlerts::class)->handle();
 
     expect(chatMessagesTo('COMMERCE'))->toHaveCount(2)
-        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toStartWith('[Critical]');
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toStartWith('🔴 [Critical]');
 });
 
 it('leaves findings below the immediate severities to the digest', function () {
@@ -234,13 +234,28 @@ it('sends one short card for a service with many vulnerable packages, with how m
     expect(app(SendFindingAlerts::class)->handle())->toBe(1);
 
     $message = chatMessagesTo('COMMERCE')->sole();
-    expect($message['text'])->toBe('[Critical] shop-web: phát hiện 4 lỗ hổng trong lockfile')
+    expect($message['text'])->toBe('🔴 [Critical] shop-web: phát hiện 4 lỗ hổng trong lockfile')
         ->and(chatJson($message))->toContain('Project Shop. Mức cao nhất: Critical.', 'Xem findings', "/admin/findings?service={$service->id}")
         ->not->toContain('GHSA-1', 'lodash 4.17.20')
         ->and(Finding::whereNull('notified_at')->count())->toBe(0);
 
     expect(app(SendFindingAlerts::class)->handle())->toBe(0);
 });
+
+it('opens a critical or high card with its severity in color, since the card header takes no formatting', function (Severity $severity, ?string $line) {
+    packageFindingsAt($this->team, 'shop-web', ['GHSA-1'], ['severity' => $severity]);
+
+    app(SendFindingAlerts::class)->handle();
+
+    $card = chatMessagesTo('COMMERCE')->sole();
+    $line === null
+        ? expect(chatJson($card))->not->toContain('<font color=')
+        : expect($card['cardsV2'][0]['card']['sections'][0]['widgets'][0]['textParagraph']['text'])->toBe($line);
+})->with([
+    'critical in red' => [Severity::Critical, '<font color="#d93025"><b>● CRITICAL</b></font>'],
+    'high in orange' => [Severity::High, '<font color="#e8710a"><b>● HIGH</b></font>'],
+    'medium uncolored' => [Severity::Medium, null],
+]);
 
 it('keeps one card per advisory below the threshold, counting advisories rather than environments', function () {
     $finding = packageFindingsAt($this->team, 'shop-web', ['GHSA-1'])[0];
@@ -251,7 +266,7 @@ it('keeps one card per advisory below the threshold, counting advisories rather 
     packageFindingsAt($this->team, 'shop-web', ['GHSA-2']);
 
     expect(app(SendFindingAlerts::class)->handle())->toBe(2)
-        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toContain('[High] GHSA-1 trong lodash', '[High] GHSA-2 trong lodash');
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toContain('🟠 [High] GHSA-1 trong lodash', '🟠 [High] GHSA-2 trong lodash');
 });
 
 it('says how many findings the advisories are when the service has several environments', function () {
@@ -273,9 +288,9 @@ it('sends the CISA KEV packages of a summarized service on their own card, listi
     expect(app(SendFindingAlerts::class)->handle())->toBe(2);
 
     [$summary, $exploited] = chatMessagesTo('COMMERCE')->all();
-    expect($summary['text'])->toBe('[High] shop-web: phát hiện 3 lỗ hổng trong lockfile')
+    expect($summary['text'])->toBe('🟠 [High] shop-web: phát hiện 3 lỗ hổng trong lockfile')
         ->and(chatJson($summary))->toContain('Ngoài ra 1 lỗ hổng có trong danh sách CISA KEV được cảnh báo riêng.')
-        ->and($exploited['text'])->toBe('[Critical] GHSA-KEV trong lodash')
+        ->and($exploited['text'])->toBe('🔴 [Critical] GHSA-KEV trong lodash')
         ->and(chatJson($exploited))->toContain('2 service bị ảnh hưởng', 'shop-web', 'shop-api', 'CVE-2026-4242');
 });
 

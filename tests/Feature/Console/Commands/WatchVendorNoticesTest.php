@@ -78,12 +78,12 @@ it('warns the team about a critical pre-notice without raising the severity of i
 
     expect($finding->refresh()->severity)->toBe(Severity::High)
         ->and(FindingEvent::where('type', FindingEventType::Escalated)->count())->toBe(0)
-        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release');
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release');
 
     $this->travelTo('2026-10-21 00:40:00');
     artisan('psm:watch-notices')->assertSuccessful();
 
-    expect(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+    expect(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.36')
         ->and($finding->refresh())->severity->toBe(Severity::Critical)->notified_severity->toBe(Severity::Critical)
         ->and(FindingEvent::where('type', FindingEventType::Escalated)->count())->toBe(1);
 
@@ -122,7 +122,7 @@ it('sends a critical pre-notice before the classifier reads anything', function 
 
     expect($sentWhenClassifying)->not->toBeEmpty()
         ->and($sentWhenClassifying[0])->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release');
+        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release');
 });
 
 it('is scheduled every 15 minutes', function () {

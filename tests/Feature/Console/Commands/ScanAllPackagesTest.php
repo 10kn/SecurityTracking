@@ -33,7 +33,7 @@ it('reads lockfiles not read yet, scans every current deployment and alerts the 
         ->and($old->components()->count())->toBe(0)
         ->and(Finding::open()->count())->toBe(4)
         ->and(chatMessagesTo('COMMERCE'))->toHaveCount(1)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('[Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt', 'Key/algorithm type confusion', 'nâng lên 6.0.0', 'https://github.com/advisories/GHSA-8xf4-w7qw-pjjw');
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('🔴 [Critical] GHSA-8xf4-w7qw-pjjw trong firebase/php-jwt', 'Key/algorithm type confusion', 'nâng lên 6.0.0', 'https://github.com/advisories/GHSA-8xf4-w7qw-pjjw');
 });
 
 it('resolves the findings of a deployment whose lockfiles were all removed', function () {

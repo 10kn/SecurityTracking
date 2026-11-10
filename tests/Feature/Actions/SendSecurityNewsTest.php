@@ -30,7 +30,7 @@ it('sends security news to the news space even when no team runs the technology'
     expect(app(SendSecurityNews::class)->handle())->toBe(1);
 
     $message = chatMessagesTo('NEWS')->sole();
-    expect($message['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+    expect($message['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(chatJson($message))->toContain('Tin bảo mật · PHP', 'It addresses two critical vulnerabilities.', 'Chưa team nào chạy PHP.', 'Mở nguồn tin', 'Xem incident')
         ->and(chatMessagesTo('ADMIN'))->toBeEmpty()
         ->and($this->preNotice->refresh()->news_notification_id)->toBe(ChatNotification::sole()->id)
@@ -108,7 +108,7 @@ it('sends the news of one incident in one thread, each once, and nothing for an 
     $messages = chatMessagesTo('NEWS');
     expect($messages)->toHaveCount(2)
         ->and($messages->pluck('thread.threadKey')->unique()->all())->toBe([SendSecurityNews::threadKeyFor($this->incident)])
-        ->and($messages->pluck('text')->all())->toBe(['[Critical] Upcoming Critical PHP Security Release', '[Critical] PHP 8.3.36 Released'])
+        ->and($messages->pluck('text')->all())->toBe(['🔴 [Critical] Upcoming Critical PHP Security Release', '🔴 [Critical] PHP 8.3.36 Released'])
         ->and(chatJson($messages[1]))->toContain('Tin khác của cùng sự kiện', 'Upcoming Critical PHP Security Release');
 });
 

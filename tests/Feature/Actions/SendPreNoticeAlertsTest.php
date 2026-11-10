@@ -48,7 +48,7 @@ it('sends one card to each team running the technology, listing its services wit
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(2);
 
     $card = chatMessagesTo('COMMERCE')->sole();
-    expect($card['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+    expect($card['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(chatJson($card))->toContain(
             'Cảnh báo chuẩn bị · Commerce',
             'It addresses two critical vulnerabilities.',
@@ -176,7 +176,7 @@ it('tells the team again once when the severity rises, but not when the vendor o
 
     $messages = chatMessagesTo('COMMERCE');
     expect($messages)->toHaveCount(2)
-        ->and($messages->last()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+        ->and($messages->last()['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(chatJson($messages->last()))->toContain("Mức độ tăng từ {$from->getLabel()} lên Critical.");
 })->with([Severity::Unknown, Severity::High]);
 
@@ -202,7 +202,7 @@ it('holds pre-notices the classifier has not read yet, unless their CVSS score m
     $criticalInWords = Advisory::factory()->preNotice($this->php)->create(['title' => 'Critical PHP security release', 'severity_basis' => SeverityBasis::Vendor, 'published_at' => now()->subHour()]);
 
     expect(app(SendPreNoticeAlerts::class)->handle(holdUnclassified: true))->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release');
+        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release');
 
     $high->update(['classified_by' => 'claude-haiku-5-5']);
 
@@ -262,7 +262,7 @@ it('sends no other card for news that only adds to an incident, and one when the
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1);
 
     $reply = chatMessagesTo('COMMERCE')->last();
-    expect($reply['text'])->toBe('[Critical] PHP security advisory, now critical')
+    expect($reply['text'])->toBe('🔴 [Critical] PHP security advisory, now critical')
         ->and($reply['thread']['threadKey'])->toBe(chatMessagesTo('COMMERCE')->first()['thread']['threadKey'])
         ->and(chatJson($reply))->toContain('Cập nhật · Commerce', 'Mức độ tăng từ High lên Critical.', 'shop-api')->not->toContain('Tin khác của cùng sự kiện');
 });
@@ -328,7 +328,7 @@ it('sends one "Đã có bản vá" card once the vendor names the version and th
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(2);
 
     $card = chatMessagesTo('COMMERCE')->sole();
-    expect($card['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+    expect($card['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.36')
         ->and(chatJson($card))->toContain(
             'Hãng đã xác nhận bản vá 8.3.36. Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.',
             'Hạn xử lý: 24/10/2026.',
@@ -336,7 +336,7 @@ it('sends one "Đã có bản vá" card once the vendor names the version and th
             '1 service ở nhánh chưa có bản vá', 'PHP 8.1.31 · Phạm vi: chưa xác định',
             'Upcoming Critical PHP Security Release',
         )
-        ->and(chatMessagesTo('BOOKING')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+        ->and(chatMessagesTo('BOOKING')->sole()['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(IncidentTeamPatch::sole())->team_id->toBe($this->commerce->id)->branch->toBe('8.3')->version->toBe('8.3.36')->severity->toBe(Severity::Critical);
 
     $this->travel(15)->minutes();
@@ -354,7 +354,7 @@ it('does not confirm a fix the catalog does not list as a security release yet, 
 
     app(SendPreNoticeAlerts::class)->handle();
 
-    expect(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+    expect(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(IncidentTeamPatch::count())->toBe(0);
 })->with([
     'not in the catalog yet' => [null, ['8.3.36']],
@@ -379,7 +379,7 @@ it('sends the fix after the first card once the catalog lists it, and then the t
     ]);
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['[Critical] Upcoming Critical PHP Security Release', '[Critical] Đã có bản vá, nâng lên 8.3.36'])
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['🔴 [Critical] Upcoming Critical PHP Security Release', '🔴 [Critical] Đã có bản vá, nâng lên 8.3.36'])
         ->and($finding->refresh())
         ->severity->toBe(Severity::Critical)
         ->notified_severity->toBe(Severity::Critical)
@@ -448,7 +448,7 @@ it('sends another card when the vendor revises the fixed version up in the same 
     $this->preNotice->update(['patch_versions' => ['8.3.37']]);
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['[Critical] Đã có bản vá, nâng lên 8.3.36', '[Critical] Đã có bản vá, nâng lên 8.3.37'])
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['🔴 [Critical] Đã có bản vá, nâng lên 8.3.36', '🔴 [Critical] Đã có bản vá, nâng lên 8.3.37'])
         ->and(IncidentTeamPatch::orderBy('id')->pluck('version')->all())->toBe(['8.3.36', '8.3.37']);
 
     $this->travel(1)->hour();
@@ -477,7 +477,7 @@ it('still sends the fix to a team told about the incident once its pre-notices a
     RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.36')
         ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->not->toContain('Mức độ tăng')
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(0);
 
@@ -490,7 +490,7 @@ it('still sends the fix to a team told about the incident once its pre-notices a
     RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.37']);
 
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.37')
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.37')
         ->and(chatMessagesTo('BOOKING'))->toHaveCount(0);
 })->with([
     'told by an incident card' => false,
@@ -571,7 +571,7 @@ it('shows a branch whose fix an earlier card announced as having one, not as wai
     expect(app(SendPreNoticeAlerts::class)->handle())->toBe(1);
 
     $card = chatMessagesTo('COMMERCE')->last();
-    expect($card['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.4.27')
+    expect($card['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.4.27')
         ->and(chatJson($card))->toContain('Hãng đã xác nhận bản vá 8.4.27.', '2 service cần nâng cấp', 'PHP 8.3.35 → 8.3.36', 'PHP 8.4.26 → 8.4.27', '1 service đã ở bản vá hoặc mới hơn.')
         ->not->toContain('nhánh chưa có bản vá', 'Phạm vi:');
 });

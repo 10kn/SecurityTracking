@@ -80,7 +80,7 @@ it('replies in the thread with a compact card when the severity rises', function
 
     [$opener, $reply] = chatMessagesTo('COMMERCE')->all();
     expect($reply['thread']['threadKey'])->toBe($opener['thread']['threadKey'])
-        ->and($reply['text'])->toBe('[Critical] Upcoming Critical PHP Security Release')
+        ->and($reply['text'])->toBe('🔴 [Critical] Upcoming Critical PHP Security Release')
         ->and(chatJson($reply))->toContain('Cập nhật · Commerce', 'Mức độ tăng từ High lên Critical.', 'Xem lại mức ưu tiên xử lý theo mức độ mới.', 'shop-api', 'https://www.php.net/archive/2026.php#2026-10-20-1')
         ->not->toContain('Cảnh báo chuẩn bị')
         ->and(ChatNotification::latest('id')->first())
@@ -165,7 +165,7 @@ it('makes one reply of several changes in one run', function () {
     expect(sendPreNotices())->toBe(1);
 
     $reply = chatMessagesTo('COMMERCE')->last();
-    expect($reply['text'])->toBe('[Critical] Đã có bản vá, nâng lên 8.3.36')
+    expect($reply['text'])->toBe('🔴 [Critical] Đã có bản vá, nâng lên 8.3.36')
         ->and(chatJson($reply))->toContain(
             'Hãng đã xác nhận bản vá 8.3.36.',
             'Hãng xác nhận lỗ hổng đang bị khai thác',
@@ -313,7 +313,7 @@ it('handles the most severe and newest incidents first and reads the runtimes of
     DB::enableQueryLog();
 
     expect(sendPreNotices())->toBe(3)
-        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['[Critical] Newer critical notice', '[Critical] Older critical notice', '[High] Upcoming Critical PHP Security Release'])
+        ->and(chatMessagesTo('COMMERCE')->pluck('text')->all())->toBe(['🔴 [Critical] Newer critical notice', '🔴 [Critical] Older critical notice', '🟠 [High] Upcoming Critical PHP Security Release'])
         ->and(collect(DB::getQueryLog())->filter(fn (array $query): bool => str_starts_with($query['query'], 'select * from "runtimes"')))->toHaveCount(1);
 });
 
@@ -347,9 +347,9 @@ it('stores the fingerprint of what it decided on, so a fix confirmed while it ra
     });
 
     expect(sendPreNotices())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('[High] Upcoming Critical PHP Security Release')
+        ->and(chatMessagesTo('COMMERCE')->sole()['text'])->toBe('🟠 [High] Upcoming Critical PHP Security Release')
         ->and(sendPreNotices())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[High] Đã có bản vá, nâng lên 8.3.36');
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🟠 [High] Đã có bản vá, nâng lên 8.3.36');
 });
 
 it('does not skip an incident once the alert settings change', function (array $settings) {

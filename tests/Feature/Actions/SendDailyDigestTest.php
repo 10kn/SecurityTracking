@@ -66,7 +66,7 @@ it('reminds the team every day of its open critical and high findings', function
     app(SendDailyDigest::class)->handle();
 
     expect(chatMessagesTo('COMMERCE'))->toHaveCount(2)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Cần xử lý, vẫn đang mở', '[High] PHP 8.1 hết hỗ trợ')->not->toContain('Finding mới');
+        ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Cần xử lý, vẫn đang mở', '🟠 [High] PHP 8.1 hết hỗ trợ')->not->toContain('Finding mới');
 });
 
 it('stops reminding of a critical or high finding once an admin marked it as read', function () {
@@ -85,7 +85,7 @@ it('reminds once when the deadline of a finding passes, read or not', function (
     digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', ['acknowledged_at' => '2026-10-20 10:00:00', 'sla_due_at' => '2026-10-23 12:00:00'], '2026-10-01 10:00:00');
 
     expect(app(SendDailyDigest::class)->handle())->toBe(1)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Quá hạn xử lý', '[High] PHP 8.1 hết hỗ trợ · quá hạn 23/10/2026 · đã đọc');
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Quá hạn xử lý', '🟠 [High] PHP 8.1 hết hỗ trợ · quá hạn 23/10/2026 · đã đọc');
 
     $this->travelTo('2026-10-25 01:00:00');
 
@@ -319,7 +319,7 @@ it('lists the incidents waiting for a fix with the security releases that may be
     RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36', 'released_at' => '2026-10-21', 'created_at' => '2026-10-23 15:00:00']);
 
     expect(app(SendDailyDigest::class)->handle())->toBe(1)
-        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Đang chờ bản vá', '[Critical] Upcoming Critical PHP Security Release', 'Nhánh 8.3 · có thể là bản vá: 8.3.36 (trang chính thức PHP chưa xác nhận)');
+        ->and(chatJson(chatMessagesTo('COMMERCE')->sole()))->toContain('Đang chờ bản vá', '🔴 [Critical] Upcoming Critical PHP Security Release', 'Nhánh 8.3 · có thể là bản vá: 8.3.36 (trang chính thức PHP chưa xác nhận)');
 
     $this->travelTo('2026-10-25 01:00:00');
 
@@ -364,7 +364,7 @@ it('counts a card from before incidents as telling the team, from when it was qu
     digestFinding($this->deployment, 'PHP 8.1 hết hỗ trợ', [], '2026-10-25 10:00:00');
     app(SendDailyDigest::class)->handle();
 
-    expect(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Đang chờ bản vá', '[Critical] Upcoming Critical PHP Security Release');
+    expect(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Đang chờ bản vá', '🔴 [Critical] Upcoming Critical PHP Security Release');
 })->with([
     'queued since the previous digest' => ['2026-10-23 10:00:00', 1],
     'queued before it' => ['2026-10-21 10:00:00', 0],

@@ -52,7 +52,7 @@ it('carries what a team was told about the CVE ids CISA KEV lists over to the in
     $this->advisory->update(['known_exploited' => [['cve' => 'CVE-2026-1001', 'name' => 'PHP RCE', 'date_added' => '2026-10-21', 'due_date' => '2026-10-24', 'listed' => true]]]);
     app(SendPreNoticeAlerts::class)->handle();
 
-    expect(chatJson(chatMessagesTo('COMMERCE')->firstWhere('text', '[Critical] PHP security advisory')))->toContain('CISA KEV ghi nhận CVE-2026-1001');
+    expect(chatJson(chatMessagesTo('COMMERCE')->firstWhere('text', '🔴 [Critical] PHP security advisory')))->toContain('CISA KEV ghi nhận CVE-2026-1001');
 
     $into = app(MergeIncidents::class)->handle($this->advisory->incident, $this->announcement->incident, $this->admin);
 
@@ -98,7 +98,7 @@ it('splits a pre-notice into a new incident, which a team that never had it in a
         ->incident_id->toBe($incident->id)
         ->incident_basis->toBe(IncidentBasis::Manual)
         ->and(app(SendPreNoticeAlerts::class)->handle())->toBe(1)
-        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('[Critical] PHP security advisory');
+        ->and(chatMessagesTo('COMMERCE')->last()['text'])->toBe('🔴 [Critical] PHP security advisory');
 });
 
 it('does not tell a team again about a pre-notice split off after it was in a card', function () {

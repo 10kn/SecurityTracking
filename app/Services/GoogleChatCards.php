@@ -36,7 +36,6 @@ class GoogleChatCards
     {
         /** @var Finding $first */
         $first = $findings->sortByDesc(fn (Finding $finding): int => $finding->severity->rank())->first();
-        $severity = $first->severity->getLabel();
 
         // On the first card of an issue every service is new, so "new" only marks services added to a known issue.
         $newFindingIds = count($newFindingIds) < $findings->count() ? $newFindingIds : [];
@@ -75,7 +74,7 @@ class GoogleChatCards
             $this->buttons($links),
         ]];
 
-        return $this->card("finding-{$first->id}", "[{$severity}] {$first->title}", $team->name, $sections);
+        return $this->card("finding-{$first->id}", "{$this->severityTag($first->severity)} {$first->title}", $team->name, $sections, $first->severity);
     }
 
     /**
@@ -111,6 +110,7 @@ class GoogleChatCards
                     __('Mở service') => $this->serviceUrl($service),
                 ]),
             ]]],
+            $first->severity,
         );
     }
 
@@ -192,7 +192,7 @@ class GoogleChatCards
             $sections[] = ['widgets' => [$this->buttons([__('Mở nguồn tin') => $advisory->url])]];
         }
 
-        return $this->card("incident-{$incident->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections);
+        return $this->card("incident-{$incident->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections, $advisory->severity);
     }
 
     /**
@@ -217,7 +217,7 @@ class GoogleChatCards
             ['widgets' => $widgets],
             ...$this->otherNoticesSection($others),
             ['widgets' => [$this->buttons(array_filter([__('Mở nguồn tin') => $advisory->url, __('Xem incident') => route('admin.incidents.show', $incident)], filled(...)))]],
-        ]);
+        ], $advisory->severity);
     }
 
     /**
@@ -329,7 +329,7 @@ class GoogleChatCards
 
         $title = $this->severityTitle($severity, __('Đã có bản vá, nâng lên :versions', ['versions' => $versions]));
 
-        return $this->card("incident-{$incident->id}", $title, __(':technology · :team', ['technology' => $technology->getLabel(), 'team' => $team->name]), $sections);
+        return $this->card("incident-{$incident->id}", $title, __(':technology · :team', ['technology' => $technology->getLabel(), 'team' => $team->name]), $sections, $severity);
     }
 
     /**
@@ -389,7 +389,7 @@ class GoogleChatCards
             ? $this->severityTitle($advisory->severity, $advisory->title)
             : $this->severityTitle($advisory->severity, __('Đã có bản vá, nâng lên :versions', ['versions' => implode(', ', array_values($patches))]));
 
-        return $this->card("incident-{$incident->id}", $title, __('Cập nhật · :team', ['team' => $team->name]), $sections);
+        return $this->card("incident-{$incident->id}", $title, __('Cập nhật · :team', ['team' => $team->name]), $sections, $advisory->severity);
     }
 
     /**
@@ -488,11 +488,38 @@ class GoogleChatCards
     }
 
     /**
-     * E.g. "[Critical] Upcoming PHP Security Release"; no tag when the severity is unknown.
+     * E.g. "🔴 [Critical] Upcoming PHP Security Release"; no tag when the severity is unknown.
      */
     private function severityTitle(Severity $severity, string $title): string
     {
-        return $severity === Severity::Unknown ? $title : "[{$severity->getLabel()}] {$title}";
+        return $severity === Severity::Unknown ? $title : "{$this->severityTag($severity)} {$title}";
+    }
+
+    /**
+     * E.g. "[Medium]". Critical and High lead with a colored dot, the only color Google Chat shows in a card header,
+     * a list row and the notification.
+     */
+    private function severityTag(Severity $severity): string
+    {
+        $dot = match ($severity) {
+            Severity::Critical => '🔴 ',
+            Severity::High => '🟠 ',
+            default => '',
+        };
+
+        return "{$dot}[{$severity->getLabel()}]";
+    }
+
+    /**
+     * The text color of the severity line atop a Critical or High card.
+     */
+    private function severityColor(Severity $severity): ?string
+    {
+        return match ($severity) {
+            Severity::Critical => '#d93025',
+            Severity::High => '#e8710a',
+            default => null,
+        };
     }
 
     /**
@@ -546,7 +573,7 @@ class GoogleChatCards
                         ->take($this->maxListedItems())
                         ->map(fn (Advisory $advisory): array => ['decoratedText' => array_filter([
                             'topLabel' => $advisory->technology->getLabel(),
-                            'text' => e("[{$advisory->severity->getLabel()}] {$advisory->title}"),
+                            'text' => e("{$this->severityTag($advisory->severity)} {$advisory->title}"),
                             'wrapText' => true,
                             'button' => filled($advisory->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $advisory->url]]] : null,
                         ])])
@@ -682,7 +709,7 @@ class GoogleChatCards
             'widgets' => [
                 ...$findings
                     ->take($this->maxListedItems())
-                    ->map(fn (Finding $finding): array => $this->serviceWidget($finding->deployment->service, implode(' · ', ["[{$finding->severity->getLabel()}] {$finding->title}", ...$this->findingStatus($finding)])))
+                    ->map(fn (Finding $finding): array => $this->serviceWidget($finding->deployment->service, implode(' · ', ["{$this->severityTag($finding->severity)} {$finding->title}", ...$this->findingStatus($finding)])))
                     ->values()
                     ->all(),
                 ...$this->moreWidget($findings->count()),
@@ -773,13 +800,20 @@ class GoogleChatCards
 
     /**
      * Sections without widgets are left out: Google Chat rejects a card with an empty section, e.g. the services of a
-     * team that runs none of the technology.
+     * team that runs none of the technology. A Critical or High card opens with its severity in color, since the
+     * header takes no formatting.
      *
      * @param  list<array<string, mixed>>  $sections
      * @return array<string, mixed>
      */
-    private function card(string $cardId, string $title, string $subtitle, array $sections): array
+    private function card(string $cardId, string $title, string $subtitle, array $sections, ?Severity $severity = null): array
     {
+        $color = $severity === null ? null : $this->severityColor($severity);
+
+        if ($color !== null) {
+            array_unshift($sections, ['widgets' => [['textParagraph' => ['text' => '<font color="'.$color.'"><b>● '.e(mb_strtoupper($severity->getLabel())).'</b></font>']]]]);
+        }
+
         $sections = array_values(array_filter($sections, fn (array $section): bool => ($section['widgets'] ?? []) !== []));
 
         return [
