@@ -17,7 +17,7 @@ export interface IncidentSummary {
     teams_told_count: number;
     teams_delivered_count: number;
     has_delivery_failures: boolean;
-    fixes: { branch: string; version: string | null; is_eol: boolean }[];
+    fixes: { branch: string; version: string | null; is_affected: boolean; is_eol: boolean }[];
     fix_status: StatusDotData;
     is_outside_reminder_window: boolean;
     pending_suggestions_count: number;
@@ -25,14 +25,24 @@ export interface IncidentSummary {
 }
 
 /**
- * What the vendor released, then each branch with its fixed version, or "chờ" while it waits ("hết hỗ trợ" when the
- * catalog says the branch reached end of life). An incident too old for reminders says so on a line of its own. Compact,
- * the branches keep to one line; the incident page lists them all.
+ * What the vendor released, then each branch with its fixed version. A branch without one says "hết hỗ trợ" when the
+ * catalog says it reached end of life, "chờ bản vá" when the vendor named it affected, and "chưa rõ" when the vendor did
+ * not name it either way, so it may not be affected at all. An incident too old for reminders says so on a line of its
+ * own. Compact, the branches keep to one line; the incident page lists them all.
  */
 export function FixStatus({ incident, isCompact = false }: { incident: Pick<IncidentSummary, 'fixes' | 'fix_status' | 'is_outside_reminder_window'>; isCompact?: boolean }) {
     const t = useTranslation();
-    const branchOf = (fix: IncidentSummary['fixes'][number]) =>
-        fix.version ? `${fix.branch} → ${fix.version}` : fix.is_eol ? t(':branch hết hỗ trợ', { branch: fix.branch }) : t(':branch chờ', { branch: fix.branch });
+    const branchOf = (fix: IncidentSummary['fixes'][number]) => {
+        if (fix.version) {
+            return `${fix.branch} → ${fix.version}`;
+        }
+
+        if (fix.is_eol) {
+            return t(':branch hết hỗ trợ', { branch: fix.branch });
+        }
+
+        return fix.is_affected ? t(':branch chờ bản vá', { branch: fix.branch }) : t(':branch chưa rõ', { branch: fix.branch });
+    };
 
     return (
         <>

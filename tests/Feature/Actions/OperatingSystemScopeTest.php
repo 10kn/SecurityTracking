@@ -161,7 +161,7 @@ it('never takes a Windows rebuild for the fix of the branch, even when its versi
 
     expect($incident->confirmedPatches())->toBe([])
         ->and(IncidentTeamExposure::for($incident, $this->windowsTeam)->services[0]['patch'])->toBeNull()
-        ->and(IncidentTeamExposure::waitingBranches($incident, collect([$windows]), $incident->confirmedPatches()))->toBe(['8.4']);
+        ->and(IncidentTeamExposure::waitingBranches($incident, collect([$windows]), $incident->confirmedPatches(), collect()))->toBe(['8.4']);
 });
 
 it('leaves an incident limited to another operating system out of the daily digest', function () {

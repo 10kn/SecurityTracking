@@ -28,6 +28,7 @@ use App\Support\LocalTime;
 use App\Support\TableQuery;
 use App\Support\Version;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -150,6 +151,7 @@ class IncidentController extends Controller
                 'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->sortByDesc(fn (array $entry): bool => (bool) ($entry['listed'] ?? false))->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
                 'lead_notice' => $this->leadNotice($this->overview->lead($state)),
+                'not_told_reason' => $this->notToldReason($notices, $teams->contains('is_told', true)),
             ],
             'notices' => $notices->map(fn (Advisory $notice): array => [
                 'id' => $notice->id,
@@ -193,6 +195,33 @@ class IncidentController extends Controller
                 ])->values()->all(),
             ],
         ]);
+    }
+
+    /**
+     * Why no team was told about the incident, when its pre-notices can no longer alert (see Advisory::alertable()):
+     * every security one is history a feed listed on its first poll, or was published too long ago. Null once a team
+     * was told, while one may still alert, or when every pre-notice is dismissed (the page says so already).
+     *
+     * @param  EloquentCollection<int, Advisory>  $notices
+     */
+    private function notToldReason(EloquentCollection $notices, bool $isAnyTeamTold): ?string
+    {
+        $security = $notices->where('is_dismissed', false);
+        $relevantDays = (int) config('psm.notices.relevant_days');
+
+        if ($security->isEmpty() || $isAnyTeamTold) {
+            return null;
+        }
+
+        if ($security->every(fn (Advisory $notice): bool => $notice->is_backfill)) {
+            return __('Tin có sẵn trên nguồn từ trước khi hệ thống bắt đầu theo dõi nguồn này, nên không được báo cho team.');
+        }
+
+        if ($security->every(fn (Advisory $notice): bool => $notice->is_backfill || $notice->published_at === null || $notice->published_at->lt(now()->subDays($relevantDays)))) {
+            return __('Tin đã đăng hơn :days ngày, nên không còn được báo cho team.', ['days' => $relevantDays]);
+        }
+
+        return null;
     }
 
     /**

@@ -369,3 +369,13 @@ it('counts a card from before incidents as telling the team, from when it was qu
     'queued since the previous digest' => ['2026-10-23 10:00:00', 1],
     'queued before it' => ['2026-10-21 10:00:00', 0],
 ]);
+
+it('no longer lists an incident once the service runs a security release of the branch from since the incident began', function () {
+    incidentAwaitingPatch($this->team, $this->deployment);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36', 'released_at' => '2026-10-21']);
+    Runtime::where('technology', Technology::Php)->update(['raw_version' => '8.3.37', 'version' => '8.3.37']);
+
+    app(SendDailyDigest::class)->handle();
+
+    expect(chatJson(chatMessagesTo('COMMERCE')))->not->toContain('Đang chờ bản vá');
+});

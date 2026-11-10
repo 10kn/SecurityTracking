@@ -231,8 +231,9 @@ class SendDailyDigest
 
     /**
      * "Đang chờ bản vá": incidents the team got a card about in the last `psm.incidents.awaiting_patch_days`, with no
-     * confirmed fix yet for a branch it runs that the vendor did not rule out. Security releases of those branches since
-     * the incident began are listed as possible fixes; once `psm.incidents.review_after_days` pass, the incident asks
+     * confirmed fix yet for a branch it runs that the vendor did not rule out, and that does not already run a security
+     * release of the branch from the incident's fix window or a later version (see Incident::laterFixRunBy()). Security
+     * releases of those branches since the incident began are listed as possible fixes; once `psm.incidents.review_after_days` pass, the incident asks
      * for a review. It never closes on its own. A card from before incidents counts too (see
      * IncidentTeamNotice::firstToldAt()).
      *
@@ -256,13 +257,15 @@ class SendDailyDigest
         }
 
         $reviewAfter = config('psm.incidents.review_after_days');
-
-        return Incident::current()
+        $incidents = Incident::current()
             ->whereIn('technology', $runtimes->pluck('technology.value')->unique())
             ->where('first_published_at', '>=', now()->subDays(config('psm.incidents.awaiting_patch_days')))
             ->orderBy('first_published_at')
-            ->get()
-            ->map(function (Incident $incident) use ($team, $runtimes, $since, $reviewAfter): ?array {
+            ->get();
+        $securityReleases = Incident::laterSecurityReleases($incidents);
+
+        return $incidents
+            ->map(function (Incident $incident) use ($team, $runtimes, $since, $reviewAfter, $securityReleases): ?array {
                 $all = $incident->notices()->get();
                 $notices = $all->where('is_dismissed', false)->where('is_backfill', false);
                 $firstTold = IncidentTeamNotice::firstToldAt($team->id, $all->modelKeys());
@@ -288,14 +291,14 @@ class SendDailyDigest
                 }
 
                 $branches = $technologyRuntimes
-                    ->filter(fn (Runtime $runtime): bool => $runtime->branch !== null && $incident->scopeFor($runtime) !== IncidentScope::NotAffected)
+                    ->filter(fn (Runtime $runtime): bool => $runtime->branch !== null && $incident->scopeFor($runtime) !== IncidentScope::NotAffected && $incident->laterFixRunBy($runtime, $securityReleases) === null)
                     ->pluck('branch')
                     ->unique()
                     ->diff(array_keys($patches))
                     ->sort(SORT_NATURAL)
                     ->values()
                     ->all();
-                $waiting = IncidentTeamExposure::waitingBranches($incident, $technologyRuntimes, $patches);
+                $waiting = IncidentTeamExposure::waitingBranches($incident, $technologyRuntimes, $patches, $securityReleases);
                 $isReminder = $waiting !== [] && ! $isAssessed && $this->policy->remindsOfIncident(IncidentTeamNotice::severityToldTo($team->id, $all->modelKeys()));
 
                 if ($branches === [] && ! $isReminder) {

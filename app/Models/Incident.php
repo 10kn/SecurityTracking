@@ -353,6 +353,64 @@ class Incident extends Model
     }
 
     /**
+     * The first day a security release of a branch may carry the incident's fix: the day before the incident began, or
+     * before its planned release when the vendor announced one, as a release that came out before then cannot be it.
+     * Null for an incident without a date.
+     */
+    public function fixWindowStart(): ?string
+    {
+        $start = collect([$this->first_published_at, $this->planned_release_at])->filter()->max();
+
+        return $start?->copy()->subDay()->toDateString();
+    }
+
+    /**
+     * The security release of the runtime's branch from the incident's fix window (see fixWindowStart()) that the runtime
+     * already runs, or runs a later version than: e.g. PHP 8.4.27 of 21/10 for news of 24/09 about PHP 8.2.34. A patch
+     * release carries the fixes of those before it, so the branch no longer waits for a fix, though no pre-notice says
+     * which release is the fix. Null for a runtime whose branch or version is not known.
+     *
+     * @param  Collection<int, RuntimeRelease>  $securityReleases  Security releases of the incident's technology, any branch; others are skipped.
+     */
+    public function laterFixRunBy(Runtime $runtime, Collection $securityReleases): ?RuntimeRelease
+    {
+        $from = $this->fixWindowStart();
+
+        if ($from === null || $runtime->branch === null || $runtime->version === null) {
+            return null;
+        }
+
+        return $securityReleases
+            ->filter(fn (RuntimeRelease $release): bool => $release->technology === $this->technology
+                && $release->branch === $runtime->branch
+                && $release->released_at !== null
+                && $release->released_at->toDateString() >= $from
+                && version_compare($runtime->version, $release->version, '>='))
+            ->sort(fn (RuntimeRelease $a, RuntimeRelease $b): int => version_compare($a->version, $b->version))
+            ->first();
+    }
+
+    /**
+     * The security releases that may be the fix of any of the incidents (see laterFixRunBy()), read in one query.
+     *
+     * @param  iterable<Incident>  $incidents
+     * @return Collection<int, RuntimeRelease>
+     */
+    public static function laterSecurityReleases(iterable $incidents): Collection
+    {
+        $incidents = collect($incidents)->filter(fn (Incident $incident): bool => $incident->fixWindowStart() !== null);
+
+        if ($incidents->isEmpty()) {
+            return collect();
+        }
+
+        return RuntimeRelease::whereIn('technology', $incidents->map(fn (Incident $incident): string => $incident->technology->value)->unique()->values())
+            ->where('is_security_release', true)
+            ->whereDate('released_at', '>=', $incidents->map(fn (Incident $incident): string => $incident->fixWindowStart())->min())
+            ->get();
+    }
+
+    /**
      * The highest known severity of the pre-notices, or unknown when none gives one.
      *
      * @param  Collection<int, Advisory>  $notices

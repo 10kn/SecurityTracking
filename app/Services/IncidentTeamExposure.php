@@ -7,6 +7,7 @@ use App\Enums\Severity;
 use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\Runtime;
+use App\Models\RuntimeRelease;
 use App\Models\Team;
 use App\Services\Kev\KnownExploitation;
 use Illuminate\Support\Collection;
@@ -111,16 +112,21 @@ final readonly class IncidentTeamExposure
 
     /**
      * The branches of the runtimes the vendor did not rule out (see Incident::scopeFor()) and has no confirmed fix for
-     * yet, naturally sorted. A runtime whose branch is not known is listed by its version: no fix is matched to it.
+     * yet, naturally sorted. A runtime that already runs a security release of its branch from the incident's fix window,
+     * or a later version, does not wait (see Incident::laterFixRunBy()). A runtime whose branch is not known is listed by
+     * its version: no fix is matched to it.
      *
      * @param  Collection<int, Runtime>  $runtimes
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
+     * @param  Collection<int, RuntimeRelease>  $securityReleases  See Incident::laterSecurityReleases().
      * @return list<string>
      */
-    public static function waitingBranches(Incident $incident, Collection $runtimes, array $patches): array
+    public static function waitingBranches(Incident $incident, Collection $runtimes, array $patches, Collection $securityReleases): array
     {
         return $runtimes
-            ->filter(fn (Runtime $runtime): bool => $incident->scopeFor($runtime) !== IncidentScope::NotAffected && ($runtime->branch === null || ! isset($patches[$runtime->branch])))
+            ->filter(fn (Runtime $runtime): bool => $incident->scopeFor($runtime) !== IncidentScope::NotAffected
+                && ($runtime->branch === null || ! isset($patches[$runtime->branch]))
+                && $incident->laterFixRunBy($runtime, $securityReleases) === null)
             ->map(fn (Runtime $runtime): string => $runtime->branch ?? (string) ($runtime->version ?? $runtime->raw_version))
             ->unique()
             ->sort(SORT_NATURAL)

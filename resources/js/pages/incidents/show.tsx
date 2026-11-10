@@ -128,6 +128,7 @@ interface Props {
         is_exploited: boolean;
         known_exploited: KnownExploited[];
         merged_from: { id: number; title: string }[];
+        not_told_reason: string | null;
         lead_notice: {
             summary: { text: string; is_ai: boolean } | null;
             url: string | null;
@@ -168,7 +169,7 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                     </dl>
                 </CardBody>
             </Card>
-            <Teams incidentId={incident.id} teams={teams} focusTeam={focusTeam} />
+            <Teams incidentId={incident.id} teams={teams} focusTeam={focusTeam} notToldReason={incident.not_told_reason} />
             <RelatedFindings findings={findings} />
             <Notices incidentId={incident.id} notices={notices} />
             {suggestions.length > 0 && <Suggestions incidentId={incident.id} suggestions={suggestions} />}
@@ -196,7 +197,12 @@ function SecurityDetails({ incident }: { incident: Props['incident'] }) {
                 {incident.severity_basis && <span className="ml-2 text-sm text-muted-foreground">{incident.severity_basis}</span>}
                 {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
             </Detail>
-            <Detail label={t('Bản vá')}>
+            <Detail
+                label={t('Bản vá')}
+                hint={t(
+                    'Bản vá hãng xác nhận cho từng nhánh. Nhánh team đang chạy mà chưa có: “chờ bản vá” khi hãng ghi rõ nhánh bị ảnh hưởng, “chưa rõ” khi hãng không nêu nhánh đó, nên có thể không bị ảnh hưởng. Nhánh đã chạy bản bảo mật ra từ lúc sự kiện bắt đầu trở đi (hoặc mới hơn) không còn chờ.',
+                )}
+            >
                 <FixStatus incident={incident} />
             </Detail>
             <Detail label={t('Đăng lúc')}>{incident.first_published ?? '—'}</Detail>
@@ -434,7 +440,7 @@ function draftsOf(teams: TeamRow[]): Record<number, Draft> {
  * their impact, one at a time or the selected ones together; each row posts the exposure and revision it shows, so a
  * team whose exposure changed or that another admin assessed meanwhile is not saved.
  */
-function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: TeamRow[]; focusTeam: number | null }) {
+function Teams({ incidentId, teams, focusTeam, notToldReason }: { incidentId: number; teams: TeamRow[]; focusTeam: number | null; notToldReason: string | null }) {
     const t = useTranslation();
     const [drafts, setDrafts] = useState<Record<number, Draft>>(() => draftsOf(teams));
     const [selected, setSelected] = useState<number[]>([]);
@@ -523,6 +529,7 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                     </div>
                 )}
             </CardHeader>
+            {notToldReason && <p className="border-b border-border px-5 py-3 text-sm text-muted-foreground max-sm:px-3.5">{notToldReason}</p>}
             {teams.length === 0 ? (
                 <EmptyState title={t('Chưa có team nào chạy công nghệ này hoặc được báo')} />
             ) : (

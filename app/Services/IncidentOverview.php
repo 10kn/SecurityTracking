@@ -15,6 +15,7 @@ use App\Models\IncidentTeam;
 use App\Models\IncidentTeamNotice;
 use App\Models\Runtime;
 use App\Models\RuntimeBranch;
+use App\Models\RuntimeRelease;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -43,7 +44,7 @@ use Illuminate\Support\Collection;
  * @phpstan-type ThreadDelivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
  * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>, is_legacy: bool, is_webhook_changed: bool}
  * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
- * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
+ * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_affected: bool, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
  */
 class IncidentOverview
 {
@@ -82,6 +83,7 @@ class IncidentOverview
             $notices->collapse()->where('technology', $technology)->flatMap(fn (Advisory $notice): array => $notice->patch_versions ?? [])->unique()->values()->all(),
         )]);
         $eolBranches = $this->eolBranchesOf($technologies);
+        $securityReleases = Incident::laterSecurityReleases($incidents);
         $ledger = IncidentTeamNotice::ledgerFor($noticeIds);
         $rows = IncidentTeam::whereIn('incident_id', $incidentIds)
             ->with($withHistory ? ['acknowledgedBy', 'openingNotification', 'events.user'] : ['acknowledgedBy', 'openingNotification'])
@@ -94,7 +96,7 @@ class IncidentOverview
             ->orderBy('name')
             ->get();
 
-        return $incidents->mapWithKeys(function (Incident $incident) use ($notices, $runtimes, $releases, $eolBranches, $ledger, $rows, $deliveries, $suggestions, $incidentOfNotice, $teams): array {
+        return $incidents->mapWithKeys(function (Incident $incident) use ($notices, $runtimes, $releases, $eolBranches, $securityReleases, $ledger, $rows, $deliveries, $suggestions, $incidentOfNotice, $teams): array {
             $incidentNotices = $notices->get($incident->id) ?? new EloquentCollection;
             $patches = $incident->confirmedPatches($incidentNotices, $releases->get($incident->technology->value));
             $technologyRuntimes = $runtimes->get($incident->technology->value) ?? new EloquentCollection;
@@ -103,10 +105,10 @@ class IncidentOverview
             return [$incident->id => [
                 'incident' => $incident,
                 'notices' => $incidentNotices,
-                'fixes' => $this->fixes($incident, $technologyRuntimes, $patches, $eolBranches->get($incident->technology->value) ?? []),
+                'fixes' => $this->fixes($incident, $technologyRuntimes, $patches, $eolBranches->get($incident->technology->value) ?? [], $securityReleases),
                 'is_within_reminder_window' => $this->isWithinReminderWindow($incident),
                 'pending_suggestions_count' => $suggestions->filter(fn (IncidentSuggestion $suggestion): bool => $suggestion->incident_id === $incident->id || (int) $incidentOfNotice->get($suggestion->advisory_id) === $incident->id)->count(),
-                'teams' => $this->teams($incident, $incidentNotices, $patches, $technologyRuntimes, $ledger->whereIn('advisory_id', $memberIds), $rows->get($incident->id) ?? new EloquentCollection, $deliveries, $teams),
+                'teams' => $this->teams($incident, $incidentNotices, $patches, $technologyRuntimes, $ledger->whereIn('advisory_id', $memberIds), $rows->get($incident->id) ?? new EloquentCollection, $deliveries, $teams, $securityReleases),
             ]];
         });
     }
@@ -229,9 +231,10 @@ class IncidentOverview
      * @param  EloquentCollection<int, IncidentTeam>  $rows  The incident's rows.
      * @param  Collection<int, ThreadDelivery>  $deliveries  The delivery of each row's current thread, by row id.
      * @param  EloquentCollection<int, Team>  $teams  Every team any of the incidents read concerns, by name.
+     * @param  Collection<int, RuntimeRelease>  $securityReleases  See Incident::laterSecurityReleases().
      * @return Collection<int, TeamState>
      */
-    private function teams(Incident $incident, EloquentCollection $notices, array $patches, EloquentCollection $runtimes, Collection $ledger, EloquentCollection $rows, Collection $deliveries, EloquentCollection $teams): Collection
+    private function teams(Incident $incident, EloquentCollection $notices, array $patches, EloquentCollection $runtimes, Collection $ledger, EloquentCollection $rows, Collection $deliveries, EloquentCollection $teams, Collection $securityReleases): Collection
     {
         $runtimesByTeam = $runtimes->groupBy(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id);
         $toldTeamIds = $ledger->where('is_sent', true)->pluck('team_id')->unique();
@@ -240,7 +243,7 @@ class IncidentOverview
 
         return $teams
             ->filter(fn (Team $team): bool => $runtimesByTeam->has($team->id))
-            ->map(function (Team $team) use ($incident, $notices, $patches, $runtimesByTeam, $ledger, $toldTeamIds, $rowsByTeam, $deliveries, $isWithinWindow): array {
+            ->map(function (Team $team) use ($incident, $notices, $patches, $runtimesByTeam, $ledger, $toldTeamIds, $rowsByTeam, $deliveries, $isWithinWindow, $securityReleases): array {
                 $teamRuntimes = $runtimesByTeam->get($team->id);
                 $exposure = IncidentTeamExposure::of($incident, $notices, $teamRuntimes, $patches);
                 $row = $rowsByTeam->get($team->id);
@@ -248,7 +251,7 @@ class IncidentOverview
                 $isTold = $toldTeamIds->contains($team->id);
                 $toldSeverity = $isTold ? $ledger->where('team_id', $team->id)->map(fn (array $entry): Severity => $entry['severity'])->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() : null;
                 $isAssessed = $row?->hasValidAssessment($exposure) ?? false;
-                $waiting = IncidentTeamExposure::waitingBranches($incident, $teamRuntimes, $patches);
+                $waiting = IncidentTeamExposure::waitingBranches($incident, $teamRuntimes, $patches, $securityReleases);
 
                 return [
                     'team' => $team,
@@ -275,24 +278,28 @@ class IncidentOverview
 
     /**
      * The fix of each branch the incident concerns: the branches the vendor confirmed a fix for, and those any team
-     * runs that the vendor did not rule out, naturally sorted. `version` is null while a branch waits. `is_eol` when the
-     * catalog says the branch reached end of life; a branch the catalog does not list is not taken for one.
+     * runs that wait for one (see IncidentTeamExposure::waitingBranches()), naturally sorted. `version` is null while a
+     * branch waits. `is_affected` when the vendor named a branch a team runs as affected (see Incident::scopeFor()): a
+     * waiting branch without it is one the vendor did not name either way, so it may not be affected at all. `is_eol`
+     * when the catalog says the branch reached end of life; a branch the catalog does not list is not taken for one.
      *
      * @param  EloquentCollection<int, Runtime>  $runtimes
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
      * @param  list<string>  $eolBranches  The branches of the technology the catalog says reached end of life.
-     * @return list<array{branch: string, version: string|null, is_eol: bool}>
+     * @param  Collection<int, RuntimeRelease>  $securityReleases  See Incident::laterSecurityReleases().
+     * @return list<array{branch: string, version: string|null, is_affected: bool, is_eol: bool}>
      */
-    private function fixes(Incident $incident, EloquentCollection $runtimes, array $patches, array $eolBranches): array
+    private function fixes(Incident $incident, EloquentCollection $runtimes, array $patches, array $eolBranches, Collection $securityReleases): array
     {
         $fixes = [];
+        $affected = $incident->confirmedBranches($runtimes);
 
         foreach ($patches as $branch => $patch) {
-            $fixes[] = ['branch' => (string) $branch, 'version' => $patch['version'], 'is_eol' => in_array((string) $branch, $eolBranches, true)];
+            $fixes[] = ['branch' => (string) $branch, 'version' => $patch['version'], 'is_affected' => in_array((string) $branch, $affected, true), 'is_eol' => in_array((string) $branch, $eolBranches, true)];
         }
 
-        foreach (IncidentTeamExposure::waitingBranches($incident, $runtimes, $patches) as $branch) {
-            $fixes[] = ['branch' => $branch, 'version' => null, 'is_eol' => in_array($branch, $eolBranches, true)];
+        foreach (IncidentTeamExposure::waitingBranches($incident, $runtimes, $patches, $securityReleases) as $branch) {
+            $fixes[] = ['branch' => $branch, 'version' => null, 'is_affected' => in_array($branch, $affected, true), 'is_eol' => in_array($branch, $eolBranches, true)];
         }
 
         usort($fixes, fn (array $a, array $b): int => strnatcmp($a['branch'], $b['branch']));
