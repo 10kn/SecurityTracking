@@ -191,3 +191,23 @@ it('reads whether the entry says the vulnerability is exploited, with the senten
     'not said' => [null, null, null, null],
     'not a boolean' => ['yes', '', null, null],
 ]);
+
+it('relates an entry to an incident only for the same vulnerabilities, not for a shared release', function () {
+    $claude = fakeClaude([
+        'is_security_news' => true,
+        'severity' => 'high',
+        'planned_release_at' => null,
+        'affected_branches' => [],
+        'summary' => '',
+        'unaffected_branches' => [],
+        'related_incident_id' => null,
+        'actively_exploited' => null,
+        'exploited_evidence' => null,
+    ]);
+
+    app(ClaudeNoticeClassifier::class)->classify(Technology::Php, upcomingPhpSecurityRelease(), [['id' => 7, 'title' => 'PHP 8.3.36 fixes CVE-2026-109618 and CVE-2026-109619', 'published_at' => null]]);
+
+    expect(json_decode((string) $claude->requests[0]->getBody(), true)['system'])
+        ->toContain('(the same vulnerabilities; a shared', 'release or version number alone is not enough)')
+        ->not->toContain('the same security release');
+});
