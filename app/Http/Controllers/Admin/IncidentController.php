@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\ChatNotificationKind;
 use App\Enums\FindingState;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentScope;
@@ -339,7 +340,7 @@ class IncidentController extends Controller
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
             'thread' => $this->thread($row, $team['delivery']['is_webhook_changed']),
-            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row) : null,
+            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row, $row?->isRuledOut($team['exposure']) === true) : null,
             'assessment' => $row?->impact === null ? null : [
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
                 'note' => $row->impact_note,
@@ -452,12 +453,15 @@ class IncidentController extends Controller
      * What Google Chat accepted of the team's current thread: its opener, the message queued last (unless it is the
      * opener), the last one it accepted, and each message that failed and was not sent again, with the command that
      * sends it again. "Đã gửi" says Google Chat accepted the message, not that anyone read it. A team told before
-     * incident threads, or with no message in its current thread, shows what cannot be told from here.
+     * incident threads, or with no message in its current thread, shows what cannot be told from here. While an admin's
+     * "Không" for the team holds, its failed alerts get no command: psm:resend-notification would not send them (see
+     * ChatNotification::isWithheldByAssessment()); a failed admin update still does.
      *
      * @param  Delivery  $delivery
+     * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
      * @return array<string, mixed>
      */
-    private function delivery(array $delivery, ?IncidentTeam $row): array
+    private function delivery(array $delivery, ?IncidentTeam $row, bool $isRuledOut): array
     {
         return [
             'opener' => $this->messageStatus($delivery['opener']),
@@ -469,7 +473,7 @@ class IncidentController extends Controller
                 'id' => $notification->id,
                 'error' => Str::limit((string) $notification->last_error, 160),
                 'failed' => LocalTime::format($notification->failed_at),
-                'command' => "php artisan psm:resend-notification {$notification->id}",
+                'command' => $isRuledOut && $notification->kind === ChatNotificationKind::PreNotice ? null : "php artisan psm:resend-notification {$notification->id}",
             ])->values()->all(),
             'limit' => match (true) {
                 $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: dữ liệu thread cũ không tính cho webhook hiện tại; tin tiếp theo sẽ mở thread mới.'),

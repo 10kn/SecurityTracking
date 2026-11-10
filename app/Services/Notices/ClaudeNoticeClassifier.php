@@ -43,8 +43,8 @@ class ClaudeNoticeClassifier implements NoticeClassifier
           or 8.3.36" or "PHP 8.3.36 is a security release fixing CVE-…". Leave out versions it only mentions, versions
           it says do not fix them, versions still to come and pre-releases (alpha, beta, release candidate). Empty
           when it names none.
-        - related_incident_id: the id of the listed incident this entry is about (the same vulnerabilities or the same
-          security release), or null when none clearly is. Only ids from <incidents>.
+        - related_incident_id: the id of the listed incident this entry is about (the same vulnerabilities; a shared
+          release or version number alone is not enough), or null when none clearly is. Only ids from <incidents>.
         - actively_exploited: true only when the entry states that the vulnerability is being exploited in real attacks.
           False when it says it is not, or only that it could be, would be or may become exploited; a proof of concept
           or a demonstrated exploit is not exploitation. Null when the entry does not say.

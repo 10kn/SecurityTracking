@@ -1,11 +1,18 @@
 <?php
 
+use App\Actions\SendPreNoticeAlerts;
+use App\Enums\IncidentImpact;
+use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Jobs\SendChatNotification;
+use App\Models\Advisory;
 use App\Models\ChatNotification;
+use App\Models\IncidentTeam;
 use App\Models\Team;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 
 function teamNotification(): ChatNotification
 {
@@ -34,6 +41,29 @@ it('posts the payload and marks the message sent', function () {
         ->and($notification->refresh())
         ->sent_at->not->toBeNull()
         ->attempts->toBe(1);
+});
+
+it('does not send a queued incident alert once an admin ruled the team out, nor tell the admin space', function () {
+    $this->travelTo('2026-10-20 21:00:00');
+    fakeGoogleChat();
+    $team = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => chatWebhook('COMMERCE')]);
+    $notice = Advisory::factory()->preNotice(Technology::Php)->create(['severity' => Severity::High, 'aliases' => ['CVE-2026-111497'], 'published_at' => '2026-10-20 20:32:00']);
+    runtimeAt($team, 'shop-api', Technology::Php, '8.3.35')->update(['version' => '8.3.35', 'branch' => '8.3']);
+    Queue::fake();
+    app(SendPreNoticeAlerts::class)->handle();
+    $incident = $notice->refresh()->incident;
+    $opener = ChatNotification::findOrFail(IncidentTeam::where('incident_id', $incident->id)->sole()->opening_notification_id);
+    $opener->update(['attempts' => 1, 'last_error' => 'Google Chat trả lỗi HTTP 503.']);
+    assessIncident($incident, $team, IncidentImpact::No);
+
+    runJob($opener)->assertNotReleased();
+
+    expect(Http::recorded())->toHaveCount(0)
+        ->and($opener->refresh())
+        ->sent_at->toBeNull()
+        ->failed_at->not->toBeNull()
+        ->attempts->toBe(1)
+        ->last_error->toBe('Không gửi: admin đã đánh giá sự kiện không ảnh hưởng tới team (Không).');
 });
 
 it('never sends a message twice', function () {
