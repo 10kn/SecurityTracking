@@ -1,0 +1,408 @@
+[
+  {
+    "ghsa_id": "GHSA-w8hw-w9fx-j79w",
+    "cve_id": "CVE-2026-109618",
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w",
+    "summary": "RCE via OOM corruption",
+    "severity": "critical",
+    "state": "published",
+    "published_at": "2026-10-21T13:34:25Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.2.35",
+        "patched_versions": "8.2.35"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.3.36",
+        "patched_versions": "8.3.36"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.4.27",
+        "patched_versions": "8.4.27"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.5.12",
+        "patched_versions": "8.5.12"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": null,
+        "score": null
+      },
+      "cvss_v4": {
+        "vector_string": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        "score": 9.2
+      }
+    },
+    "cvss": {
+      "vector_string": null,
+      "score": null
+    }
+  },
+  {
+    "ghsa_id": "GHSA-6wmf-4rv5-p3rp",
+    "cve_id": "CVE-2026-109619",
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp",
+    "summary": "RCE via stale global state",
+    "severity": "critical",
+    "state": "published",
+    "published_at": "2026-10-21T13:34:13Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.2.35",
+        "patched_versions": "8.2.35"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.3.36",
+        "patched_versions": "8.3.36"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.4.27",
+        "patched_versions": "8.4.27"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "< 8.5.12",
+        "patched_versions": "8.5.12"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": null,
+        "score": null
+      },
+      "cvss_v4": {
+        "vector_string": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        "score": 9.2
+      }
+    },
+    "cvss": {
+      "vector_string": null,
+      "score": null
+    }
+  },
+  {
+    "ghsa_id": "GHSA-7875-c8px-7q5f",
+    "cve_id": "CVE-2026-93682",
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-7875-c8px-7q5f",
+    "summary": "Out-of-bounds read in the HTTP stream wrapper when following a redirect with an empty Location header",
+    "severity": "medium",
+    "state": "published",
+    "published_at": "2026-09-24T10:07:25Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-standard"
+        },
+        "vulnerable_version_range": "<8.2.34",
+        "patched_versions": "8.2.34"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-standard"
+        },
+        "vulnerable_version_range": "<8.3.35",
+        "patched_versions": "8.3.35"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-standard"
+        },
+        "vulnerable_version_range": "<8.4.26",
+        "patched_versions": "8.4.26"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-standard"
+        },
+        "vulnerable_version_range": "<8.5.11",
+        "patched_versions": "8.5.11"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+        "score": 5.3
+      },
+      "cvss_v4": {
+        "vector_string": null,
+        "score": null
+      }
+    },
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "score": 5.3
+    }
+  },
+  {
+    "ghsa_id": "GHSA-ch8v-r6jh-4vvr",
+    "cve_id": null,
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-ch8v-r6jh-4vvr",
+    "summary": "ext/filter: encode 0xFF in FILTER_SANITIZE_ENCODED",
+    "severity": "low",
+    "state": "published",
+    "published_at": "2026-09-24T10:07:15Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "ext-filter"
+        },
+        "vulnerable_version_range": "<8.2.34",
+        "patched_versions": "8.2.34"
+      },
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "ext-filter"
+        },
+        "vulnerable_version_range": "<8.3.35",
+        "patched_versions": "8.3.35"
+      },
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "ext-filter"
+        },
+        "vulnerable_version_range": "<8.4.25",
+        "patched_versions": "8.4.25"
+      },
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "ext-filter"
+        },
+        "vulnerable_version_range": "<8.5.10",
+        "patched_versions": "8.5.10"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+        "score": 3.7
+      },
+      "cvss_v4": {
+        "vector_string": null,
+        "score": null
+      }
+    },
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "score": 3.7
+    }
+  },
+  {
+    "ghsa_id": "GHSA-rgrp-mwpx-f6rm",
+    "cve_id": "CVE-2026-91765",
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-rgrp-mwpx-f6rm",
+    "summary": "SOAP: Unbounded Recursion in Server-Side cleanup_xml_node",
+    "severity": "high",
+    "state": "published",
+    "published_at": "2026-09-24T10:06:35Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-soap"
+        },
+        "vulnerable_version_range": "<8.2.34",
+        "patched_versions": "8.2.34"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-soap"
+        },
+        "vulnerable_version_range": "<8.3.35",
+        "patched_versions": "8.3.35"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-soap"
+        },
+        "vulnerable_version_range": "<8.4.26",
+        "patched_versions": "8.4.26"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-soap"
+        },
+        "vulnerable_version_range": "<8.5.11",
+        "patched_versions": "8.5.11"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+        "score": 7.5
+      },
+      "cvss_v4": {
+        "vector_string": null,
+        "score": null
+      }
+    },
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+      "score": 7.5
+    }
+  },
+  {
+    "ghsa_id": "GHSA-9f67-6fw4-hpfp",
+    "cve_id": "CVE-2026-17545",
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-9f67-6fw4-hpfp",
+    "summary": "PHP on Windows: Reserved Device Names Are Not Rejected Before File/Stream I/O which can cause DoS",
+    "severity": "medium",
+    "state": "published",
+    "published_at": "2026-09-24T10:06:19Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "<8.2.34",
+        "patched_versions": "8.2.34"
+      },
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "<8.3.35",
+        "patched_versions": "8.3.35"
+      },
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "<8.4.26",
+        "patched_versions": "8.4.26"
+      },
+      {
+        "package": {
+          "ecosystem": "other",
+          "name": "php-src"
+        },
+        "vulnerable_version_range": "<8.5.11",
+        "patched_versions": "8.5.11"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": null,
+        "score": null
+      },
+      "cvss_v4": {
+        "vector_string": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:H",
+        "score": 6.9
+      }
+    },
+    "cvss": {
+      "vector_string": null,
+      "score": null
+    }
+  },
+  {
+    "ghsa_id": "GHSA-vc5h-9ppw-p5f3",
+    "cve_id": "CVE-2026-7260",
+    "html_url": "https://github.com/php/php-src/security/advisories/GHSA-vc5h-9ppw-p5f3",
+    "summary": "Stack overflow in phar with circular symlinks",
+    "severity": "medium",
+    "state": "published",
+    "published_at": "2026-07-30T11:03:15Z",
+    "withdrawn_at": null,
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-phar"
+        },
+        "vulnerable_version_range": "<8.2.33",
+        "patched_versions": "8.2.33"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-phar"
+        },
+        "vulnerable_version_range": "<8.3.33",
+        "patched_versions": "8.3.33"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-phar"
+        },
+        "vulnerable_version_range": "<8.4.24",
+        "patched_versions": "8.4.24"
+      },
+      {
+        "package": {
+          "ecosystem": "php",
+          "name": "ext-phar"
+        },
+        "vulnerable_version_range": "<8.5.9",
+        "patched_versions": "8.5.9"
+      }
+    ],
+    "cvss_severities": {
+      "cvss_v3": {
+        "vector_string": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+        "score": 5.5
+      },
+      "cvss_v4": {
+        "vector_string": null,
+        "score": null
+      }
+    },
+    "cvss": {
+      "vector_string": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H",
+      "score": 5.5
+    }
+  }
+]

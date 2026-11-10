@@ -70,6 +70,18 @@ enum Technology: string
     }
 
     /**
+     * The GitHub repository whose security advisories the vendor publishes, with a severity and the release of each
+     * branch that fixes them (see VendorSecurityAdvisories). Null when the vendor publishes none there.
+     */
+    public function securityAdvisoryRepository(): ?string
+    {
+        return match ($this) {
+            self::Php => 'php/php-src',
+            self::Nodejs, self::Ruby => null,
+        };
+    }
+
+    /**
      * @return class-string<ReleaseFeed>
      */
     public function releaseFeed(): string

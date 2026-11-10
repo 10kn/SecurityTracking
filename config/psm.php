@@ -112,6 +112,13 @@ return [
     | the API fails, with the error, once per outage, and again once it classifies an entry. psm:check-sources also
     | tells the admin about an entry still not classified after `classifier.alert_after_minutes`.
     |
+    | A vendor that publishes its security advisories on GitHub (PHP: php/php-src) rates them and names the release of
+    | each branch that fixes them, which its release announcements often leave out ("This is a security release"). An
+    | entry the classifier read versions to update to from gets the GHSA and CVE ids of the advisories those versions
+    | fix, so the announcements of one release join through them, and their highest severity, after a KEV listing and
+    | before the entry's CVSS score. The latest `vendor_advisories.per_page` advisories at `vendor_advisories.url` are
+    | read once per poll, and only when an entry has versions; an empty url turns this off.
+    |
     */
 
     'notices' => [
@@ -125,6 +132,11 @@ return [
             'effort' => env('PSM_NOTICE_CLASSIFIER_EFFORT', 'low'),
             'timeout_seconds' => (int) env('PSM_NOTICE_CLASSIFIER_TIMEOUT', 60),
             'alert_after_minutes' => (int) env('PSM_NOTICE_CLASSIFIER_ALERT_AFTER_MINUTES', 60),
+        ],
+        'vendor_advisories' => [
+            'url' => env('PSM_NOTICE_VENDOR_ADVISORIES_URL', 'https://api.github.com/repos/{repository}/security-advisories'),
+            'per_page' => (int) env('PSM_NOTICE_VENDOR_ADVISORIES_PER_PAGE', 100),
+            'http_timeout_seconds' => (int) env('PSM_NOTICE_VENDOR_ADVISORIES_TIMEOUT', 30),
         ],
     ],
 
