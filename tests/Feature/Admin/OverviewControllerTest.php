@@ -143,6 +143,31 @@ it('groups the messages teams did not get by team, with the teams without a webh
         ->where('delivery.destinations.1.count', 0));
 });
 
+it('leaves out an incident alert an admin ruled out for the team, with its resend command', function () {
+    actingAsAdmin();
+    fakeGoogleChat();
+    $team = Team::factory()->create(['name' => 'Commerce', 'google_chat_webhook_url' => null]);
+    $notice = Advisory::factory()->preNotice(Technology::Php)->create([
+        'title' => 'PHP 8.3.36 rebuilt for Windows (Brotli)',
+        'severity' => Severity::High,
+        'aliases' => ['CVE-2026-111497'],
+        'published_at' => now()->subHour(),
+    ]);
+    runtimeAt($team, 'shop-api', Technology::Php, '8.3.35')->update(['version' => '8.3.35', 'branch' => '8.3']);
+    app(SendPreNoticeAlerts::class)->handle();
+    $opener = ChatNotification::where('team_id', $team->id)->sole();
+    $team->update(['google_chat_webhook_url' => chatWebhook('COMMERCE')]);
+
+    get('/admin')->assertInertia(fn (Assert $page) => $page
+        ->has('delivery.destinations', 1)
+        ->where('delivery.destinations.0.team', ['id' => $team->id, 'name' => 'Commerce'])
+        ->where('delivery.destinations.0.resend_ids', [$opener->id]));
+
+    assessIncident($notice->refresh()->incident, $team, IncidentImpact::No);
+
+    get('/admin')->assertInertia(fn (Assert $page) => $page->has('delivery.destinations', 0));
+});
+
 it('counts the services not fully evaluated, and lists them on the services page', function () {
     actingAsAdmin();
     overviewService('unknown-runtime', status: RuntimeStatus::Unknown);

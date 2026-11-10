@@ -133,7 +133,8 @@ class OverviewController extends Controller
      * The Google Chat destinations messages do not reach: the admin space first, then the teams by name. A message
      * counts when it failed for good or has waited longer than `stuck_after_minutes`, unless a later message to the
      * same destination was delivered since (the webhook works again; the failure was reported with its resend
-     * command). A destination without a webhook counts too.
+     * command), or an admin's "Không" withholds it (see ChatNotification::isWithheldByAssessment()): it is not to be
+     * sent, so it is no delivery problem and offers no resend command. A destination without a webhook counts too.
      *
      * @return array{destinations: list<array<string, mixed>>, hidden_count: int, last_sent: string|null}
      */
@@ -146,7 +147,8 @@ class OverviewController extends Controller
                 ->whereRaw('delivered.team_id is not distinct from chat_notifications.team_id')
                 ->whereColumn('delivered.sent_at', '>', 'chat_notifications.created_at'))
             ->orderBy('id')
-            ->get(['id', 'team_id', 'created_at', 'failed_at', 'last_error'])
+            ->get(['id', 'team_id', 'kind', 'incident_team_id', 'created_at', 'failed_at', 'last_error'])
+            ->reject(fn (ChatNotification $notification): bool => $notification->isWithheldByAssessment())
             ->groupBy(fn (ChatNotification $notification): int => $notification->team_id ?? 0);
 
         $adminSpace = $undelivered->get(0, collect());
