@@ -63,6 +63,8 @@ class ScanPackages
             $matcherPackages = $packages->filter(fn (PackageVersion $package): bool => in_array($package->ecosystem, $matcher->ecosystems(), true))->values()->all();
 
             if ($matcherPackages === []) {
+                $this->forgetUnusedSource($matcher);
+
                 continue;
             }
 
@@ -117,6 +119,22 @@ class ScanPackages
         $heartbeat->update(['last_success_at' => now(), 'last_error' => null]);
 
         return $matches;
+    }
+
+    /**
+     * Drops the heartbeat of a matcher no current deployment has packages for any more: with nothing to match it is
+     * never asked, so its last success would only age into a false "over threshold" alert. The next scan that hands
+     * it packages records it again. A scan of some deployments only keeps it while others still use the source.
+     */
+    private function forgetUnusedSource(VulnerabilityMatcher $matcher): void
+    {
+        $isUsed = Component::whereIn('ecosystem', $matcher->ecosystems())
+            ->whereHas('deployment', fn ($query) => $query->where('is_current', true))
+            ->exists();
+
+        if (! $isUsed) {
+            SourceHeartbeat::where('source', $matcher->sourceKey())->delete();
+        }
     }
 
     /**

@@ -185,7 +185,33 @@ it('keeps the findings of a failing source open and still syncs the packages of 
         ->and(SourceHeartbeat::where('source', 'packagist')->sole())
         ->last_failure_at->toEqual(now())
         ->last_error->toContain('RequestException')
-        ->and(SourceHeartbeat::where('source', 'rubysec')->sole()->last_failure_at)->toBeNull();
+        ->and(SourceHeartbeat::where('source', 'rubysec')->exists())->toBeFalse();
+});
+
+it('forgets the heartbeat of a source no current deployment has packages for, so it never turns stale', function () {
+    fakePackagist();
+    fakeOsv();
+    scanWithLockfiles($this->deployment, 'composer.lock', 'package-lock.json');
+    expect(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['osv', 'packagist']);
+
+    $this->deployment->lockfiles()->where('path', 'package-lock.json')->delete();
+    $this->travel(13)->hours();
+    artisan('psm:scan-packages')->assertSuccessful();
+    artisan('psm:check-sources')->assertSuccessful();
+
+    expect(SourceHeartbeat::pluck('source')->all())->toBe(['packagist'])
+        ->and(chatMessagesTo('ADMIN'))->toBeEmpty();
+});
+
+it('keeps the heartbeat of a source while another current deployment still has its packages', function () {
+    fakePackagist();
+    fakeOsv();
+    $other = Deployment::factory()->for(Service::factory()->for($this->deployment->service->project))->create();
+    scanWithLockfiles($other, 'package-lock.json');
+
+    scanWithLockfiles($this->deployment, 'composer.lock');
+
+    expect(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['osv', 'packagist']);
 });
 
 it('alerts the admin once when OSV keeps failing past its threshold', function () {
