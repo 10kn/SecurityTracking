@@ -93,7 +93,6 @@ interface TeamRow {
     services: { name: string; branch: string; versions: string[]; scope: string; scope_hint: string; is_not_affected: boolean; patch: string | null; is_patched: boolean }[];
     told_severity: Severity | null;
     is_told: boolean;
-    is_running: boolean;
     is_actionable: boolean;
     needs_acknowledgement: boolean;
     thread: { status: StatusDotData; url: string | null; is_old: boolean };
@@ -141,7 +140,7 @@ interface Props {
     findings: { items: RelatedFinding[]; total: number; open_ids: number[]; open_count: number };
     focusTeam: number | null;
     mergeTargets: Option<number>[];
-    update: { request_id: string; recipients: (Option<number> & { is_default: boolean })[] };
+    update: { request_id: string; recipients: Option<number>[] };
 }
 
 type Draft = { impact: string; note: string };
@@ -572,7 +571,6 @@ function Teams({ incidentId, teams, focusTeam }: { incidentId: number; teams: Te
                                 <Td className="align-top">
                                     <span className="font-medium">{team.name}</span>
                                     {team.needs_acknowledgement && <StatusDot status={{ label: t('Chờ đánh giá, nhắc hằng ngày'), tone: 'warning' }} className="mt-0.5 flex" />}
-                                    {!team.is_running && <span className="mt-0.5 block text-sm text-muted-foreground">{t('Không còn chạy công nghệ này')}</span>}
                                 </Td>
                                 <Td className="align-top text-sm">
                                     {team.services.length === 0
@@ -894,7 +892,7 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
 }
 
 /**
- * An urgent update for the teams told about the incident, those still running its technology picked by default. The
+ * An urgent update for the teams told about the incident that still run its technology, all picked by default. The
  * confirmation lists the exact recipients. The request id stays the same while an update is retried, so it is never
  * sent twice; once it is sent, the form starts over with the fresh id of the reloaded page, so the next update is a new
  * request.
@@ -904,11 +902,11 @@ function UrgentUpdate({ incidentId, update }: { incidentId: number; update: Prop
     const [isConfirming, setIsConfirming] = useState(false);
     const form = useForm<{ message: string; team_ids: number[]; request_id: string }>({
         message: '',
-        team_ids: update.recipients.filter((recipient) => recipient.is_default).map((recipient) => recipient.value),
+        team_ids: update.recipients.map((recipient) => recipient.value),
         request_id: update.request_id,
     });
     const recipients = update.recipients.filter((recipient) => form.data.team_ids.includes(recipient.value));
-    const defaultRecipients = update.recipients.filter((recipient) => recipient.is_default).map((recipient) => recipient.value);
+    const defaultRecipients = update.recipients.map((recipient) => recipient.value);
 
     return (
         <Card>
@@ -948,7 +946,6 @@ function UrgentUpdate({ incidentId, update }: { incidentId: number; update: Prop
                                             }
                                         />
                                         {recipient.label}
-                                        {!recipient.is_default && <span className="text-faint">{t('(không còn chạy công nghệ này)')}</span>}
                                     </label>
                                 ))}
                             </div>

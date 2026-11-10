@@ -188,7 +188,6 @@ class IncidentController extends Controller
                 'recipients' => $teams->where('is_told', true)->map(fn (array $team): array => [
                     'value' => $team['team']->id,
                     'label' => $team['team']->name,
-                    'is_default' => $team['is_running'],
                 ])->values()->all(),
             ],
         ]);
@@ -335,7 +334,6 @@ class IncidentController extends Controller
             }, $team['exposure']->services),
             'told_severity' => $team['told_severity'] === null ? null : $this->severity($team['told_severity']),
             'is_told' => $team['is_told'],
-            'is_running' => $team['is_running'],
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
             'thread' => $this->thread($row, $team['delivery']['is_webhook_changed']),

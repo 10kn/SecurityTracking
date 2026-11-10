@@ -192,14 +192,15 @@ it('reads the thread a merged incident handed over', function () {
 
 it('says what cannot be told of a team told before incident threads', function () {
     actingAsAdmin();
-    $retired = Team::factory()->create(['name' => 'Retired']);
-    ChatNotification::factory()->for($retired)->sent()->create(['kind' => ChatNotificationKind::PreNotice, 'dedupe_key' => "pre_notice:{$this->preNotice->id}:{$retired->id}:high"]);
+    $legacy = Team::factory()->create(['name' => 'Legacy']);
+    runtimeAt($legacy, 'legacy-api', Technology::Php, '8.3.30');
+    ChatNotification::factory()->for($legacy)->sent()->create(['kind' => ChatNotificationKind::PreNotice, 'dedupe_key' => "pre_notice:{$this->preNotice->id}:{$legacy->id}:high"]);
 
     get('/admin/incidents')->assertInertia(fn (Assert $page) => $page
         ->where('incidents.data.0.teams_told_count', 2)
         ->where('incidents.data.0.teams_delivered_count', 1));
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
-        ->where('teams.1.name', 'Retired')
+        ->where('teams.1.name', 'Legacy')
         ->where('teams.1.delivery.opener', null)
         ->where('teams.1.delivery.latest', null)
         ->where('teams.1.delivery.limit', 'Team được báo bằng tin trước khi có thread: không biết từ đây tin đó đã tới chưa.'));

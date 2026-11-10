@@ -23,9 +23,10 @@ use Illuminate\Support\Collection;
 
 /**
  * What the admin incident pages show of incidents: their pre-notices, the fix of each branch, the pending suggestions,
- * and each team that was told about them or runs their technology, with its exposure and assessment. An incident
- * needs an admin when it has a pending suggestion, or a team is reminded of it every day (see the `needs_acknowledgement`
- * of a team): the same rule as the reminders of the daily digest (see SendDailyDigest::awaitingPatch()).
+ * and each team that runs their technology, with its exposure and assessment: a team told about an incident that no
+ * longer runs its technology is left out, its thread and assessment kept in the database. An incident needs an admin
+ * when it has a pending suggestion, or a team is reminded of it every day (see the `needs_acknowledgement` of a team):
+ * the same rule as the reminders of the daily digest (see SendDailyDigest::awaitingPatch()).
  *
  * The fix of a branch, whether the catalog says the branch reached end of life and whether the incident is recent enough
  * for reminders are kept as separate facts: none of them replaces another.
@@ -41,7 +42,7 @@ use Illuminate\Support\Collection;
  *
  * @phpstan-type ThreadDelivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
  * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>, is_legacy: bool, is_webhook_changed: bool}
- * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_running: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
+ * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
  * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
  */
 class IncidentOverview
@@ -89,7 +90,7 @@ class IncidentOverview
         $deliveries = $this->deliveriesOf($rows->collapse(), $withHistory);
         $suggestions = $this->pendingSuggestionsQuery($incidentIds, $noticeIds)->get(['id', 'incident_id', 'advisory_id']);
         $incidentOfNotice = $notices->collapse()->pluck('incident_id', 'id');
-        $teams = Team::whereKey($ledger->pluck('team_id')->merge($runtimes->flatMap(fn (EloquentCollection $runtimes): array => $runtimes->map(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id)->all()))->unique()->values())
+        $teams = Team::whereKey($runtimes->flatMap(fn (EloquentCollection $runtimes): array => $runtimes->map(fn (Runtime $runtime): int => $runtime->deployment->service->project->team_id)->all())->unique()->values())
             ->orderBy('name')
             ->get();
 
@@ -162,10 +163,9 @@ class IncidentOverview
     }
 
     /**
-     * Whether an admin marked the incident as read with "Chưa rõ" for a team told about it or running its technology,
-     * and the assessment still holds (see IncidentTeam::hasValidAssessment()); with a team, only that team counts.
-     * Unlike needsAttention(), it does not depend on how recent the incident is, nor stop being true once the daily
-     * reminder stopped.
+     * Whether an admin marked the incident as read with "Chưa rõ" for a team running its technology, and the assessment
+     * still holds (see IncidentTeam::hasValidAssessment()); with a team, only that team counts. Unlike needsAttention(),
+     * it does not depend on how recent the incident is, nor stop being true once the daily reminder stopped.
      *
      * @param  IncidentState  $state
      */
@@ -220,7 +220,7 @@ class IncidentOverview
     }
 
     /**
-     * The teams told about the incident or running its technology, by name.
+     * The teams running the incident's technology, by name, whether they were told about it or not.
      *
      * @param  EloquentCollection<int, Advisory>  $notices
      * @param  array<string, array{version: string, notice: Advisory}>  $patches
@@ -239,9 +239,9 @@ class IncidentOverview
         $isWithinWindow = $this->isWithinReminderWindow($incident);
 
         return $teams
-            ->filter(fn (Team $team): bool => $toldTeamIds->contains($team->id) || $runtimesByTeam->has($team->id))
+            ->filter(fn (Team $team): bool => $runtimesByTeam->has($team->id))
             ->map(function (Team $team) use ($incident, $notices, $patches, $runtimesByTeam, $ledger, $toldTeamIds, $rowsByTeam, $deliveries, $isWithinWindow): array {
-                $teamRuntimes = $runtimesByTeam->get($team->id) ?? new EloquentCollection;
+                $teamRuntimes = $runtimesByTeam->get($team->id);
                 $exposure = IncidentTeamExposure::of($incident, $notices, $teamRuntimes, $patches);
                 $row = $rowsByTeam->get($team->id);
                 $isWebhookChanged = $row?->willMoveTo($team->google_chat_webhook_url) ?? false;
@@ -249,7 +249,6 @@ class IncidentOverview
                 $toldSeverity = $isTold ? $ledger->where('team_id', $team->id)->map(fn (array $entry): Severity => $entry['severity'])->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() : null;
                 $isAssessed = $row?->hasValidAssessment($exposure) ?? false;
                 $waiting = IncidentTeamExposure::waitingBranches($incident, $teamRuntimes, $patches);
-                $isActionable = $isTold && $teamRuntimes->isNotEmpty();
 
                 return [
                     'team' => $team,
@@ -258,11 +257,10 @@ class IncidentOverview
                     'exposure' => $exposure,
                     'told_severity' => $toldSeverity,
                     'is_told' => $isTold,
-                    'is_running' => $teamRuntimes->isNotEmpty(),
-                    'is_actionable' => $isActionable,
+                    'is_actionable' => $isTold,
                     'is_assessed' => $isAssessed,
                     'waiting_branches' => $waiting,
-                    'needs_acknowledgement' => $isActionable && ! $isAssessed && $waiting !== [] && $isWithinWindow && $this->policy->remindsOfIncident($toldSeverity),
+                    'needs_acknowledgement' => $isTold && ! $isAssessed && $waiting !== [] && $isWithinWindow && $this->policy->remindsOfIncident($toldSeverity),
                     'delivery' => [
                         ...self::NO_DELIVERY,
                         'failures' => collect(),

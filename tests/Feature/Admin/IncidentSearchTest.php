@@ -116,11 +116,11 @@ describe('the "Chưa rõ" filter', function () {
         get("/admin/incidents?unknown=1&team={$this->booking->id}")->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
     });
 
-    it('keeps a team told about the incident that no longer runs its technology', function () {
+    it('leaves out a team told about the incident that no longer runs its technology', function () {
         assessIncident($this->incident, $this->commerce, IncidentImpact::Unknown);
         Runtime::whereHas('deployment.service', fn ($query) => $query->where('name', 'shop-api'))->delete();
 
-        get('/admin/incidents?unknown=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 1)->where('incidents.data.0.id', $this->incident->id));
+        get('/admin/incidents?unknown=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
     });
 
     it('goes with the search and what needs an admin', function () {

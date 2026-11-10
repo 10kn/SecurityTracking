@@ -1,7 +1,6 @@
 {
     "\":path\" không hợp lệ: mỗi dòng là một đường dẫn trong thư mục service, chỉ gồm chữ, số và . _ @ + -, không có \"..\".": "「:path」は無効です。1 行に 1 つ、サービスのディレクトリからのパスを英数字と . _ @ + - だけで入力してください（「..」は使えません）。",
     "#:id · :technology · :count tin": "#:id · :technology · 情報 :count 件",
-    "(không còn chạy công nghệ này)": "（この技術を使わなくなりました）",
     "+:count finding khác": "ほか :count 件",
     "+:count incident khác": "ほか :count 件",
     "+:count nơi nhận khác": "ほか :count 件の送信先",
@@ -290,7 +289,6 @@
     "Incident khác vẫn có ở màn Incidents.": "その他のインシデントはインシデント画面で確認できます。",
     "Khai báo trong repo": "リポジトリでの宣言",
     "Không": "なし",
-    "Không còn chạy công nghệ này": "この技術を使わなくなりました",
     "Không còn trong danh sách GitHub App được đọc": "GitHub App が読めるリポジトリの一覧にありません",
     "Không có bản phát hành phù hợp": "該当するリリースはありません",
     "Không có finding nào đang mở": "未解決の finding はありません",

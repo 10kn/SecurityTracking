@@ -227,7 +227,7 @@ it('shows the incident with its notices, its teams and what the forms need', fun
             ->has('notices', 1)
             ->where('notices.0.title', 'Upcoming Critical PHP Security Release')
             ->where('focusTeam', $this->commerce->id)
-            ->has('teams', 3)
+            ->has('teams', 2)
             ->where('teams.0.name', 'Booking')
             ->where('teams.0.assessment.impact.value', 'no')
             ->where('teams.0.assessment.note', 'Chỉ chạy CLI nội bộ')
@@ -242,13 +242,9 @@ it('shows the incident with its notices, its teams and what the forms need', fun
             ->where('teams.1.thread.status.label', 'Đã mở thread')
             ->where('teams.1.thread.url', fn (string $url): bool => str_starts_with($url, 'https://chat.google.com/room/COMMERCE/'))
             ->where('teams.1.exposure_hash', IncidentTeamExposure::for($this->incident, $this->commerce)->hash())
-            ->where('teams.2.name', 'Retired')
-            ->where('teams.2.is_told', true)
-            ->where('teams.2.is_actionable', false)
             ->where('update.recipients', [
-                ['value' => $this->booking->id, 'label' => 'Booking', 'is_default' => true],
-                ['value' => $this->commerce->id, 'label' => 'Commerce', 'is_default' => true],
-                ['value' => $retired->id, 'label' => 'Retired', 'is_default' => false],
+                ['value' => $this->booking->id, 'label' => 'Booking'],
+                ['value' => $this->commerce->id, 'label' => 'Commerce'],
             ])
             ->where('update.request_id', fn (string $id): bool => Str::isUuid($id)));
 });
