@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\OperatingSystem;
 use App\Enums\RuntimeSource;
 use App\Enums\RuntimeStatus;
 use App\Events\DeploymentInventoryChanged;
@@ -10,7 +11,7 @@ use App\Models\Service;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Saves the runtime versions and lockfiles an admin entered for a service's production environment.
+ * Saves the operating system, runtime versions and lockfiles an admin entered for a service's production environment.
  */
 class UpdateProductionInventory
 {
@@ -18,20 +19,29 @@ class UpdateProductionInventory
 
     /**
      * Dispatches DeploymentInventoryChanged only when something changed, so re-saving the same form does not trigger a new evaluation.
+     * A changed operating system alone counts too: which vendor news concerns the deployment changes with it (see
+     * Incident::scopeFor()).
      *
      * @param  array<string, string|null>  $runtimeVersions  Raw versions keyed by technology, e.g. "php"; a missing or blank version removes the runtime.
      * @param  list<array{path: string, content: string}>  $uploadedLockfiles
      * @param  list<string>  $removedLockfilePaths
+     * @param  OperatingSystem|null  $os  The operating system the deployment runs on; null when not known.
      */
-    public function handle(Service $service, array $runtimeVersions, array $uploadedLockfiles = [], array $removedLockfilePaths = []): Deployment
+    public function handle(Service $service, array $runtimeVersions, array $uploadedLockfiles = [], array $removedLockfilePaths = [], ?OperatingSystem $os = null): Deployment
     {
-        return DB::transaction(function () use ($service, $runtimeVersions, $uploadedLockfiles, $removedLockfilePaths): Deployment {
+        return DB::transaction(function () use ($service, $runtimeVersions, $uploadedLockfiles, $removedLockfilePaths, $os): Deployment {
             $deployment = $service->productionDeploymentOrCreate();
 
+            $hasSystemChange = $deployment->os !== $os;
+            $deployment->os = $os;
             $hasRuntimeChanges = $this->syncRuntimes($deployment, $runtimeVersions);
             $hasLockfileChanges = $this->replaceLockfiles->handle($deployment, $uploadedLockfiles, $removedLockfilePaths);
 
-            if ($hasRuntimeChanges || $hasLockfileChanges) {
+            if ($hasSystemChange) {
+                $deployment->save();
+            }
+
+            if ($hasSystemChange || $hasRuntimeChanges || $hasLockfileChanges) {
                 $deployment->touch();
 
                 DeploymentInventoryChanged::dispatch($deployment);

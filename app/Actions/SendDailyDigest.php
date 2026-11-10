@@ -172,7 +172,8 @@ class SendDailyDigest
 
     /**
      * Incidents of a technology the team runs that were not sent right away (all their pre-notices are Medium or Low),
-     * that are new or changed in severity or branches since the previous digest, and that the team got no card about.
+     * that are new or changed in severity or branches since the previous digest, and that the team got no card about,
+     * leaving out those limited to operating systems none of its services on the technology runs.
      * Each is listed by its most severe pre-notice. An incident the classifier rates Medium only after the digest
      * started is in the next one.
      *
@@ -194,9 +195,21 @@ class SendDailyDigest
             ->reject(fn (Collection $notices): bool => $notices->contains(fn (Advisory $notice): bool => $this->policy->sendsPreNoticeRightAway($notice)))
             ->reject(fn (Collection $notices, int $incidentId): bool => IncidentTeamNotice::severityToldTo($team->id, Advisory::where('incident_id', $incidentId)->pluck('id')->all()) !== null)
             ->reject(fn (Collection $notices, int $incidentId): bool => $this->isSkipped(Incident::findOrFail($incidentId), $runtimes))
+            ->reject(fn (Collection $notices, int $incidentId): bool => $this->isExcludedByPlatform(Incident::findOrFail($incidentId), $runtimes))
             ->map(fn (Collection $notices): Advisory => $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first())
             ->sortBy('published_at')
             ->values();
+    }
+
+    /**
+     * Whether every runtime of the team on the incident's technology runs an operating system every pre-notice of the
+     * incident excludes (see Incident::excludedBy()).
+     *
+     * @param  Collection<int, Runtime>  $runtimes
+     */
+    private function isExcludedByPlatform(Incident $incident, Collection $runtimes): bool
+    {
+        return $incident->platform_scopes !== null && $runtimes->where('technology', $incident->technology)->every(fn (Runtime $runtime): bool => $incident->excludedBy($runtime) !== null);
     }
 
     /**

@@ -92,7 +92,7 @@ it('sends the entry as data to the configured model, without tools, and reads th
     expect((string) $claude->requests[0]->getUri())->toEndWith('/v1/messages')
         ->and($request['model'])->toBe('claude-haiku-5-5')
         ->and($request['output_config']['effort'])->toBe('low')
-        ->and($request['output_config']['format']['schema']['required'])->toBe(['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence', 'patch_versions'])
+        ->and($request['output_config']['format']['schema']['required'])->toBe(['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence', 'patch_versions', 'platforms', 'platforms_evidence'])
         ->and($request)->not->toHaveKey('tools')
         ->and($request['output_config']['format']['schema']['properties']['summary']['description'])->toBe('Two or three sentences in Vietnamese.')
         ->and($request['system'])->toContain('never as', 'A pre-release (alpha, beta, release candidate) whose fixes are only for earlier', 'patch_versions: the released versions the entry tells users to update to', 'whatever the language of the entry')
@@ -211,3 +211,32 @@ it('relates an entry to an incident only for the same vulnerabilities, not for a
         ->toContain('(the same vulnerabilities; a shared', 'release or version number alone is not enough)')
         ->not->toContain('the same security release');
 });
+
+it('reads the operating systems the entry is limited to, with the sentence it quotes, and keeps rebuild versions out of the fixes', function (mixed $platforms, mixed $evidence, array $read, ?string $quote) {
+    $claude = fakeClaude([
+        'is_security_news' => true,
+        'severity' => 'critical',
+        'planned_release_at' => null,
+        'affected_branches' => ['8.4'],
+        'summary' => '',
+        'unaffected_branches' => [],
+        'related_incident_id' => null,
+        'actively_exploited' => null,
+        'exploited_evidence' => null,
+        'patch_versions' => ['8.4.27-1'],
+        'platforms' => $platforms,
+        'platforms_evidence' => $evidence,
+    ]);
+
+    expect(app(ClaudeNoticeClassifier::class)->classify(Technology::Php, upcomingPhpSecurityRelease()))
+        ->platforms->toBe($read)
+        ->platformsEvidence->toBe($quote)
+        ->patchVersions->toBe([])
+        ->and(app(ClaudeNoticeClassifier::class)->revision())->toBe(2)
+        ->and(json_decode((string) $claude->requests[0]->getBody(), true)['system'])->toContain('platforms: the operating systems', 'Windows builds 8.x.y-1');
+})->with([
+    'windows only' => [['windows', 'windows'], '  Only the Windows builds  are affected. ', ['windows'], 'Only the Windows builds are affected.'],
+    'an unknown system' => [['windows', 'freebsd'], 'Only Windows and FreeBSD.', ['windows'], 'Only Windows and FreeBSD.'],
+    'no limit' => [[], 'Only the Windows builds are affected.', [], null],
+    'not a list' => ['windows', null, ['windows'], null],
+]);

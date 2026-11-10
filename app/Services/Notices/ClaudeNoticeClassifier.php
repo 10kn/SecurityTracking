@@ -3,6 +3,7 @@
 namespace App\Services\Notices;
 
 use Anthropic\Client;
+use App\Enums\OperatingSystem;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use Carbon\CarbonImmutable;
@@ -50,6 +51,12 @@ class ClaudeNoticeClassifier implements NoticeClassifier
           or a demonstrated exploit is not exploitation. Null when the entry does not say.
         - exploited_evidence: when actively_exploited is true, the sentence of the entry that says so, copied word for
           word. Null otherwise.
+        - platforms: the operating systems the entry explicitly says its vulnerabilities or fixes are limited to, e.g.
+          ["windows"] for "Updated PHP Windows builds for Brotli security fix" saying only the Windows builds 8.x.y-1
+          are affected and the PHP runtime versions remain unchanged. Empty when it states no such limit, including
+          when it only mentions an operating system in passing or ships fixes for every system.
+        - platforms_evidence: when platforms is not empty, the sentence of the entry that limits it, copied word for
+          word. Null otherwise.
         - summary: two or three plain sentences for the team: what is affected, how serious it is, and when fixes
           come. Write it in the summary language the message names, whatever the language of the entry, never in
           English or any other language unless that is the one named, and with the language's own script and accents,
@@ -63,6 +70,12 @@ class ClaudeNoticeClassifier implements NoticeClassifier
      * Languages the summary can be written in, by alert locale.
      */
     private const array LANGUAGES = ['vi' => 'Vietnamese', 'ja' => 'Japanese', 'en' => 'English'];
+
+    /**
+     * Raised whenever the prompt or the schema changes what is read from an entry, so the entries read before are
+     * read again (see SyncNoticeFeed). 2: the operating systems an entry is limited to (`platforms`).
+     */
+    private const int REVISION = 2;
 
     /**
      * Letters only a summary in the language has, by alert locale: Vietnamese with its diacritics, Japanese kana or
@@ -82,6 +95,11 @@ class ClaudeNoticeClassifier implements NoticeClassifier
     public function name(): string
     {
         return (string) config('psm.notices.classifier.model');
+    }
+
+    public function revision(): int
+    {
+        return self::REVISION;
     }
 
     public function classify(Technology $technology, NoticeEntry $entry, array $incidents = []): NoticeClassification
@@ -171,16 +189,18 @@ class ClaudeNoticeClassifier implements NoticeClassifier
                 'actively_exploited' => ['anyOf' => [['type' => 'boolean'], ['type' => 'null']]],
                 'exploited_evidence' => ['anyOf' => [['type' => 'string'], ['type' => 'null']]],
                 'patch_versions' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'platforms' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => array_map(fn (OperatingSystem $system): string => $system->value, OperatingSystem::cases())]],
+                'platforms_evidence' => ['anyOf' => [['type' => 'string'], ['type' => 'null']]],
             ],
-            'required' => ['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence', 'patch_versions'],
+            'required' => ['is_security_news', 'severity', 'planned_release_at', 'affected_branches', 'summary', 'unaffected_branches', 'related_incident_id', 'actively_exploited', 'exploited_evidence', 'patch_versions', 'platforms', 'platforms_evidence'],
             'additionalProperties' => false,
         ];
     }
 
     /**
      * Branches and versions that are not version numbers, times that are not ISO 8601, incidents that were not offered
-     * and a summary not in the summary language are dropped rather than trusted. Evidence of exploitation is kept as quoted: SyncNoticeFeed checks it
-     * against the entry. A patch version only counts once the catalog lists it as a security release (see
+     * and a summary not in the summary language are dropped rather than trusted. Evidence of exploitation and of a limit
+     * to some operating systems is kept as quoted: SyncNoticeFeed checks it against the entry. A patch version only counts once the catalog lists it as a security release (see
      * Incident::confirmedPatches()).
      *
      * @param  list<int>  $incidentIds  The incidents offered.
@@ -196,6 +216,8 @@ class ClaudeNoticeClassifier implements NoticeClassifier
         $summary = Str::squish((string) ($answer['summary'] ?? ''));
         $relatedIncidentId = $answer['related_incident_id'] ?? null;
         $evidence = is_string($answer['exploited_evidence'] ?? null) ? Str::limit(Str::squish($answer['exploited_evidence']), 500) : null;
+        $platforms = $this->matching($answer['platforms'] ?? [], '/^(?:'.implode('|', array_map(fn (OperatingSystem $system): string => $system->value, OperatingSystem::cases())).')$/');
+        $platformsEvidence = $platforms !== [] && is_string($answer['platforms_evidence'] ?? null) ? Str::limit(Str::squish($answer['platforms_evidence']), 500) : null;
 
         return new NoticeClassification(
             isSecurityNews: $answer['is_security_news'],
@@ -208,6 +230,8 @@ class ClaudeNoticeClassifier implements NoticeClassifier
             activelyExploited: is_bool($answer['actively_exploited'] ?? null) ? $answer['actively_exploited'] : null,
             exploitedEvidence: $evidence === '' ? null : $evidence,
             patchVersions: $this->matching($answer['patch_versions'] ?? [], '/^\d+\.\d+\.\d+$/'),
+            platforms: $platforms,
+            platformsEvidence: $platformsEvidence === '' ? null : $platformsEvidence,
         );
     }
 
