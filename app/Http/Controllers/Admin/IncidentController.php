@@ -6,6 +6,7 @@ use App\Enums\FindingState;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentScope;
 use App\Enums\IncidentTeamEventType;
+use App\Enums\OperatingSystem;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
@@ -304,7 +305,8 @@ class IncidentController extends Controller
     }
 
     /**
-     * A team of the incident page: its services with their branch, the versions they run, scope and fix, and whether
+     * A team of the incident page: its services with their branch, the versions they run, scope (with the operating
+     * systems the incident is limited to when it excludes the service's, e.g. "chỉ Windows") and fix, and whether
      * they all run the fix of their branch already (shown only: the assessment snapshot keeps neither), what it was told, its Google Chat
      * thread and what Google Chat accepted of it, its assessment and history, and what the form posts back for it (the
      * exposure hash and the assessment revision shown).
@@ -319,15 +321,20 @@ class IncidentController extends Controller
         return [
             'id' => $team['team']->id,
             'name' => $team['team']->name,
-            'services' => array_map(function (array $service) use ($team): array {
+            'services' => array_map(function (array $service) use ($incident, $team): array {
                 $versions = $this->runningVersions($team['runtimes'], $service);
+                $system = OperatingSystem::tryFrom((string) ($service['os'] ?? ''));
+                $isExcluded = $incident->excludes($system);
+                $systems = OperatingSystem::labels($incident->platforms());
 
                 return [
                     'name' => $service['service'],
                     'branch' => $service['branch'],
                     'versions' => $versions,
-                    'scope' => IncidentScope::from($service['scope'])->getLabel(),
-                    'scope_hint' => IncidentScope::from($service['scope'])->getDescription(),
+                    'scope' => $isExcluded ? __('đã xác nhận không ảnh hưởng (chỉ :systems)', ['systems' => $systems]) : IncidentScope::from($service['scope'])->getLabel(),
+                    'scope_hint' => $isExcluded
+                        ? __('Tin trên trang chính thức ghi rõ chỉ ảnh hưởng :systems, còn service chạy :system.', ['systems' => $systems, 'system' => $system?->getLabel()])
+                        : IncidentScope::from($service['scope'])->getDescription(),
                     'is_not_affected' => $service['scope'] === IncidentScope::NotAffected->value,
                     'patch' => $service['patch'],
                     'is_patched' => $service['patch'] !== null && $versions !== [] && collect($versions)->every(fn (string $version): bool => ! Version::isNewer($service['patch'], $version)),

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AdvisoryKind;
 use App\Enums\Ecosystem;
 use App\Enums\IncidentBasis;
+use App\Enums\OperatingSystem;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
 use App\Enums\Technology;
@@ -19,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
+#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -30,7 +31,7 @@ class Advisory extends Model
      *
      * @var list<string>
      */
-    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'known_exploited'];
+    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'known_exploited'];
 
     /**
      * Get the attributes that should be cast.
@@ -60,6 +61,7 @@ class Advisory extends Model
             'planned_release_at' => 'datetime',
             'affected_branches' => 'array',
             'unaffected_branches' => 'array',
+            'platforms' => 'array',
             'patch_versions' => 'array',
             'is_exploited' => 'boolean',
             'exploited_basis' => 'array',
@@ -150,6 +152,23 @@ class Advisory extends Model
     public function findings(): HasMany
     {
         return $this->hasMany(Finding::class);
+    }
+
+    /**
+     * The operating systems the pre-notice says it is limited to, with a sentence of the entry that says so (see
+     * SyncNoticeFeed); empty when it states no limit, e.g. [Windows] for news about the Windows builds only.
+     *
+     * @return list<OperatingSystem>
+     */
+    public function platformLimit(): array
+    {
+        return collect($this->platforms ?? [])
+            ->filter(fn (mixed $value): bool => is_string($value))
+            ->unique()
+            ->map(fn (string $value): ?OperatingSystem => OperatingSystem::tryFrom($value))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /**

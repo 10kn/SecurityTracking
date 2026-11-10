@@ -44,6 +44,8 @@ export interface ServiceFormData {
     slug: string;
     kind: string;
     exposure: string;
+    /** The operating system of the production deployment, e.g. "linux"; "" when not known. */
+    os: string;
     repository_path: string;
     /** E.g. "acme/shop"; null when lockfiles are uploaded by hand. */
     repository: string | null;
@@ -71,6 +73,7 @@ export interface ServiceFormOptions {
     lockfileSkippedDirectories: string[];
     kinds: Option<string>[];
     exposures: Option<string>[];
+    operatingSystems: Option<string>[];
     technologies: TechnologyOption[];
 }
 
@@ -105,6 +108,11 @@ export function newRuntimeRow(technology: string | null = null, rawVersion = '')
     lastRuntimeRowKey += 1;
 
     return { key: `runtime-${lastRuntimeRowKey}`, technology, raw_version: rawVersion };
+}
+
+/** ECS runs Linux containers: the form picks Linux for it while the operating system is not set. The server never assumes it. */
+export function defaultOperatingSystem(kind: string, os = ''): string {
+    return os === '' && kind === 'ecs' ? 'linux' : os;
 }
 
 /** The form data as the server expects it: runtimes without their React keys. */
@@ -167,7 +175,12 @@ export function ServiceFields({
                         />
                     </Field>
                     <Field label={t('Loại')} htmlFor="kind" required error={form.errors.kind}>
-                        <NativeSelect id="kind" value={form.data.kind} onChange={(event) => form.setData('kind', event.target.value)} aria-invalid={form.errors.kind !== undefined}>
+                        <NativeSelect
+                            id="kind"
+                            value={form.data.kind}
+                            onChange={(event) => form.setData({ ...form.data, kind: event.target.value, os: defaultOperatingSystem(event.target.value, form.data.os) })}
+                            aria-invalid={form.errors.kind !== undefined}
+                        >
                             {options.kinds.map((kind) => (
                                 <option key={kind.value} value={kind.value}>
                                     {kind.label}
@@ -201,6 +214,16 @@ export function ServiceFields({
                 }
             >
                 <FormFields>
+                    <Field label={t('Hệ điều hành')} htmlFor="os" error={errors.os} help={t('Tin bảo mật chỉ ảnh hưởng hệ điều hành khác không cảnh báo service này. Không rõ thì coi như có thể bị ảnh hưởng.')}>
+                        <NativeSelect id="os" value={form.data.os} onChange={(event) => form.setData('os', event.target.value)} aria-invalid={errors.os !== undefined}>
+                            <option value="">{t('Không rõ')}</option>
+                            {options.operatingSystems.map((system) => (
+                                <option key={system.value} value={system.value}>
+                                    {system.label}
+                                </option>
+                            ))}
+                        </NativeSelect>
+                    </Field>
                     <Field label={t('Runtime / công nghệ')} error={errors.runtimes}>
                         <RuntimeRows form={form} technologies={options.technologies} errors={errors} />
                     </Field>

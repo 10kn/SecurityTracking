@@ -933,5 +933,10 @@
     "Chưa có webhook.": "Webhook がありません。",
     "Theo hệ thống": "システムに合わせる",
     "Sáng hoặc tối theo hệ điều hành": "OS の設定に合わせてライト／ダーク",
-    "Theme khi hệ thống ở chế độ sáng": "ライトモード時のテーマ"
+    "Theme khi hệ thống ở chế độ sáng": "ライトモード時のテーマ",
+    "Hệ điều hành": "OS",
+    "Không rõ": "不明",
+    "Tin bảo mật chỉ ảnh hưởng hệ điều hành khác không cảnh báo service này. Không rõ thì coi như có thể bị ảnh hưởng.": "別の OS だけに影響するセキュリティ情報では、このサービスに警告しません。不明の場合は影響を受ける可能性があるものとして扱います。",
+    "đã xác nhận không ảnh hưởng (chỉ :systems)": "影響なし（確認済み・対象は :systems のみ）",
+    "Tin trên trang chính thức ghi rõ chỉ ảnh hưởng :systems, còn service chạy :system.": "公式サイトの情報では :systems のみが影響を受けると明記されており、このサービスは :system で動いています。"
 }

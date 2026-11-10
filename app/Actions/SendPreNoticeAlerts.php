@@ -138,6 +138,7 @@ class SendPreNoticeAlerts
                 $runtime->version,
                 $runtime->raw_version,
                 $runtime->status->value,
+                ...($runtime->deployment->os === null ? [] : [$runtime->deployment->os->value]),
             ])->all())),
         ];
     }
@@ -157,7 +158,9 @@ class SendPreNoticeAlerts
      * were read are left out again once the lock is held, as pausing takes it too (see PauseProjectMonitoring). So
      * are, from the alerts only, those of a project resumed without telling the team while what the incident asks of
      * them did not grow (see ProjectIncidentSkip): the team's exposure, which an admin's assessment holds for, still
-     * counts them.
+     * counts them. The services on an operating system every pre-notice of the incident excludes are left out of the
+     * alerts the same way (see Incident::excludedBy()): a team running PHP only on Linux hears nothing of news about the
+     * Windows builds, while its exposure lists them as not affected, so moving one to Windows ends a "Không".
      *
      * @param  array{by_team: Collection<int|string, EloquentCollection<int, Runtime>>, signature: string}  $technologyRuntimes
      */
@@ -196,7 +199,9 @@ class SendPreNoticeAlerts
 
             foreach ($notices->isEmpty() ? [] : $technologyRuntimes['by_team'] as $teamId => $monitored) {
                 $monitored = $monitored->reject(fn (Runtime $runtime): bool => in_array($runtime->deployment->service->project_id, $pausedIds, true))->values();
-                $runtimes = ProjectIncidentSkip::withoutSkipped($incident, $all, $monitored, $confirmedPatches);
+                $runtimes = ProjectIncidentSkip::withoutSkipped($incident, $all, $monitored, $confirmedPatches)
+                    ->reject(fn (Runtime $runtime): bool => $incident->excludedBy($runtime) !== null)
+                    ->values();
 
                 if ($runtimes->isEmpty()) {
                     continue;
@@ -275,13 +280,14 @@ class SendPreNoticeAlerts
                 $notice->published_at !== null && $notice->published_at->gte($since),
                 $notice->affected_branches,
                 $notice->unaffected_branches,
+                ...($notice->platforms === null ? [] : [['platforms' => $notice->platforms]]),
                 $notice->patch_versions,
                 $notice->is_exploited,
                 $notice->exploited_basis['excerpt'] ?? null,
                 collect($notice->known_exploited ?? [])->map(fn (array $entry): string => implode(':', [$entry['cve'], $entry['date_added'], $entry['due_date'] ?? '', (int) ($entry['listed'] ?? false)]))->sort()->values()->all(),
                 KnownExploitation::isFresh($notice->known_exploited),
             ])->values()->all(),
-            [$incident->affected_branches, $incident->unaffected_branches],
+            [$incident->affected_branches, $incident->unaffected_branches, ...($incident->platform_scopes === null ? [] : [$incident->platform_scopes])],
             collect($patches)->map(fn (array $patch): string => "{$patch['notice']->id}:{$patch['version']}")->all(),
             $runtimeSignature,
             ProjectIncidentSkip::where('incident_id', $incident->id)->orderBy('id')->pluck('id')->all(),

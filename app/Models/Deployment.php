@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\Environment;
 use App\Enums\FindingRule;
 use App\Enums\FindingState;
+use App\Enums\OperatingSystem;
 use Database\Factories\DeploymentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['service_id', 'environment', 'commit_sha', 'image_digest', 'release', 'is_current', 'deployed_at'])]
+#[Fillable(['service_id', 'environment', 'os', 'commit_sha', 'image_digest', 'release', 'is_current', 'deployed_at'])]
 class Deployment extends Model
 {
     /** @use HasFactory<DeploymentFactory> */
@@ -27,6 +28,7 @@ class Deployment extends Model
     {
         return [
             'environment' => Environment::class,
+            'os' => OperatingSystem::class,
             'is_current' => 'boolean',
             'deployed_at' => 'datetime',
         ];

@@ -14,10 +14,12 @@ use Illuminate\Support\Collection;
 /**
  * What an incident asks of one team now, computed from the current data and never stored: the incident's pre-notices
  * and their CVE and GHSA ids (which issue it is), the team's services on the technology with the branch they run,
- * whether the vendor said the branch is affected and the fix confirmed for it, the highest severity, whether the
+ * the operating system they run on, whether the vendor said the branch is affected and the fix confirmed for it, the highest severity, whether the
  * incident is exploited and the CVE ids of it CISA KEV lists. The scope of every runtime is the one the alerts use (see Incident::scopeFor()), which reads
  * the branch from the version when the branch is not known; such a runtime gets no fix, as the alerts give it none.
- * Only a runtime whose branch and version say nothing is of unknown scope.
+ * Only a runtime whose branch and version say nothing is of unknown scope. A runtime on an operating system every
+ * pre-notice excludes is not affected (see Incident::excludedBy()), so moving it to one a pre-notice names is new to
+ * an assessment.
  *
  * An admin's assessment of the incident for the team ("Đã đọc", see IncidentTeam) keeps a snapshot of it, and holds
  * only while the snapshot still covers the current exposure (see isCoveredBy()): nothing it did not show may be asked
@@ -27,7 +29,7 @@ final readonly class IncidentTeamExposure
 {
     /**
      * @param  list<int>  $noticeIds  The incident's pre-notices, sorted.
-     * @param  list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null}>  $services  Sorted by service and branch.
+     * @param  list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null, os?: string|null}>  $services  Sorted by service and branch.
      * @param  array<int, list<string>>  $noticeIssueIds  Pre-notice id => its CVE and GHSA ids.
      * @param  list<string>  $knownExploitedCves  Sorted.
      */
@@ -89,6 +91,7 @@ final readonly class IncidentTeamExposure
                     'branch' => $branch,
                     'scope' => $incident->scopeFor($runtime)->value,
                     'patch' => $runtime->branch === null ? null : $patches[$branch]['version'] ?? null,
+                    'os' => $runtime->deployment->os?->value,
                 ];
             })
             ->unique(fn (array $service): string => "{$service['service_id']}|{$service['branch']}|{$service['scope']}")
@@ -199,7 +202,7 @@ final readonly class IncidentTeamExposure
     /**
      * The snapshot an assessment keeps.
      *
-     * @return array{notice_ids: list<int>, issue_ids: list<string>, services: list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null}>, severity: string, exploited: bool, known_exploited: list<string>}
+     * @return array{notice_ids: list<int>, issue_ids: list<string>, services: list<array{service_id: int, service: string, branch: string, scope: string, patch: string|null, os?: string|null}>, severity: string, exploited: bool, known_exploited: list<string>}
      */
     public function toArray(): array
     {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\UpdateProductionInventory;
+use App\Enums\OperatingSystem;
 use App\Enums\RuntimeStatus;
 use App\Enums\Technology;
 use App\Events\DeploymentInventoryChanged;
@@ -584,4 +585,39 @@ it('queues reading the lockfiles of a service on request', function () {
     post('/admin/services/'.Service::factory()->create()->id.'/lockfile-sync')->assertNotFound();
 
     Queue::assertPushed(SyncServiceLockfilesJob::class, 1);
+});
+
+it('saves the operating system of the production deployment, shows it on the edit form and queues an evaluation when only it changed', function (?OperatingSystem $saved, ?string $posted, bool $shouldEvaluate) {
+    actingAsAdmin();
+    $deployment = Deployment::factory()->create(['os' => $saved]);
+    $runtime = Runtime::factory()->for($deployment)->create(['raw_version' => '8.4.27']);
+    $service = $deployment->service;
+    Event::fake([DeploymentInventoryChanged::class]);
+
+    post("/admin/services/{$service->id}", [
+        '_method' => 'put',
+        ...serviceForm([
+            'project_id' => $service->project_id,
+            'name' => $service->name,
+            'slug' => $service->slug,
+            'os' => $posted,
+            'runtimes' => [['technology' => $runtime->technology->value, 'raw_version' => '8.4.27']],
+        ]),
+    ])->assertSessionHasNoErrors();
+
+    expect($deployment->refresh()->os?->value)->toBe($posted === '' ? null : $posted);
+    Event::assertDispatchedTimes(DeploymentInventoryChanged::class, $shouldEvaluate ? 1 : 0);
+    get("/admin/services/{$service->id}/edit")
+        ->assertInertia(fn (Assert $page) => $page->where('service.os', $posted === '' ? null : $posted)->where('operatingSystems.1', ['value' => 'windows', 'label' => 'Windows']));
+})->with([
+    'linux to windows' => [OperatingSystem::Linux, 'windows', true],
+    'unknown to linux' => [null, 'linux', true],
+    'windows to unknown' => [OperatingSystem::Windows, '', true],
+    'unchanged' => [OperatingSystem::Linux, 'linux', false],
+]);
+
+it('rejects an operating system it does not know', function () {
+    actingAsAdmin();
+
+    post('/admin/services', serviceForm(['os' => 'freebsd']))->assertSessionHasErrors('os');
 });
