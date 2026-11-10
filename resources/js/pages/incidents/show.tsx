@@ -83,7 +83,7 @@ interface Delivery {
     last_sent: string | null;
     failures_count: number;
     pending_count: number;
-    failures: { id: number; error: string; failed: string | null; command: string }[];
+    failures: { id: number; error: string; failed: string | null; command: string | null }[];
     limit: string | null;
 }
 
@@ -679,7 +679,11 @@ function DeliveryStatus({ delivery }: { delivery: Delivery }) {
                             #{failure.id}
                             {failure.failed && ` · ${failure.failed}`}
                             {failure.error && ` · ${failure.error}`}
-                            <code className="mt-0.5 block font-mono text-xs break-all text-foreground">{failure.command}</code>
+                            {failure.command ? (
+                                <code className="mt-0.5 block font-mono text-xs break-all text-foreground">{failure.command}</code>
+                            ) : (
+                                <span className="mt-0.5 block">{t('Không gửi lại: admin đã đánh giá Không cho team này.')}</span>
+                            )}
                         </span>
                     ))}
                 </span>

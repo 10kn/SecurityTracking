@@ -33,6 +33,8 @@ use Throwable;
  * `psm.alerts.tries` HTTP attempts within `psm.alerts.retry_hours`; a message that cannot be delivered, including one
  * for a team without a webhook, is marked failed and reported to the admin space, which can send it again with
  * psm:resend-notification. Security news that cannot be delivered to its own space is reported to the admin space too.
+ * An alert of an incident thread to a team an admin's "Không" still rules out is not sent, on any try: it ends failed
+ * with that reason, without telling the admin space (see ChatNotification::isWithheldByAssessment()).
  *
  * Messages to one space go one at a time, `psm.alerts.space_interval_seconds` apart, whatever their kind: a job that
  * would send too early, or while another message of the space is being sent, goes back to the queue without using a
@@ -92,6 +94,12 @@ class SendChatNotification implements ShouldQueue
         $notification = $this->notification->refresh();
 
         if ($notification->sent_at !== null || $notification->failed_at !== null) {
+            return;
+        }
+
+        if ($notification->isWithheldByAssessment()) {
+            $notification->withhold();
+
             return;
         }
 

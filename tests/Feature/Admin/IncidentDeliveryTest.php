@@ -4,6 +4,7 @@ use App\Actions\MergeIncidents;
 use App\Actions\SendPreNoticeAlerts;
 use App\Enums\ChatNotificationKind;
 use App\Enums\ChatThreadRole;
+use App\Enums\IncidentImpact;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Advisory;
@@ -93,6 +94,26 @@ it('shows an opener that failed while a reply that opened the thread was deliver
         ]]));
 
     expect($reply->id)->toBeGreaterThan($this->opener->id);
+});
+
+it('offers no resend of a failed alert while the admin ruling the team out holds, but still of a failed admin update', function () {
+    actingAsAdmin();
+    $alert = threadReply($this->row, ['failed_at' => now(), 'last_error' => 'Team chưa có webhook.']);
+    $update = threadReply($this->row, ['kind' => ChatNotificationKind::IncidentUpdate, 'failed_at' => now(), 'last_error' => 'Team chưa có webhook.']);
+    $row = assessIncident($this->incident, $this->commerce, IncidentImpact::No);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.failures.0.id', $alert->id)
+        ->where('teams.0.delivery.failures.0.command', null)
+        ->where('teams.0.delivery.failures.1.id', $update->id)
+        ->where('teams.0.delivery.failures.1.command', "php artisan psm:resend-notification {$update->id}"));
+
+    runtimeAt($this->commerce, 'booking-api', Technology::Php, '8.4.1')->update(['version' => '8.4.1', 'branch' => '8.4']);
+
+    expect($row->refresh()->impact)->toBe(IncidentImpact::No);
+
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.failures.0.command', "php artisan psm:resend-notification {$alert->id}"));
 });
 
 it('keeps an earlier failure after a later message was delivered, until that message is sent again', function () {
