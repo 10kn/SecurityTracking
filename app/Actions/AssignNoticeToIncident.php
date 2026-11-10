@@ -92,7 +92,9 @@ class AssignNoticeToIncident
     }
 
     /**
-     * Recent incidents of the technology the classifier may relate an entry to, newest first.
+     * Recent incidents of the technology the classifier may relate an entry to: those with a pre-notice published
+     * within `psm.notices.relevant_days`, so an older incident that just got a follow-up is offered too, the latest
+     * publication first.
      *
      * @return list<array{id: int, title: string, published_at: ?CarbonInterface}>
      */
@@ -101,8 +103,8 @@ class AssignNoticeToIncident
         return Incident::current()
             ->where('technology', $technology)
             ->when($exceptId !== null, fn ($query) => $query->whereKeyNot($exceptId))
-            ->where('first_published_at', '>=', now()->subDays(config('psm.notices.relevant_days')))
-            ->orderByDesc('first_published_at')
+            ->whereRaw('coalesce(last_published_at, first_published_at) >= ?', [now()->subDays(config('psm.notices.relevant_days'))])
+            ->orderByRaw('coalesce(last_published_at, first_published_at) desc')
             ->limit(20)
             ->get()
             ->map(fn (Incident $incident): array => ['id' => $incident->id, 'title' => $incident->title, 'published_at' => $incident->first_published_at])

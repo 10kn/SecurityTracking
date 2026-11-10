@@ -190,3 +190,14 @@ it('finds a pre-notice by its address however the feed wrote it', function (stri
     'default port and case' => ['http://Vendor.test:80/notice', 'https://vendor.test/notice'],
     'empty path' => ['https://Vendor.test', 'https://vendor.test/'],
 ]);
+
+it('offers the classifier the incidents with a pre-notice within the relevant days, the latest publication first', function () {
+    config(['psm.notices.relevant_days' => 14]);
+    $followedUp = Incident::factory()->create(['technology' => Technology::Php, 'title' => 'Followed up', 'first_published_at' => now()->subDays(30), 'last_published_at' => now()->subDay()]);
+    $recent = Incident::factory()->create(['technology' => Technology::Php, 'title' => 'Recent', 'first_published_at' => now()->subDays(3), 'last_published_at' => null]);
+    Incident::factory()->create(['technology' => Technology::Php, 'title' => 'Quiet', 'first_published_at' => now()->subDays(30), 'last_published_at' => now()->subDays(20)]);
+    Incident::factory()->create(['technology' => Technology::Nodejs, 'title' => 'Other technology', 'first_published_at' => now()->subDay()]);
+
+    expect(collect(app(AssignNoticeToIncident::class)->recentIncidents(Technology::Php, null))->pluck('title')->all())->toBe(['Followed up', 'Recent'])
+        ->and(collect(app(AssignNoticeToIncident::class)->recentIncidents(Technology::Php, $followedUp->id))->pluck('id')->all())->toBe([$recent->id]);
+});
