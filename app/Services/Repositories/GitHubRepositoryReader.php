@@ -107,8 +107,9 @@ class GitHubRepositoryReader implements RepositoryReader
      * directory is then listed level by level instead, without entering excluded directories. Every tree request counts
      * against `psm.github.lockfile_search.max_tree_requests`.
      */
-    public function findFiles(string $repository, string $directory, string $commitSha, array $names, int $maxDepth, Closure $isExcluded): array
+    public function findFiles(string $repository, string $directory, string $commitSha, array|Closure $names, int $maxDepth, Closure $isExcluded): array
     {
+        $isWanted = $names instanceof Closure ? $names : fn (string $name): bool => in_array($name, $names, true);
         $budget = (int) config('psm.github.lockfile_search.max_tree_requests');
         $treeSha = $this->treeSha($repository, $directory, $commitSha, $budget);
         $tree = $this->tree($repository, $treeSha, true, $budget);
@@ -119,7 +120,7 @@ class GitHubRepositoryReader implements RepositoryReader
             foreach ($tree['entries'] as $entry) {
                 $segments = explode('/', $entry['path']);
 
-                if ($entry['type'] === 'blob' && count($segments) - 1 <= $maxDepth && in_array(end($segments), $names, true)
+                if ($entry['type'] === 'blob' && count($segments) - 1 <= $maxDepth && $isWanted(end($segments))
                     && ! $this->isWithinExcluded($segments, $isExcluded)) {
                     $files[$entry['path']] = $entry['size'];
                 }
@@ -147,13 +148,43 @@ class GitHubRepositoryReader implements RepositoryReader
 
                 if ($entry['type'] === 'tree' && $level['depth'] < $maxDepth) {
                     $pending[] = ['path' => $path, 'sha' => $entry['sha'], 'depth' => $level['depth'] + 1];
-                } elseif ($entry['type'] === 'blob' && in_array($entry['path'], $names, true)) {
+                } elseif ($entry['type'] === 'blob' && $isWanted($entry['path'])) {
                     $files[$path] = $entry['size'];
                 }
             }
         }
 
         return $files;
+    }
+
+    /**
+     * Read 100 at a time, at most `psm.github_actions.max_tag_pages` pages: a repository with more tags (most recent
+     * first, as GitHub lists them) has its oldest ones left out.
+     */
+    public function tags(string $repository): array
+    {
+        $tags = [];
+        $maxPages = max(1, (int) config('psm.github_actions.max_tag_pages'));
+
+        for ($page = 1; $page <= $maxPages; $page++) {
+            $listed = $this->get($this->repositoryPath($repository).'/tags', ['per_page' => 100, 'page' => $page])->json();
+
+            if (! is_array($listed)) {
+                throw new UnexpectedValueException('GitHub did not return the tags of the repository.');
+            }
+
+            foreach ($listed as $tag) {
+                if (is_array($tag) && is_string($tag['name'] ?? null) && is_string($tag['commit']['sha'] ?? null)) {
+                    $tags[$tag['name']] = $tag['commit']['sha'];
+                }
+            }
+
+            if (count($listed) < 100) {
+                break;
+            }
+        }
+
+        return $tags;
     }
 
     public function read(string $repository, string $path, string $commitSha): string

@@ -265,6 +265,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | GitHub Actions
+    |--------------------------------------------------------------------------
+    |
+    | With the lockfiles, each service with a repository reads the workflows at the root of the repository
+    | (`.github/workflows`) and its local actions (`.github/actions`), at most `max_files` of them: every service of a
+    | repository gets the findings of its workflows. The actions they use are matched against OSV with the packages.
+    | OSV cannot compare versions of GitHub Actions, so a reference that moves (`@v4`, a branch, a commit SHA) is
+    | resolved to the release tag on the same commit, read from the action's repository through the GitHub App, and
+    | checked again after `recheck_minutes`; at most `max_tag_pages` pages of 100 tags are read per action.
+    |
+    | Runner images GitHub removes (endoflife.date, synced daily) and actions that run on a Node.js branch past its end of
+    | life open findings at `lifecycle_severity`, from `runner_warning_days` before the removal. They break workflows
+    | rather than expose them, so by default they only appear in the daily digest. Set `enabled` to false to stop
+    | reading workflows; those read before are removed on the next sync.
+    |
+    */
+
+    'github_actions' => [
+        'enabled' => (bool) env('PSM_GITHUB_ACTIONS_ENABLED', true),
+        'max_files' => (int) env('PSM_GITHUB_ACTIONS_MAX_FILES', 100),
+        'recheck_minutes' => (int) env('PSM_GITHUB_ACTIONS_RECHECK_MINUTES', 360),
+        'max_tag_pages' => (int) env('PSM_GITHUB_ACTIONS_MAX_TAG_PAGES', 10),
+        'lifecycle_severity' => env('PSM_GITHUB_ACTIONS_LIFECYCLE_SEVERITY', 'medium'),
+        'runner_warning_days' => (int) env('PSM_GITHUB_RUNNER_WARNING_DAYS', 30),
+        'runner_images_stale_after_minutes' => (int) env('PSM_GITHUB_RUNNER_IMAGES_STALE_AFTER_MINUTES', 2880),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Daily digest
     |--------------------------------------------------------------------------
     |

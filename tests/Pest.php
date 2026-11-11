@@ -315,7 +315,8 @@ function lockfileFixture(string $name): string
 
 /**
  * Fakes the OSV API with tests/Fixtures/osv: the real `querybatch` and `vulns/{id}` responses of 2026-10-23 for the
- * packages of tests/Fixtures/lockfiles. A package version the fixtures do not cover has no vulnerabilities. With
+ * packages of tests/Fixtures/lockfiles, and of 2026-11-11 for three GitHub Actions, asked without a version (OSV cannot
+ * compare their versions). A package version the fixtures do not cover has no vulnerabilities. With
  * $isPublished, vulnerabilities it rejects are not listed yet, as before OSV published them.
  *
  * @param  (Closure(string): bool)|null  $isPublished
@@ -329,7 +330,7 @@ function fakeOsv(?Closure $isPublished = null): void
         $results = json_decode((string) file_get_contents(str_replace('.request.json', '.json', $requestFile)), true)['results'];
 
         foreach ($queries as $index => $query) {
-            $known["{$query['package']['ecosystem']}|{$query['package']['name']}|{$query['version']}"] = $results[$index]['vulns'] ?? [];
+            $known["{$query['package']['ecosystem']}|{$query['package']['name']}|".($query['version'] ?? '')] = $results[$index]['vulns'] ?? [];
         }
     }
 
@@ -337,7 +338,7 @@ function fakeOsv(?Closure $isPublished = null): void
     Http::fake([
         'https://api.osv.dev/v1/querybatch' => fn (Request $request) => Http::response(['results' => array_map(function (array $query) use ($known, $isPublished): object {
             $vulns = array_values(array_filter(
-                $known["{$query['package']['ecosystem']}|{$query['package']['name']}|{$query['version']}"] ?? [],
+                $known["{$query['package']['ecosystem']}|{$query['package']['name']}|".($query['version'] ?? '')] ?? [],
                 fn (array $vuln): bool => $isPublished === null || $isPublished($vuln['id']),
             ));
 

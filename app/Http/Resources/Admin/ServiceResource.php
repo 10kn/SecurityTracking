@@ -127,7 +127,7 @@ class ServiceResource extends JsonResource
                         ! $lockfile->isParsed() => ['label' => __('Đang chờ quét'), 'tone' => 'unknown'],
                         default => null,
                     },
-                    'packages' => $isReady ? __(':count package', ['count' => $lockfile->package_count ?? 0]) : null,
+                    'packages' => $isReady ? $lockfile->ecosystem->countLabel($lockfile->package_count ?? 0) : null,
                     'vulnerable' => $isReady && $vulnerable > 0 ? ['label' => __(':count có lỗ hổng', ['count' => $vulnerable]), 'tone' => 'danger'] : null,
                     'error' => $lockfile->parse_error,
                 ];

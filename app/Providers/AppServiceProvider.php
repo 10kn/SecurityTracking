@@ -5,6 +5,7 @@ namespace App\Providers;
 use Anthropic\Client;
 use App\Services\Notices\ClaudeNoticeClassifier;
 use App\Services\Notices\NoticeClassifier;
+use App\Services\Packages\GitHubActionsVulnerabilityMatcher;
 use App\Services\Packages\OsvVulnerabilityMatcher;
 use App\Services\Packages\PackagistVulnerabilityMatcher;
 use App\Services\Packages\RubySecVulnerabilityMatcher;
@@ -22,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->tag([PackagistVulnerabilityMatcher::class, RubySecVulnerabilityMatcher::class, OsvVulnerabilityMatcher::class], VulnerabilityMatcher::class);
+        $this->app->tag([PackagistVulnerabilityMatcher::class, RubySecVulnerabilityMatcher::class, OsvVulnerabilityMatcher::class, GitHubActionsVulnerabilityMatcher::class], VulnerabilityMatcher::class);
 
         $this->app->bind(NoticeClassifier::class, ClaudeNoticeClassifier::class);
         $this->app->bind(RepositoryReader::class, GitHubRepositoryReader::class);

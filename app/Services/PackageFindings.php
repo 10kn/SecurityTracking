@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use App\Enums\Ecosystem;
 use App\Enums\FindingRule;
 use App\Models\Advisory;
 use App\Models\Component;
+use App\Models\GitHubActionVersion;
 use App\Services\Kev\KnownExploitation;
 use App\Services\Packages\PackageVersion;
+use App\Support\GitHubAction;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -34,6 +37,9 @@ class PackageFindings
     public function for(int $deploymentId, Collection $components, array $matches): array
     {
         $findings = [];
+        $actionVersions = GitHubActionVersion::forReferences($components
+            ->filter(fn (Component $component): bool => $component->ecosystem === Ecosystem::GitHubActions)
+            ->map(fn (Component $component): array => [$component->name, $component->version]));
 
         foreach ($components->groupBy(fn (Component $component): string => "{$component->ecosystem->value}/{$component->name}") as $subject => $versions) {
             $affected = [];
@@ -46,7 +52,7 @@ class PackageFindings
             }
 
             foreach ($affected as ['advisory' => $advisory, 'components' => $affectedComponents]) {
-                $findings[] = $this->finding($deploymentId, (string) $subject, $advisory, collect($affectedComponents));
+                $findings[] = $this->finding($deploymentId, (string) $subject, $advisory, collect($affectedComponents), $actionVersions);
             }
         }
 
@@ -55,8 +61,10 @@ class PackageFindings
 
     /**
      * @param  Collection<int, Component>  $components  The versions of one package the advisory affects.
+     * @param  Collection<string, GitHubActionVersion>  $actionVersions  What GitHub Actions references point at, by
+     *                                                                   "{action}@{ref}".
      */
-    private function finding(int $deploymentId, string $subject, Advisory $advisory, Collection $components): FindingData
+    private function finding(int $deploymentId, string $subject, Advisory $advisory, Collection $components, Collection $actionVersions): FindingData
     {
         $locale = config('psm.alerts.locale');
         $rule = FindingRule::DependencyVulnerable;
@@ -65,17 +73,25 @@ class PackageFindings
         $component = $components->sortBy(fn (Component $component): int => (int) $component->is_dev)->first();
         $isDev = $components->every(fn (Component $component): bool => $component->is_dev);
 
+        $isAction = $component->ecosystem === Ecosystem::GitHubActions;
+        $resolvedVersion = fn (Component $component): ?string => $isAction ? $actionVersions->get("{$component->name}@{$component->version}")?->version : $component->version;
         $versions = $components->pluck('version')->unique()->sort(version_compare(...))->values();
         $lockfiles = $components->pluck('lockfile_path')->unique()->sort()->values();
         $fixes = $components
-            ->map(fn (Component $component): ?string => $advisory->fixedVersionFor($component->ecosystem, $component->name, $component->version))
+            ->map(fn (Component $component): ?string => ($version = $resolvedVersion($component)) === null ? null : $advisory->fixedVersionFor(
+                $component->ecosystem,
+                $isAction ? GitHubAction::repository($component->name) : $component->name,
+                $version,
+            ))
             ->filter()
             ->unique()
             ->sort(version_compare(...))
             ->values();
 
         $detail = collect([
-            "{$component->name} {$versions->join(', ')}",
+            $isAction
+                ? $components->map(fn (Component $component): string => GitHubActionVersion::describe($component->name, $component->version, $resolvedVersion($component)))->unique()->sort()->join(', ')
+                : "{$component->name} {$versions->join(', ')}",
             $fixes->isEmpty() ? __('chưa có bản sửa', [], $locale) : __('nâng lên :version', ['version' => $fixes->join(', ')], $locale),
             $lockfiles->join(', '),
             $isDev ? __('chỉ dùng khi phát triển', [], $locale) : null,

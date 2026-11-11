@@ -1,4 +1,4 @@
-import { FileLockIcon } from 'lucide-react';
+import { FileLockIcon, WorkflowIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -48,16 +48,21 @@ const LOCKFILE_LOGOS: Record<string, string> = {
     'yarn.lock': 'yarn',
 };
 
+/** Mirrors LockfileFormat::GitHubWorkflow: a workflow or a local action, from the root of the repository. */
+const GITHUB_WORKFLOW = /^\.github\/(workflows\/[^/]+\.ya?ml|actions\/([^/]+\/)*action\.ya?ml)$/;
+
 /**
  * The logo of the lockfile's package manager, a little taller than the text so it follows the text size, as wide as the
- * runtime logos so paths listed one under another line up; a lock icon for a file name the hub does not read.
+ * runtime logos so paths listed one under another line up; a workflow icon for GitHub Actions workflows, a lock icon for
+ * a file name the hub does not read.
  */
 export function LockfileLogo({ path, className }: { path: string; className?: string }) {
     const logo = LOGOS[LOCKFILE_LOGOS[path.split('/').pop() ?? ''] ?? ''];
+    const fallback = GITHUB_WORKFLOW.test(path) ? <WorkflowIcon className="size-[1.1em] text-muted-foreground" /> : <FileLockIcon className="size-[1.1em] text-faint" />;
 
     return (
         <span className={cn('inline-flex h-[1.25em] w-[1.75em] shrink-0 items-center justify-center [&>svg]:max-h-full [&>svg]:max-w-full', className)} aria-hidden>
-            {logo ?? <FileLockIcon className="size-[1.1em] text-faint" />}
+            {logo ?? fallback}
         </span>
     );
 }

@@ -115,7 +115,8 @@ it('finds the lockfiles in subdirectories of the service, by their path in the s
         ->and($this->service->fresh()->lockfiles_sync_error)->toBeNull();
 
     expect(gitHubRequests('repos/acme/shop/git/trees/')->map(fn (Request $request): string => Str::after(urldecode($request->url()), 'git/trees/'))->all())
-        ->toBe([GITHUB_COMMIT, fakeTreeSha('apps'), fakeTreeSha('apps/api').'?recursive=1']);
+        // The last one looks for .github at the root of the repository, for GitHub Actions workflows.
+        ->toBe([GITHUB_COMMIT, fakeTreeSha('apps'), fakeTreeSha('apps/api').'?recursive=1', GITHUB_COMMIT]);
 });
 
 it('leaves out installed dependencies, test fixtures and the paths the service excludes', function () {

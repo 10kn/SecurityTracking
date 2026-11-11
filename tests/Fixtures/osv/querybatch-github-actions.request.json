@@ -1,0 +1,1 @@
+{"queries":[{"package":{"name":"tj-actions/changed-files","ecosystem":"GitHub Actions"}},{"package":{"name":"actions/download-artifact","ecosystem":"GitHub Actions"}},{"package":{"name":"actions/checkout","ecosystem":"GitHub Actions"}}]}

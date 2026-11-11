@@ -46,6 +46,7 @@ class SourceHeartbeat extends Model
             $this->catalogTechnology() !== null => __('Danh mục version :technology', ['technology' => $this->catalogTechnology()->getLabel()]),
             $noticeFeed !== null => __('Tin bảo mật :source', ['source' => $noticeFeed->releaseSourceLabel()]),
             $this->source === ResolveNoticeCves::SOURCE => __('Mã CVE của tin GitHub (GHSA)'),
+            $this->source === GitHubRunnerImage::SOURCE_KEY => __('Danh mục runner GitHub Actions'),
             default => $this->name,
         };
     }

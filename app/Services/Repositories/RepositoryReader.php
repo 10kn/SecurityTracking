@@ -46,7 +46,7 @@ interface RepositoryReader
     public function branchExists(string $repository, string $branch): bool;
 
     /**
-     * The commit at the tip of $branch, or of the default branch when $branch is null.
+     * The commit at the tip of $branch, or of the default branch when $branch is null. A tag or a commit SHA works too.
      *
      * @throws RepositoryNotFoundException When the repository or the branch does not exist or cannot be read.
      * @throws Throwable When the host could not be reached.
@@ -58,7 +58,7 @@ interface RepositoryReader
      * below it, at the commit, with their size in bytes. Links and submodules are left out. The listing is complete or
      * it throws: a file missing from it does not exist.
      *
-     * @param  list<string>  $names  E.g. "composer.lock".
+     * @param  list<string>|Closure(string): bool  $names  E.g. "composer.lock", or whether a file name is wanted.
      * @param  Closure(string): bool  $isExcluded  Whether a path relative to $directory, of a directory or a file, is left out; an excluded directory is not entered.
      * @return array<string, int> By path relative to $directory, e.g. "frontend/package-lock.json".
      *
@@ -66,7 +66,18 @@ interface RepositoryReader
      * @throws IncompleteListingException When the directory is too large to list.
      * @throws Throwable When the host could not be reached.
      */
-    public function findFiles(string $repository, string $directory, string $commitSha, array $names, int $maxDepth, Closure $isExcluded): array;
+    public function findFiles(string $repository, string $directory, string $commitSha, array|Closure $names, int $maxDepth, Closure $isExcluded): array;
+
+    /**
+     * The tags of the repository with the commit each points at, e.g. ["v4" => "11bd71…", "v4.2.2" => "11bd71…"]. Public
+     * repositories can be read even when the App is not installed on them.
+     *
+     * @return array<string, string>
+     *
+     * @throws RepositoryNotFoundException When the repository does not exist or cannot be read.
+     * @throws Throwable When the host could not be reached.
+     */
+    public function tags(string $repository): array;
 
     /**
      * The content of the file at $path at the commit.

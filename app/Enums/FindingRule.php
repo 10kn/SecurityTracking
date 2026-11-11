@@ -10,6 +10,8 @@ enum FindingRule: string
     case DependencyVulnerable = 'dependency_vulnerable';
     case FrameworkEol = 'framework_eol';
     case PreNotice = 'pre_notice';
+    case RunnerImageEol = 'runner_image_eol';
+    case ActionRuntimeEol = 'action_runtime_eol';
 
     public function getLabel(): string
     {
@@ -20,6 +22,8 @@ enum FindingRule: string
             self::DependencyVulnerable => __('Package có lỗ hổng'),
             self::FrameworkEol => __('Framework hết hỗ trợ'),
             self::PreNotice => __('Thông báo sớm'),
+            self::RunnerImageEol => __('Runner GitHub Actions bị gỡ'),
+            self::ActionRuntimeEol => __('Action chạy trên Node hết hỗ trợ'),
         };
     }
 
@@ -61,6 +65,8 @@ enum FindingRule: string
             self::RuntimeEol => ':technology :branch hết hỗ trợ',
             self::RuntimeOutdatedSecurity => ':technology :branch thiếu bản vá bảo mật, cần nâng lên :latest',
             self::DependencyVulnerable => ':advisory trong :package',
+            self::RunnerImageEol => 'Runner :runner bị GitHub gỡ từ :date',
+            self::ActionRuntimeEol => ':action chạy trên Node.js :node đã hết hỗ trợ',
             default => null,
         };
     }

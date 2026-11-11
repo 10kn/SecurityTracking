@@ -2,6 +2,7 @@
 
 namespace App\Services\Packages;
 
+use App\Enums\Ecosystem;
 use App\Services\Catalog\CatalogHttp;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -37,10 +38,47 @@ class OsvClient
      */
     public function query(array $packages): array
     {
+        return $this->batch(collect($packages)->mapWithKeys(fn (PackageVersion $package): array => [$package->key() => [
+            'package' => ['ecosystem' => $package->ecosystem->osvName(), 'name' => $package->name],
+            'version' => $package->version,
+        ]])->all());
+    }
+
+    /**
+     * The ids and modification times of every vulnerability of each package, whatever the version: for ecosystems whose
+     * versions OSV cannot compare (GitHub Actions), where the caller compares them itself.
+     *
+     * @param  list<string>  $names
+     * @return array<string, list<array{id: string, modified: string}>> By name; packages without vulnerabilities are
+     *                                                                  left out.
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     * @throws UnexpectedValueException When the response does not answer every query.
+     */
+    public function vulnerabilitiesOfPackages(Ecosystem $ecosystem, array $names): array
+    {
+        return $this->batch(collect($names)->unique()->mapWithKeys(fn (string $name): array => [$name => [
+            'package' => ['ecosystem' => $ecosystem->osvName(), 'name' => $name],
+        ]])->all());
+    }
+
+    /**
+     * Sends the queries in batches of `psm.packages.batch_size`, following `next_page_token` until every page is read.
+     *
+     * @param  array<string, array<string, mixed>>  $queries  By the key results are returned under.
+     * @return array<string, list<array{id: string, modified: string}>>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     * @throws UnexpectedValueException
+     */
+    private function batch(array $queries): array
+    {
         $vulnerabilities = [];
 
-        foreach (array_chunk($packages, max(1, (int) config('psm.packages.batch_size'))) as $batch) {
-            $pending = array_map(fn (PackageVersion $package): array => [$package, null], $batch);
+        foreach (array_chunk($queries, max(1, (int) config('psm.packages.batch_size')), preserve_keys: true) as $batch) {
+            $pending = array_map(fn (string $key): array => [$key, null], array_keys($batch));
 
             for ($page = 1; $pending !== []; $page++) {
                 if ($page > self::MAX_PAGES) {
@@ -48,11 +86,7 @@ class OsvClient
                 }
 
                 $results = $this->http()->post($this->url('querybatch'), ['queries' => array_map(
-                    fn (array $query): array => [
-                        'package' => ['ecosystem' => $query[0]->ecosystem->osvName(), 'name' => $query[0]->name],
-                        'version' => $query[0]->version,
-                        ...($query[1] === null ? [] : ['page_token' => $query[1]]),
-                    ],
+                    fn (array $query): array => [...$batch[$query[0]], ...($query[1] === null ? [] : ['page_token' => $query[1]])],
                     $pending,
                 )])->json('results');
 
@@ -63,14 +97,14 @@ class OsvClient
                 $next = [];
 
                 foreach (array_values($results) as $index => $result) {
-                    $package = $pending[$index][0];
+                    $key = $pending[$index][0];
 
                     foreach ((array) ($result['vulns'] ?? []) as $vulnerability) {
-                        $vulnerabilities[$package->key()][] = ['id' => (string) $vulnerability['id'], 'modified' => (string) ($vulnerability['modified'] ?? '')];
+                        $vulnerabilities[$key][] = ['id' => (string) $vulnerability['id'], 'modified' => (string) ($vulnerability['modified'] ?? '')];
                     }
 
                     if (filled($result['next_page_token'] ?? null)) {
-                        $next[] = [$package, (string) $result['next_page_token']];
+                        $next[] = [$key, (string) $result['next_page_token']];
                     }
                 }
 

@@ -3,11 +3,13 @@
 namespace App\Support;
 
 use App\Enums\Ecosystem;
+use App\Enums\LockfileFormat;
 
 /**
  * Where a lockfile sits, relative to the directory of its service: "composer.lock" directly in it,
  * "frontend/package-lock.json" in a subdirectory. Uploads and lockfiles read from a repository follow the same rules,
- * so a path never climbs out of the service directory and is safe to show in Google Chat cards.
+ * so a path never climbs out of the service directory and is safe to show in Google Chat cards. GitHub Actions workflows
+ * are the exception: ".github/workflows/ci.yml" is from the root of the repository (see LockfileFormat::GitHubWorkflow).
  */
 final class LockfilePath
 {
@@ -51,11 +53,11 @@ final class LockfilePath
     }
 
     /**
-     * The ecosystem of the lockfile, by its file name.
+     * The ecosystem of the lockfile, by its file name, or of the workflow, by its place in `.github`.
      */
     public static function ecosystem(string $path): ?Ecosystem
     {
-        return Ecosystem::forLockfile(basename($path));
+        return LockfileFormat::forPath($path)?->ecosystem();
     }
 
     /**

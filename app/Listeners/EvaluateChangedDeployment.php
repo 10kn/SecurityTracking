@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Actions\EvaluateRuntimes;
+use App\Actions\EvaluateWorkflows;
 use App\Actions\ScanPackages;
 use App\Actions\SendFindingAlerts;
 use App\Actions\SyncComponents;
@@ -12,8 +13,9 @@ use Throwable;
 
 /**
  * Re-evaluates a deployment right after an admin changes its versions or lockfiles (handover 5.2: "within seconds"):
- * runtimes against the catalog, then the lockfiles' packages against OSV. Then sends the alerts of the findings that
- * opened. When OSV fails the runtime alerts still go out; the next psm:scan-packages tries the packages again.
+ * runtimes against the catalog, then the lockfiles' packages against OSV, then its GitHub Actions workflows (runner
+ * images, Node.js of the actions). Then sends the alerts of the findings that opened. When OSV fails the runtime alerts
+ * still go out; the next psm:scan-packages tries the packages again.
  */
 class EvaluateChangedDeployment implements ShouldQueue
 {
@@ -21,6 +23,7 @@ class EvaluateChangedDeployment implements ShouldQueue
         private EvaluateRuntimes $evaluateRuntimes,
         private SyncComponents $syncComponents,
         private ScanPackages $scanPackages,
+        private EvaluateWorkflows $evaluateWorkflows,
         private SendFindingAlerts $sendFindingAlerts,
     ) {}
 
@@ -38,6 +41,8 @@ class EvaluateChangedDeployment implements ShouldQueue
         } catch (Throwable $exception) {
             report($exception);
         }
+
+        $this->evaluateWorkflows->handle([$deployment->id]);
 
         $this->sendFindingAlerts->handle();
     }

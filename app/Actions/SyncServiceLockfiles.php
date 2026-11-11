@@ -3,6 +3,7 @@
 namespace App\Actions;
 
 use App\Enums\Ecosystem;
+use App\Enums\LockfileFormat;
 use App\Events\DeploymentInventoryChanged;
 use App\Models\Lockfile;
 use App\Models\Service;
@@ -28,6 +29,9 @@ use Throwable;
  * directory, e.g. "frontend/package-lock.json". Installed dependencies, test fixtures (`psm.github.lockfile_search`)
  * and the service's own `lockfile_excludes` are not searched. The repository is then the only source of the service's
  * lockfiles: one no longer found is removed, uploaded or not.
+ *
+ * The GitHub Actions workflows and local actions at the root of the repository are read too (see
+ * LockfileFormat::GitHubWorkflow), whatever the service directory: every service of a repository gets them.
  *
  * A service whose lockfiles changed is evaluated again (DeploymentInventoryChanged), as after an upload.
  */
@@ -190,9 +194,13 @@ class SyncServiceLockfiles
             ])];
         }
 
+        ['workflows' => $workflows, 'errors' => $workflowErrors] = config('psm.github_actions.enabled')
+            ? $this->findWorkflows($repository, $commitSha, $shortSha)
+            : ['workflows' => [], 'errors' => []];
+        $errors = [...$errors, ...$workflowErrors];
         $lockfiles = [];
 
-        foreach ($found as $path => $size) {
+        foreach ([...$this->withRepositoryPaths($found, $directory), ...($workflows ?? [])] as $path => ['repository_path' => $repositoryPath, 'size' => $size]) {
             if ($size > Lockfile::MAX_UPLOAD_KILOBYTES * 1024) {
                 $errors[] = __(':file lớn hơn 20 MB, giữ bản đã lấy trước đó.', ['file' => $path]);
 
@@ -200,18 +208,24 @@ class SyncServiceLockfiles
             }
 
             try {
-                $lockfiles[] = ['path' => $path, 'content' => $this->repositoryReader->read($repository, LockfilePath::join($directory, $path), $commitSha)];
+                $lockfiles[] = ['path' => (string) $path, 'content' => $this->repositoryReader->read($repository, $repositoryPath, $commitSha)];
             } catch (RepositoryNotFoundException) {
                 $errors[] = __('Không đọc được :file tại commit :commit.', ['file' => $path, 'commit' => $shortSha]);
             }
         }
 
-        // Only lockfiles that were not found go: one that was found but could not be read keeps its row.
-        $this->whileCurrent($service, $lock, function () use ($service, $lockfiles, $found, $commitSha): void {
+        // Only lockfiles that were not found go: one that was found but could not be read keeps its row, and so do the
+        // workflows when they could not be listed.
+        $this->whileCurrent($service, $lock, function () use ($service, $lockfiles, $found, $workflows, $commitSha): void {
             $service->update(['lockfiles_commit_sha' => $commitSha]);
 
             $deployment = $service->productionDeploymentOrCreate();
-            $removedPaths = $deployment->lockfiles()->whereNotIn('path', array_keys($found))->pluck('path')->all();
+            $removedPaths = $deployment->lockfiles()
+                ->whereNotIn('path', [...array_keys($found), ...array_keys($workflows ?? [])])
+                ->pluck('path')
+                ->reject(fn (string $path): bool => $workflows === null && LockfileFormat::forPath($path) === LockfileFormat::GitHubWorkflow)
+                ->values()
+                ->all();
 
             if ($this->replaceLockfiles->handle($deployment, $lockfiles, $removedPaths, $this->repositoryReader->lockfileSource(), $commitSha)) {
                 $deployment->touch();
@@ -221,6 +235,59 @@ class SyncServiceLockfiles
         });
 
         return $errors;
+    }
+
+    /**
+     * The lockfiles found, by their path in the service directory, with their path in the repository and their size.
+     *
+     * @param  array<string, int>  $found
+     * @return array<string, array{repository_path: string, size: int}>
+     */
+    private function withRepositoryPaths(array $found, string $directory): array
+    {
+        return collect($found)
+            ->map(fn (int $size, string $path): array => ['repository_path' => LockfilePath::join($directory, $path), 'size' => $size])
+            ->all();
+    }
+
+    /**
+     * The workflows (`.github/workflows/*.yml`) and local actions (`.github/actions/…/action.yml`) at the root of the
+     * repository, by their path there, with their size, listed in one search of `.github`. A repository without them
+     * has none; `workflows` is null when they could not all be listed, so those read before are kept, and `errors`
+     * says why.
+     *
+     * @return array{workflows: array<string, array{repository_path: string, size: int}>|null, errors: list<string>}
+     *
+     * @throws Throwable When the host could not be reached.
+     */
+    private function findWorkflows(string $repository, string $commitSha, string $shortSha): array
+    {
+        try {
+            $files = $this->repositoryReader->findFiles(
+                $repository,
+                '.github',
+                $commitSha,
+                fn (string $name): bool => preg_match('/\.ya?ml\z/', $name) === 1,
+                (int) config('psm.github.lockfile_search.max_depth') + 1,
+                fn (string $path): bool => in_array(basename($path), config('psm.github.lockfile_search.skip_directories'), true),
+            );
+        } catch (RepositoryNotFoundException|InvalidArgumentException) {
+            return ['workflows' => [], 'errors' => []];
+        } catch (IncompleteListingException) {
+            return ['workflows' => null, 'errors' => [__('Thư mục :directory có quá nhiều file để đọc hết workflow GitHub Actions tại commit :commit, giữ bản đã lấy trước đó.', ['directory' => '/.github', 'commit' => $shortSha])]];
+        }
+
+        $workflows = collect($files)
+            ->mapWithKeys(fn (int $size, string $path): array => [".github/{$path}" => ['repository_path' => ".github/{$path}", 'size' => $size]])
+            ->filter(fn (array $file, string $path): bool => LockfileFormat::forPath($path) === LockfileFormat::GitHubWorkflow && LockfilePath::isValid($path))
+            ->sortKeys()
+            ->all();
+
+        if (count($workflows) > config('psm.github_actions.max_files')) {
+            return ['workflows' => null, 'errors' => [__('Tìm thấy :count workflow GitHub Actions tại commit :commit, quá giới hạn :max, giữ bản đã lấy trước đó.', ['count' => count($workflows), 'commit' => $shortSha, 'max' => config('psm.github_actions.max_files')])]];
+        }
+
+        return ['workflows' => $workflows, 'errors' => []];
     }
 
     /**

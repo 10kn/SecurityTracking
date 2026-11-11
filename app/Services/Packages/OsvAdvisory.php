@@ -48,6 +48,7 @@ final class OsvAdvisory
             'source_modified_at' => self::date($vulnerability['modified'] ?? null),
             'withdrawn_at' => self::date($vulnerability['withdrawn'] ?? null),
             'fixed_versions' => self::fixedVersions($vulnerability),
+            'affected_ranges' => self::affectedRanges($vulnerability),
         ];
     }
 
@@ -103,13 +104,120 @@ final class OsvAdvisory
 
                 foreach ((array) ($range['events'] ?? []) as $event) {
                     if (is_string($event['fixed'] ?? null)) {
-                        $fixed["{$ecosystem->osvName()}:{$name}"][] = $event['fixed'];
+                        $fixed[self::key($ecosystem, $name)][] = $event['fixed'];
                     }
                 }
             }
         }
 
         return array_map(fn (array $versions): array => array_values(array_unique($versions)), $fixed);
+    }
+
+    /**
+     * The version ranges and versions listed as affected, of the ecosystems MVP scans, by "{OSV ecosystem}:{package
+     * name}": what affects() reads where OSV cannot match versions itself (GitHub Actions). Git commit ranges are left
+     * out.
+     *
+     * @param  array<string, mixed>  $vulnerability
+     * @return array<string, array{ranges: list<list<array<string, string>>>, versions: list<string>}>
+     */
+    public static function affectedRanges(array $vulnerability): array
+    {
+        $affectedRanges = [];
+
+        foreach ((array) ($vulnerability['affected'] ?? []) as $affected) {
+            $ecosystem = Ecosystem::fromOsvName((string) ($affected['package']['ecosystem'] ?? ''));
+            $name = $affected['package']['name'] ?? null;
+
+            if ($ecosystem === null || ! is_string($name)) {
+                continue;
+            }
+
+            $key = self::key($ecosystem, $name);
+            $affectedRanges[$key] ??= ['ranges' => [], 'versions' => []];
+
+            foreach ((array) ($affected['ranges'] ?? []) as $range) {
+                if (! in_array($range['type'] ?? null, ['ECOSYSTEM', 'SEMVER'], true)) {
+                    continue;
+                }
+
+                $events = collect((array) ($range['events'] ?? []))
+                    ->map(fn (mixed $event): array => collect(is_array($event) ? $event : [])
+                        ->only(['introduced', 'fixed', 'last_affected'])
+                        ->filter(fn (mixed $value): bool => is_string($value))
+                        ->all())
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if ($events !== []) {
+                    $affectedRanges[$key]['ranges'][] = $events;
+                }
+            }
+
+            foreach ((array) ($affected['versions'] ?? []) as $version) {
+                if (is_string($version)) {
+                    $affectedRanges[$key]['versions'][] = $version;
+                }
+            }
+        }
+
+        return $affectedRanges;
+    }
+
+    /**
+     * Whether $version of the package is affected, read from affectedRanges() (OSV semantics: a version is affected
+     * from an `introduced` event on, until a `fixed` event at or below it or a `last_affected` event below it).
+     * Versions compare without a leading "v".
+     *
+     * @param  array<string, array{ranges?: list<list<array<string, string>>>, versions?: list<string>}>  $affectedRanges
+     */
+    public static function affects(array $affectedRanges, Ecosystem $ecosystem, string $name, string $version): bool
+    {
+        $affected = $affectedRanges[self::key($ecosystem, $name)] ?? null;
+
+        if ($affected === null) {
+            return false;
+        }
+
+        $comparable = fn (string $value): string => ltrim($value, 'vV');
+        $version = $comparable($version);
+
+        if (in_array($version, array_map($comparable, $affected['versions'] ?? []), true)) {
+            return true;
+        }
+
+        foreach ($affected['ranges'] ?? [] as $events) {
+            $isAffected = false;
+
+            $sorted = collect($events)
+                ->map(fn (array $event): array => ['type' => (string) array_key_first($event), 'version' => $comparable((string) reset($event))])
+                ->sort(fn (array $a, array $b): int => version_compare($a['version'], $b['version']));
+
+            foreach ($sorted as ['type' => $type, 'version' => $eventVersion]) {
+                $comparison = version_compare($eventVersion, $version);
+
+                if ($type === 'introduced' && $comparison <= 0) {
+                    $isAffected = true;
+                } elseif (($type === 'fixed' && $comparison <= 0) || ($type === 'last_affected' && $comparison < 0)) {
+                    $isAffected = false;
+                }
+            }
+
+            if ($isAffected) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * E.g. "npm:lodash"; GitHub Actions are named in lower case, as GitHub matches them.
+     */
+    private static function key(Ecosystem $ecosystem, string $name): string
+    {
+        return $ecosystem->osvName().':'.($ecosystem === Ecosystem::GitHubActions ? strtolower($name) : $name);
     }
 
     private static function date(mixed $value): ?CarbonImmutable

@@ -231,7 +231,7 @@ export function ServiceFields({
                         <Field
                             label={t('Lockfile từ GitHub')}
                             error={errors.lockfile_uploads ?? errors.removed_lockfiles}
-                            help={t('Service lấy lockfile từ GitHub thì không tải lên hay xóa tay được.')}
+                            help={t('Kèm workflow GitHub Actions ở gốc repository (.github). Service lấy lockfile từ GitHub thì không tải lên hay xóa tay được.')}
                         >
                             {existingLockfiles.length === 0 ? (
                                 <p className="text-muted-foreground">{savedService?.repository === form.data.repository ? t('Chưa có lockfile nào trong thư mục của service và các thư mục con.') : t('Lấy ngay sau khi lưu.')}</p>

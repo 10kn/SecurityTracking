@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Actions\EvaluateWorkflows;
 use App\Actions\ScanPackages;
 use App\Actions\SendFindingAlerts;
 use App\Actions\SyncComponents;
@@ -18,8 +19,9 @@ class ScanAllPackages extends Command
     /**
      * Handover 5.2: every 6 hours, so an advisory published in Packagist, RubySec or OSV reaches the team within 6
      * hours. Lockfiles not read yet are read first. Deployments whose packages are all gone are scanned too, so their findings get resolved.
+     * GitHub Actions workflows are evaluated afterwards, with the references the scan resolved again.
      */
-    public function handle(SyncComponents $syncComponents, ScanPackages $scanPackages, SendFindingAlerts $sendFindingAlerts): int
+    public function handle(SyncComponents $syncComponents, ScanPackages $scanPackages, EvaluateWorkflows $evaluateWorkflows, SendFindingAlerts $sendFindingAlerts): int
     {
         $deployments = Deployment::where('is_current', true)
             ->where(fn ($query) => $query->whereHas('lockfiles')->orWhereHas('components')->orWhereHas('openPackageFindings'))
@@ -40,6 +42,8 @@ class ScanAllPackages extends Command
             report($exception);
             $this->components->error($exception->getMessage());
         }
+
+        $evaluateWorkflows->handleAll();
 
         $this->components->info($sendFindingAlerts->handle().' finding cards queued.');
 
