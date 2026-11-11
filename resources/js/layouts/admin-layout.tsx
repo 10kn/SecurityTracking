@@ -7,6 +7,7 @@ import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/Fin
 import { index as incidentsIndex } from '@/actions/App/Http/Controllers/Admin/IncidentController';
 import OverviewController from '@/actions/App/Http/Controllers/Admin/OverviewController';
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
+import { store as storeImport } from '@/actions/App/Http/Controllers/Admin/ProjectImportController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { destroy as logout } from '@/actions/App/Http/Controllers/Admin/SessionController';
 import { edit as settingsEdit } from '@/actions/App/Http/Controllers/Admin/SystemSettingController';
@@ -28,6 +29,8 @@ interface NavigationItem {
     icon: LucideIcon;
     /** Active on its own page only, not on the pages below it (the Overview is /admin). */
     isExact?: boolean;
+    /** Other sections that belong to this item, active on them and the pages below (the project import lives under Projects). */
+    sections?: string[];
 }
 
 function showToast(flash: { toast?: Toast } | undefined) {
@@ -59,7 +62,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         {
             label: t('Danh mục'),
             items: [
-                { label: t('Projects'), href: projectsIndex.url(), icon: FolderIcon },
+                { label: t('Projects'), href: projectsIndex.url(), icon: FolderIcon, sections: [storeImport.url()] },
                 { label: t('Services'), href: servicesIndex.url(), icon: ServerIcon },
             ],
         },
@@ -104,7 +107,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                         <div key={group.label ?? ''} className="mt-[18px] first:mt-1">
                             {group.label && <p className="mx-2 mb-1.5 text-xs font-medium text-faint">{group.label}</p>}
                             {group.items.map((item) => {
-                                const isActive = path === item.href || (!item.isExact && path.startsWith(`${item.href}/`));
+                                const isActive =
+                                    path === item.href ||
+                                    (!item.isExact && path.startsWith(`${item.href}/`)) ||
+                                    (item.sections ?? []).some((section) => path === section || path.startsWith(`${section}/`));
 
                                 return (
                                     <Link
