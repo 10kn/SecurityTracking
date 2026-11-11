@@ -31,7 +31,7 @@ export function ConfirmButton({
     confirmLabel: string;
     onConfirm: () => void;
     disabled?: boolean;
-    variant?: 'danger-ghost' | 'secondary' | 'ghost';
+    variant?: 'danger-ghost' | 'secondary' | 'ghost' | 'default';
     size?: 'default' | 'sm';
 }) {
     const t = useTranslation();

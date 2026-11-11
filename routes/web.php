@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\NoticeSplitController;
 use App\Http\Controllers\Admin\OverviewController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
+use App\Http\Controllers\Admin\ProjectImportController;
 use App\Http\Controllers\Admin\ProjectMonitoringPauseController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
 use App\Http\Controllers\Admin\SearchController;
@@ -60,6 +61,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('incident-suggestions/{suggestion}/decision', [IncidentSuggestionDecisionController::class, 'store'])->name('incident-suggestions.decision.store');
         Route::post('notices/{notice}/split', [NoticeSplitController::class, 'store'])->name('notices.split.store');
 
+        Route::get('project-imports/create', [ProjectImportController::class, 'create'])->name('project-imports.create');
+        Route::get('project-imports/template', [ProjectImportController::class, 'template'])->name('project-imports.template');
+        Route::post('project-imports', [ProjectImportController::class, 'store'])->name('project-imports.store');
+        Route::get('project-imports/{import}', [ProjectImportController::class, 'show'])->whereUuid('import')->name('project-imports.show');
+        Route::post('project-imports/{import}/confirm', [ProjectImportController::class, 'confirm'])->whereUuid('import')->name('project-imports.confirm');
         Route::resource('projects', ProjectController::class);
         Route::post('projects/{project}/monitoring-pause', [ProjectMonitoringPauseController::class, 'store'])->name('projects.monitoring-pause.store');
         Route::delete('projects/{project}/monitoring-pause', [ProjectMonitoringPauseController::class, 'destroy'])->name('projects.monitoring-pause.destroy');

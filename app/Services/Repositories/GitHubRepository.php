@@ -26,6 +26,33 @@ final readonly class GitHubRepository
     }
 
     /**
+     * Reads what people paste for a repository of the configured host: "https://github.com/acme/shop" (with or
+     * without ".git", a trailing slash or a "/tree/main/…" page), "git@github.com:acme/shop.git", "github.com/acme/shop"
+     * or the full name "acme/shop". Another host, or anything else, gives null.
+     */
+    public static function fromUrl(string $url): ?self
+    {
+        $url = trim($url);
+        $host = preg_quote((string) config('psm.github.host'), '#');
+
+        if (preg_match('#^git@'.$host.':(.+)$#i', $url, $matches) === 1 || preg_match('#^(?:https?://)?(?:www\.)?'.$host.'/(.+)$#i', $url, $matches) === 1) {
+            $path = $matches[1];
+        } elseif (! str_contains($url, ':') && substr_count(trim($url, '/'), '/') === 1) {
+            $path = $url;
+        } else {
+            return null;
+        }
+
+        $segments = explode('/', trim(strtok($path, '?#') ?: '', '/'));
+
+        if (count($segments) < 2) {
+            return null;
+        }
+
+        return self::fromFullName($segments[0].'/'.preg_replace('/\.git$/i', '', $segments[1]));
+    }
+
+    /**
      * E.g. "https://github.com/acme/shop".
      */
     public function webUrl(): string

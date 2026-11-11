@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 
 import { create, edit, show } from '@/actions/App/Http/Controllers/Admin/ProjectController';
+import { create as createImport } from '@/actions/App/Http/Controllers/Admin/ProjectImportController';
 import { Card, CardHeader } from '@/components/admin/card';
 import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr } from '@/components/admin/data-table';
 import { PageHeader } from '@/components/admin/page-header';
@@ -30,9 +31,14 @@ export default function ProjectsIndex({ projects, table, teams }: { projects: Pa
                 title={t('Projects')}
                 description={t('Finding của mọi service trong project được gửi tới team sở hữu.')}
                 actions={
-                    <Button asChild>
-                        <Link href={create.url()}>{t('Tạo project')}</Link>
-                    </Button>
+                    <>
+                        <Button variant="secondary" asChild>
+                            <Link href={createImport.url()}>{t('Import từ Excel')}</Link>
+                        </Button>
+                        <Button asChild>
+                            <Link href={create.url()}>{t('Tạo project')}</Link>
+                        </Button>
+                    </>
                 }
             />
             <Card>
