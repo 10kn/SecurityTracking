@@ -3,6 +3,7 @@
 use App\Events\DeploymentInventoryChanged;
 use App\Models\Lockfile;
 use App\Models\Service;
+use App\Models\SourceHeartbeat;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
@@ -33,6 +34,28 @@ it('fails when github cannot be reached', function () {
     Service::factory()->syncingLockfiles()->create();
 
     artisan('psm:sync-lockfiles')->assertFailed();
+});
+
+it('forgets the github heartbeat once no service syncs its lockfiles', function () {
+    SourceHeartbeat::factory()->stale()->create(['source' => 'github']);
+    $other = SourceHeartbeat::factory()->stale()->create();
+    Service::factory()->create();
+
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+
+    expect(SourceHeartbeat::pluck('source')->all())->toBe([$other->source]);
+});
+
+it('keeps the github heartbeat while a service still syncs its lockfiles', function () {
+    Sleep::fake();
+    Http::fake(['https://api.github.com/repos/*' => Http::response('Service Unavailable', 503)]);
+    fakeGitHub();
+    SourceHeartbeat::factory()->stale()->create(['source' => 'github']);
+    Service::factory()->syncingLockfiles()->create();
+
+    artisan('psm:sync-lockfiles')->assertFailed();
+
+    expect(SourceHeartbeat::where('source', 'github')->exists())->toBeTrue();
 });
 
 it('runs once a day at the configured time', function () {

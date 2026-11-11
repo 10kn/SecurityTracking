@@ -90,6 +90,18 @@ class SyncServiceLockfiles
     }
 
     /**
+     * Drops the repository host's heartbeat once no service syncs its lockfiles any more: with nothing to read the
+     * host is never asked, so its last success would only age into a false "over threshold" alert. The next sync of
+     * a service records it again.
+     */
+    public function forgetUnusedSource(): void
+    {
+        if (Service::whereNotNull('repository')->doesntExist()) {
+            SourceHeartbeat::where('source', $this->repositoryReader->sourceKey())->delete();
+        }
+    }
+
+    /**
      * @throws Throwable
      */
     private function syncWithHeartbeat(Service $service, Lock $lock): void

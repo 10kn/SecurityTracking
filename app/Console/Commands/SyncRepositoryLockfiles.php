@@ -35,6 +35,8 @@ class SyncRepositoryLockfiles extends Command
             }
         }
 
+        $syncServiceLockfiles->forgetUnusedSource();
+
         $this->components->info("{$services->count()} services synced.");
 
         return $failed ? self::FAILURE : self::SUCCESS;
