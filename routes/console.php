@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Schedule;
  * days and timezone come from config/psm.php (handover section 4). Lockfiles are read from GitHub once a day (D12).
  * The source check pings an external dead man's switch when one is configured, so a stopped scheduler is noticed.
  * The CISA KEV catalog is read hourly. Project import files never confirmed are deleted once a day. GitHub runner image
- * removals are read once a day, after midnight like end-of-life.
+ * removals are read once a day, after midnight like end-of-life. The tokens of the repository connections are checked
+ * once a day, before the lockfiles are read. The guide page lists these runs (GuideController).
  */
 Schedule::command('psm:sync-runtimes')->hourly()->withoutOverlapping();
 Schedule::command('psm:watch-notices')->everyFifteenMinutes()->withoutOverlapping();
@@ -22,6 +23,10 @@ Schedule::command('psm:check-sources')
     ->pingOnSuccessIf(filled(config('psm.alerts.scheduler_heartbeat_url')), (string) config('psm.alerts.scheduler_heartbeat_url'));
 Schedule::command('psm:sync-lockfiles')
     ->dailyAt(config('psm.github.sync_time'))
+    ->timezone(config('psm.github.timezone'))
+    ->withoutOverlapping();
+Schedule::command('psm:check-repository-connections')
+    ->dailyAt(config('psm.github.connection_check_time'))
     ->timezone(config('psm.github.timezone'))
     ->withoutOverlapping();
 Schedule::command('psm:prune-project-imports')->dailyAt('03:15');

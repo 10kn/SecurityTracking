@@ -6,17 +6,20 @@ use App\Enums\Ecosystem;
 use App\Enums\LockfileFormat;
 use App\Events\DeploymentInventoryChanged;
 use App\Models\Lockfile;
+use App\Models\RepositoryConnection;
 use App\Models\Service;
 use App\Models\SourceHeartbeat;
 use App\Services\Repositories\IncompleteListingException;
 use App\Services\Repositories\RepositoryNotFoundException;
 use App\Services\Repositories\RepositoryReader;
+use App\Services\Repositories\RepositoryReaders;
 use App\Support\LocalTime;
 use App\Support\LockfilePath;
 use Closure;
 use Illuminate\Cache\Lock as CacheLock;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -24,7 +27,8 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Reads a service's lockfiles from its repository (handover D12): at the tip of the service's branch, every lockfile
+ * Reads a service's lockfiles from its repository (handover D12), through the GitHub App or the service's repository
+ * connection: at the tip of the service's branch, every lockfile
  * (Ecosystem::lockfileNames()) in the service's directory and its subdirectories, stored by its path relative to the
  * directory, e.g. "frontend/package-lock.json". Installed dependencies, test fixtures (`psm.github.lockfile_search`)
  * and the service's own `lockfile_excludes` are not searched. The repository is then the only source of the service's
@@ -40,7 +44,7 @@ class SyncServiceLockfiles
     /**
      * The settings a sync reads; a sync whose settings changed while it ran keeps nothing of what it read.
      */
-    private const array SETTINGS = ['repository', 'repository_branch', 'repository_path', 'lockfile_excludes'];
+    private const array SETTINGS = ['repository', 'repository_connection_id', 'repository_branch', 'repository_path', 'lockfile_excludes'];
 
     /**
      * How long a sync may hold its service, and how long another sync of the service waits for it by default, in
@@ -51,7 +55,7 @@ class SyncServiceLockfiles
     public const int LOCK_WAIT_SECONDS = 60;
 
     public function __construct(
-        private RepositoryReader $repositoryReader,
+        private RepositoryReaders $repositoryReaders,
         private ReplaceLockfiles $replaceLockfiles,
         private SendAdminAlert $sendAdminAlert,
     ) {}
@@ -75,7 +79,7 @@ class SyncServiceLockfiles
             return;
         }
 
-        if (! $this->repositoryReader->isConfigured()) {
+        if ($service->repository_connection_id === null && ! $this->repositoryReaders->gitHubApp()->isConfigured()) {
             $service->refresh();
             $this->finish($service, null, [__('Chưa cấu hình GitHub App (PSM_GITHUB_APP_ID, PSM_GITHUB_INSTALLATION_ID, PSM_GITHUB_PRIVATE_KEY_PATH).')]);
 
@@ -88,43 +92,51 @@ class SyncServiceLockfiles
             $service->refresh();
 
             if ($service->syncsLockfiles()) {
-                $this->syncWithHeartbeat($service, $lock);
+                $this->syncWithHeartbeat($service, $this->repositoryReaders->forService($service), $lock);
             }
         });
     }
 
     /**
-     * Drops the repository host's heartbeat once no service syncs its lockfiles any more: with nothing to read the
-     * host is never asked, so its last success would only age into a false "over threshold" alert. The next sync of
-     * a service records it again.
+     * Drops the heartbeat of the GitHub App, and of each repository connection, once no service syncs its lockfiles
+     * through it any more: with nothing to read it is never asked, so its last success would only age into a false
+     * "over threshold" alert. The heartbeat of a deleted connection goes too. The next sync of a service records it
+     * again.
      */
     public function forgetUnusedSource(): void
     {
-        if (Service::whereNotNull('repository')->doesntExist()) {
-            SourceHeartbeat::where('source', $this->repositoryReader->sourceKey())->delete();
+        if (Service::whereNotNull('repository')->whereNull('repository_connection_id')->doesntExist()) {
+            SourceHeartbeat::where('source', $this->repositoryReaders->gitHubApp()->sourceKey())->delete();
         }
+
+        $usedKeys = RepositoryConnection::whereHas('services', fn (Builder $query) => $query->whereNotNull('repository'))
+            ->get()
+            ->map(fn (RepositoryConnection $connection): string => $connection->sourceKey())
+            ->all();
+
+        SourceHeartbeat::where('source', 'like', RepositoryConnection::SOURCE_KEY_PREFIX.'%')->whereNotIn('source', $usedKeys)->delete();
     }
 
     /**
      * @throws Throwable
      */
-    private function syncWithHeartbeat(Service $service, Lock $lock): void
+    private function syncWithHeartbeat(Service $service, RepositoryReader $repositoryReader, Lock $lock): void
     {
-        $heartbeat = SourceHeartbeat::updateOrCreate(['source' => $this->repositoryReader->sourceKey()], [
-            'name' => $this->repositoryReader->sourceName(),
+        $heartbeat = SourceHeartbeat::updateOrCreate(['source' => $repositoryReader->sourceKey()], [
+            'name' => $repositoryReader->sourceName(),
             'threshold_minutes' => config('psm.github.stale_after_minutes'),
         ]);
 
         try {
-            $errors = $this->sync($service, $lock);
+            $errors = $this->sync($service, $repositoryReader, $lock);
         } catch (Throwable $exception) {
             $heartbeat->update([
                 'last_failure_at' => now(),
                 'last_error' => Str::limit(class_basename($exception).': '.$exception->getMessage(), 500),
             ]);
-            $this->whileCurrent($service, $lock, function () use ($service, $exception): void {
+            $this->whileCurrent($service, $lock, function () use ($service, $repositoryReader, $exception): void {
                 $service->update(['lockfiles_sync_error' => Str::limit(__('Không kết nối được :source: :error', [
-                    'source' => $this->repositoryReader->sourceName(),
+                    'source' => $repositoryReader->sourceName(),
                     'error' => $exception->getMessage(),
                 ]), 1000)]);
             });
@@ -142,17 +154,26 @@ class SyncServiceLockfiles
      *
      * @throws Throwable
      */
-    private function sync(Service $service, Lock $lock): array
+    private function sync(Service $service, RepositoryReader $repositoryReader, Lock $lock): array
     {
         $repository = (string) $service->repository;
 
         try {
-            $commitSha = $this->repositoryReader->latestCommitSha($repository, $service->repository_branch);
+            $commitSha = $repositoryReader->latestCommitSha($repository, $service->repository_branch);
         } catch (RepositoryNotFoundException|InvalidArgumentException) {
-            return [__('Không đọc được repository :repository hoặc branch :branch. Kiểm tra GitHub App còn được cấp quyền cho repository này và branch còn tồn tại.', [
-                'repository' => $repository,
-                'branch' => $service->repository_branch ?? __('mặc định'),
-            ])];
+            $connection = $service->repositoryConnection;
+
+            return [$connection === null
+                ? __('Không đọc được repository :repository hoặc branch :branch. Kiểm tra GitHub App còn được cấp quyền cho repository này và branch còn tồn tại.', [
+                    'repository' => $repository,
+                    'branch' => $service->repository_branch ?? __('mặc định'),
+                ])
+                : __('Không đọc được repository :repository hoặc branch :branch qua kết nối :connection. Kiểm tra account :account còn được mời vào repository này và branch còn tồn tại.', [
+                    'repository' => $repository,
+                    'branch' => $service->repository_branch ?? __('mặc định'),
+                    'connection' => $connection->name,
+                    'account' => $connection->account_login ?? '?',
+                ])];
         }
 
         $directory = trim((string) $service->repository_path, '/');
@@ -160,7 +181,7 @@ class SyncServiceLockfiles
         $search = config('psm.github.lockfile_search');
 
         try {
-            $found = $this->repositoryReader->findFiles(
+            $found = $repositoryReader->findFiles(
                 $repository,
                 $directory,
                 $commitSha,
@@ -195,7 +216,7 @@ class SyncServiceLockfiles
         }
 
         ['workflows' => $workflows, 'errors' => $workflowErrors] = config('psm.github_actions.enabled')
-            ? $this->findWorkflows($repository, $commitSha, $shortSha)
+            ? $this->findWorkflows($repositoryReader, $repository, $commitSha, $shortSha)
             : ['workflows' => [], 'errors' => []];
         $errors = [...$errors, ...$workflowErrors];
         $lockfiles = [];
@@ -208,7 +229,7 @@ class SyncServiceLockfiles
             }
 
             try {
-                $lockfiles[] = ['path' => (string) $path, 'content' => $this->repositoryReader->read($repository, $repositoryPath, $commitSha)];
+                $lockfiles[] = ['path' => (string) $path, 'content' => $repositoryReader->read($repository, $repositoryPath, $commitSha)];
             } catch (RepositoryNotFoundException) {
                 $errors[] = __('Không đọc được :file tại commit :commit.', ['file' => $path, 'commit' => $shortSha]);
             }
@@ -216,7 +237,7 @@ class SyncServiceLockfiles
 
         // Only lockfiles that were not found go: one that was found but could not be read keeps its row, and so do the
         // workflows when they could not be listed.
-        $this->whileCurrent($service, $lock, function () use ($service, $lockfiles, $found, $workflows, $commitSha): void {
+        $this->whileCurrent($service, $lock, function () use ($service, $repositoryReader, $lockfiles, $found, $workflows, $commitSha): void {
             $service->update(['lockfiles_commit_sha' => $commitSha]);
 
             $deployment = $service->productionDeploymentOrCreate();
@@ -227,7 +248,7 @@ class SyncServiceLockfiles
                 ->values()
                 ->all();
 
-            if ($this->replaceLockfiles->handle($deployment, $lockfiles, $removedPaths, $this->repositoryReader->lockfileSource(), $commitSha)) {
+            if ($this->replaceLockfiles->handle($deployment, $lockfiles, $removedPaths, $repositoryReader->lockfileSource(), $commitSha)) {
                 $deployment->touch();
 
                 DeploymentInventoryChanged::dispatch($deployment);
@@ -260,10 +281,10 @@ class SyncServiceLockfiles
      *
      * @throws Throwable When the host could not be reached.
      */
-    private function findWorkflows(string $repository, string $commitSha, string $shortSha): array
+    private function findWorkflows(RepositoryReader $repositoryReader, string $repository, string $commitSha, string $shortSha): array
     {
         try {
-            $files = $this->repositoryReader->findFiles(
+            $files = $repositoryReader->findFiles(
                 $repository,
                 '.github',
                 $commitSha,
@@ -347,7 +368,7 @@ class SyncServiceLockfiles
             return;
         }
 
-        $service->loadMissing('project');
+        $service->loadMissing(['project', 'repositoryConnection']);
 
         $this->sendAdminAlert->handle(
             "lockfile-sync:service-{$service->id}:".($service->lockfiles_synced_at?->getTimestamp() ?? 'never'),
@@ -355,6 +376,10 @@ class SyncServiceLockfiles
             [
                 ...$errors,
                 __('Repository :repository, branch :branch.', ['repository' => $service->repository, 'branch' => $service->repository_branch ?? __('mặc định')]),
+                ...($service->repositoryConnection === null ? [] : [__('Đọc qua kết nối :connection (account :account).', [
+                    'connection' => $service->repositoryConnection->name,
+                    'account' => $service->repositoryConnection->account_login ?? '?',
+                ])]),
                 __('Thành công gần nhất: :time', ['time' => LocalTime::format($service->lockfiles_synced_at) ?? __('chưa có')]),
                 __('Hệ thống tiếp tục dùng lockfile đã lấy trước đó.'),
             ],

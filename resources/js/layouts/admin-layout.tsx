@@ -1,12 +1,14 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { CpuIcon, FolderIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import { BookOpenIcon, CpuIcon, FolderIcon, GitBranchIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
+import GuideController from '@/actions/App/Http/Controllers/Admin/GuideController';
 import { index as incidentsIndex } from '@/actions/App/Http/Controllers/Admin/IncidentController';
 import OverviewController from '@/actions/App/Http/Controllers/Admin/OverviewController';
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
+import { index as repositoryConnectionsIndex } from '@/actions/App/Http/Controllers/Admin/RepositoryConnectionController';
 import { store as storeImport } from '@/actions/App/Http/Controllers/Admin/ProjectImportController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { destroy as logout } from '@/actions/App/Http/Controllers/Admin/SessionController';
@@ -70,9 +72,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             label: t('Cài đặt'),
             items: [
                 { label: t('Teams'), href: teamsIndex.url(), icon: UsersIcon },
+                { label: t('Kết nối repository'), href: repositoryConnectionsIndex.url(), icon: GitBranchIcon },
                 { label: t('Công nghệ'), href: technologiesIndex.url(), icon: CpuIcon },
                 { label: t('Hệ thống'), href: settingsEdit.url(), icon: SlidersHorizontalIcon },
             ],
+        },
+        {
+            label: t('Trợ giúp'),
+            items: [{ label: t('Hướng dẫn sử dụng'), href: GuideController.url(), icon: BookOpenIcon }],
         },
     ];
 

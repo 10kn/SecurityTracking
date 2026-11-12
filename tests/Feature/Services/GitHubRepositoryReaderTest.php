@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\RepositoryConnection;
 use App\Services\Repositories\GitHubRepository;
 use App\Services\Repositories\GitHubRepositoryReader;
 use App\Services\Repositories\IncompleteListingException;
 use App\Services\Repositories\RepositoryNotFoundException;
+use App\Services\Repositories\RepositoryReaders;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Http\Client\Request;
@@ -157,6 +159,34 @@ it('lists every repository the app was installed on, page by page', function () 
         ->and($repositories[0])->toBe(['full_name' => 'acme/repo-1', 'default_branch' => 'main', 'is_private' => false])
         ->and($repositories[100])->toBe(['full_name' => 'acme/shop', 'default_branch' => 'develop', 'is_private' => true])
         ->and(gitHubRequests('installation/repositories'))->toHaveCount(2);
+});
+
+it('lists every repository the account of a connection may read, page by page', function () {
+    $page = fn (int $from, int $count): array => array_map(fn (int $number): array => ['full_name' => "customer/repo-{$number}", 'default_branch' => 'main', 'private' => true], range($from, $from + $count - 1));
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/user/repos?*page=1' => Http::response($page(1, 100)),
+        'https://api.github.com/user/repos?*page=2' => Http::response($page(101, 3)),
+    ]);
+    $connection = RepositoryConnection::factory()->create(['token' => 'ghp_customer']);
+
+    $repositories = app(RepositoryReaders::class)->forConnection($connection)->repositories();
+
+    expect($repositories)->toHaveCount(103)
+        ->and($repositories[102])->toBe(['full_name' => 'customer/repo-103', 'default_branch' => 'main', 'is_private' => true])
+        ->and(gitHubRequests('user/repos'))->toHaveCount(2);
+
+    parse_str((string) parse_url(gitHubRequests('user/repos')[0]->url(), PHP_URL_QUERY), $query);
+    expect($query['affiliation'])->toBe('owner,collaborator,organization_member')
+        ->and(gitHubRequests('user/repos')[0]->header('Authorization'))->toBe(['Bearer ghp_customer']);
+});
+
+it('waits out a rate limit instead of calling the token rejected', function () {
+    Sleep::fake();
+    Http::preventStrayRequests();
+    Http::fake(['https://api.github.com/user/repos*' => Http::response(['message' => 'API rate limit exceeded'], 403, ['X-RateLimit-Remaining' => '0'])]);
+
+    expect(fn () => app(RepositoryReaders::class)->forConnection(RepositoryConnection::factory()->create())->repositories())->toThrow(RequestException::class);
 });
 
 it('checks whether a branch exists', function () {

@@ -2,7 +2,9 @@ import { router } from '@inertiajs/react';
 import { SearchIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import GuideController from '@/actions/App/Http/Controllers/Admin/GuideController';
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
+import { index as repositoryConnectionsIndex } from '@/actions/App/Http/Controllers/Admin/RepositoryConnectionController';
 import SearchController from '@/actions/App/Http/Controllers/Admin/SearchController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { index as teamsIndex } from '@/actions/App/Http/Controllers/Admin/TeamController';
@@ -32,7 +34,9 @@ export function CommandPalette() {
         { label: t('Projects'), hint: t('Trang'), url: projectsIndex.url() },
         { label: t('Services'), hint: t('Trang'), url: servicesIndex.url() },
         { label: t('Teams'), hint: t('Trang'), url: teamsIndex.url() },
+        { label: t('Kết nối repository'), hint: t('Trang'), url: repositoryConnectionsIndex.url() },
         { label: t('Công nghệ'), hint: t('Trang'), url: technologiesIndex.url() },
+        { label: t('Hướng dẫn sử dụng'), hint: t('Trang'), url: GuideController.url() },
     ];
 
     useEffect(() => {

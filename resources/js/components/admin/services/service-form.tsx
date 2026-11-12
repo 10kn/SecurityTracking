@@ -49,6 +49,8 @@ export interface ServiceFormData {
     repository_path: string;
     /** E.g. "acme/shop"; null when lockfiles are uploaded by hand. */
     repository: string | null;
+    /** The repository connection the repository is read through; null is the GitHub App. */
+    repository_connection_id: number | null;
     repository_branch: string;
     /** Paths relative to the service directory that are not searched for lockfiles, one per line. */
     lockfile_excludes: string;
@@ -59,16 +61,20 @@ export interface ServiceFormData {
     removed_lockfiles: string[];
 }
 
+/** `value` is "app:acme/shop" or "3:acme/shop": a repository read by several sources is listed once per source. */
 export interface RepositoryOption extends Option<string> {
     default_branch: string | null;
+    repository: string;
+    repository_connection_id: number | null;
 }
 
 export interface ServiceFormOptions {
     projects: Option<number>[];
-    /** The repositories the GitHub App may read, as last refreshed. */
+    /** The repositories the GitHub App and the repository connections may read, as last refreshed. */
     repositories: RepositoryOption[];
     repositoriesSyncedAt: string | null;
-    gitHubConfigured: boolean;
+    /** Whether the GitHub App is configured or a repository connection exists. */
+    hasRepositorySource: boolean;
     /** Directory names never searched for lockfiles (psm.github.lockfile_search.skip_directories). */
     lockfileSkippedDirectories: string[];
     kinds: Option<string>[];
@@ -97,6 +103,7 @@ export interface LockfileSync {
 export interface SavedService {
     id: number;
     repository: string | null;
+    repository_connection_id: number | null;
     repository_branch: string | null;
     lockfile_sync: LockfileSync | null;
 }
@@ -278,20 +285,27 @@ export function ServiceFields({
     );
 }
 
+/** The option value of a repository read through a connection, or through the GitHub App when `connectionId` is null. */
+function repositoryOptionValue(repository: string, connectionId: number | null): string {
+    return `${connectionId ?? 'app'}:${repository}`;
+}
+
 /**
- * The repository to read lockfiles from, picked from the repositories the GitHub App may read. The list only changes
- * when the refresh button asks GitHub again; the rest of the form keeps what was typed meanwhile.
+ * The repository to read lockfiles from, picked from the repositories the GitHub App and the repository connections may
+ * read; picking one also picks what reads it. The list only changes when the refresh button asks GitHub again; the rest
+ * of the form keeps what was typed meanwhile.
  */
 function RepositoryFields({ form, options, savedService }: { form: InertiaFormProps<ServiceFormData>; options: ServiceFormOptions; savedService?: SavedService }) {
     const t = useTranslation();
     const [isRefreshing, setIsRefreshing] = useState(false);
     const repository = form.data.repository;
-    const selected = options.repositories.find((option) => option.value === repository);
+    const selectedValue = repository === null ? '' : repositoryOptionValue(repository, form.data.repository_connection_id);
+    const selected = options.repositories.find((option) => option.value === selectedValue);
 
     const repositoryOptions = [
         { value: '', label: t('Không dùng GitHub'), description: t('Tải lockfile tay') },
-        // A repository picked before stays selectable after the App lost access to it.
-        ...(repository !== null && selected === undefined ? [{ value: repository, label: repository, description: t('Không còn trong danh sách GitHub App được đọc') }] : []),
+        // A repository picked before stays selectable after the App or the connection lost access to it.
+        ...(repository !== null && selected === undefined ? [{ value: selectedValue, label: repository, description: t('Không còn trong danh sách được đọc') }] : []),
         ...options.repositories,
     ];
 
@@ -308,13 +322,17 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
             },
         );
 
-    const listHelp = !options.gitHubConfigured
-        ? t('Server chưa cấu hình GitHub App (PSM_GITHUB_* trong .env), chỉ tải lockfile tay được.')
+    const listHelp = !options.hasRepositorySource
+        ? t('Server chưa cấu hình GitHub App (PSM_GITHUB_* trong .env) và chưa có kết nối repository, chỉ tải lockfile tay được.')
         : options.repositoriesSyncedAt === null
-          ? t('Chưa có danh sách. Bấm làm mới để lấy các repository GitHub App được đọc.')
-          : t('Danh sách lấy lúc :time. Thiếu repository thì cấp quyền cho GitHub App trên GitHub rồi bấm làm mới.', { time: options.repositoriesSyncedAt });
+          ? t('Chưa có danh sách. Bấm làm mới để lấy các repository GitHub App và các kết nối được đọc.')
+          : t('Danh sách lấy lúc :time. Thiếu repository thì cấp quyền cho GitHub App, hoặc thêm kết nối repository cho repository của khách, rồi bấm làm mới.', { time: options.repositoriesSyncedAt });
 
-    const isSaved = savedService !== undefined && savedService.repository === repository && (savedService.repository_branch ?? '') === form.data.repository_branch;
+    const isSaved =
+        savedService !== undefined &&
+        savedService.repository === repository &&
+        savedService.repository_connection_id === form.data.repository_connection_id &&
+        (savedService.repository_branch ?? '') === form.data.repository_branch;
 
     return (
         <FormSection
@@ -322,30 +340,38 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
             description={t('Chọn repository GitHub để mỗi ngày hệ thống tự đọc composer.lock, Gemfile.lock, package-lock.json, pnpm-lock.yaml và yarn.lock trong thư mục của service và các thư mục con, tại commit mới nhất của branch. GitHub App chỉ có quyền đọc.')}
         >
             <FormFields columns={2}>
-                <Field label={t('Repository GitHub')} htmlFor="repository" error={form.errors.repository} help={listHelp} className="sm:col-span-2">
+                <Field label={t('Repository GitHub')} htmlFor="repository" error={form.errors.repository ?? form.errors.repository_connection_id} help={listHelp} className="sm:col-span-2">
                     <div className="flex gap-2">
                         <Combobox
                             id="repository"
                             className="min-w-0 flex-1"
-                            value={repository ?? ''}
+                            value={selectedValue}
                             options={repositoryOptions}
                             onChange={(value) => {
-                                const picked = value === '' ? null : value;
-
-                                if (picked === repository) {
+                                if (value === selectedValue) {
                                     return;
                                 }
 
+                                const picked = options.repositories.find((option) => option.value === value);
+
                                 // A service that reads lockfiles from GitHub takes no uploads, so files picked before are dropped.
                                 form.setData(
-                                    picked === null
-                                        ? { ...form.data, repository: null, repository_branch: '' }
-                                        : { ...form.data, repository: picked, repository_branch: '', lockfile_uploads: [], lockfile_directories: [], removed_lockfiles: [] },
+                                    picked === undefined
+                                        ? { ...form.data, repository: null, repository_connection_id: null, repository_branch: '' }
+                                        : {
+                                              ...form.data,
+                                              repository: picked.repository,
+                                              repository_connection_id: picked.repository_connection_id,
+                                              repository_branch: '',
+                                              lockfile_uploads: [],
+                                              lockfile_directories: [],
+                                              removed_lockfiles: [],
+                                          },
                                 );
                             }}
                             placeholder={t('Chọn repository')}
                             searchPlaceholder={t('Tìm repository')}
-                            invalid={form.errors.repository !== undefined}
+                            invalid={form.errors.repository !== undefined || form.errors.repository_connection_id !== undefined}
                         />
                         <Button
                             type="button"
@@ -353,7 +379,7 @@ function RepositoryFields({ form, options, savedService }: { form: InertiaFormPr
                             size="icon"
                             aria-label={t('Làm mới danh sách repository')}
                             title={t('Làm mới danh sách repository')}
-                            disabled={!options.gitHubConfigured || isRefreshing}
+                            disabled={!options.hasRepositorySource || isRefreshing}
                             onClick={refreshRepositories}
                         >
                             <RefreshCwIcon className={cn(isRefreshing && 'animate-spin')} />

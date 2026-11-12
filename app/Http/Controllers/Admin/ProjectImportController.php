@@ -142,7 +142,8 @@ class ProjectImportController extends Controller
     }
 
     /**
-     * What the service will be created with, e.g. ["Server", "Public", "Linux", "PHP 8.3.12", "acme/shop · main"].
+     * What the service will be created with, e.g. ["Server", "Public", "Linux", "PHP 8.3.12", "acme/shop · main · Khách ABC"];
+     * a repository read through the GitHub App does not name it.
      *
      * @return list<string>
      */
@@ -153,7 +154,12 @@ class ProjectImportController extends Controller
         }
 
         $runtimes = array_map(fn (string $technology, string $version): string => Technology::from($technology)->getLabel().' '.$version, array_keys($row->runtimeVersions), $row->runtimeVersions);
-        $repository = $row->repository === null ? null : collect([$row->repository, $row->repositoryBranch, $row->repositoryPath !== '/' ? $row->repositoryPath : null])->filter()->join(' · ');
+        $repository = $row->repository === null ? null : collect([
+            $row->repository,
+            $row->repositoryBranch,
+            $row->repositoryPath !== '/' ? $row->repositoryPath : null,
+            $row->repositoryConnectionId !== null ? $row->repositorySource : null,
+        ])->filter()->join(' · ');
 
         return array_values(array_filter([$row->kind?->getLabel(), $row->exposure?->getLabel(), $row->os?->getLabel(), ...$runtimes, $repository]));
     }

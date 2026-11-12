@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path', 'repository', 'repository_branch', 'lockfile_excludes', 'lockfiles_synced_at', 'lockfiles_commit_sha', 'lockfiles_sync_error'])]
+#[Fillable(['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path', 'repository', 'repository_connection_id', 'repository_branch', 'lockfile_excludes', 'lockfiles_synced_at', 'lockfiles_commit_sha', 'lockfiles_sync_error'])]
 class Service extends Model
 {
     /** @use HasFactory<ServiceFactory> */
@@ -86,6 +86,16 @@ class Service extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * The connection its repository is read through; null reads through the GitHub App.
+     *
+     * @return BelongsTo<RepositoryConnection, $this>
+     */
+    public function repositoryConnection(): BelongsTo
+    {
+        return $this->belongsTo(RepositoryConnection::class);
     }
 
     /**

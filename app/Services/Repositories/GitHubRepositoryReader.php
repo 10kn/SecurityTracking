@@ -13,7 +13,8 @@ use UnexpectedValueException;
 
 /**
  * Lists and reads repositories through the GitHub REST API (https://docs.github.com/en/rest), signed in as the GitHub
- * App of `psm.github`, which may only read contents and metadata.
+ * App of `psm.github`, which may only read contents and metadata, or with the token of a repository connection (see
+ * RepositoryReaders).
  */
 class GitHubRepositoryReader implements RepositoryReader
 {
@@ -24,16 +25,16 @@ class GitHubRepositoryReader implements RepositoryReader
      */
     private const int PER_PAGE = 100;
 
-    public function __construct(private GitHubAppAuthenticator $authenticator) {}
+    public function __construct(private GitHubCredentials $credentials) {}
 
     public function sourceKey(): string
     {
-        return 'github';
+        return $this->credentials->sourceKey();
     }
 
     public function sourceName(): string
     {
-        return 'GitHub';
+        return $this->credentials->sourceName();
     }
 
     public function lockfileSource(): LockfileSource
@@ -43,22 +44,23 @@ class GitHubRepositoryReader implements RepositoryReader
 
     public function isConfigured(): bool
     {
-        return $this->authenticator->isConfigured();
+        return $this->credentials->isConfigured();
     }
 
     /**
-     * The repositories the App was installed on, page by page.
+     * The repositories the App was installed on, or the token's account may read, page by page.
      */
     public function repositories(): array
     {
+        $listing = $this->credentials->repositoryListing();
         $repositories = [];
 
         for ($page = 1; ; $page++) {
-            $response = $this->get('installation/repositories', ['per_page' => self::PER_PAGE, 'page' => $page])->json();
-            $entries = is_array($response) && is_array($response['repositories'] ?? null) ? $response['repositories'] : null;
+            $response = $this->get($listing['path'], [...$listing['query'], 'per_page' => self::PER_PAGE, 'page' => $page])->json();
+            $entries = $listing['key'] === null ? $response : ($response[$listing['key']] ?? null);
 
-            if ($entries === null) {
-                throw new UnexpectedValueException('GitHub did not return the repositories of the installation.');
+            if (! is_array($entries) || ! array_is_list($entries)) {
+                throw new UnexpectedValueException('GitHub did not return the repositories the credentials may read.');
             }
 
             foreach ($entries as $entry) {
@@ -71,7 +73,7 @@ class GitHubRepositoryReader implements RepositoryReader
                 }
             }
 
-            if (count($entries) < self::PER_PAGE || count($repositories) >= (int) ($response['total_count'] ?? 0)) {
+            if (count($entries) < self::PER_PAGE || ($listing['key'] !== null && count($repositories) >= (int) ($response['total_count'] ?? 0))) {
                 return $repositories;
             }
         }
@@ -201,11 +203,12 @@ class GitHubRepositoryReader implements RepositoryReader
 
     /**
      * Client errors are not retried. 404 (missing, or not shared with the App), 409 (empty repository) and 422 (unknown
-     * branch) mean the service settings are wrong.
+     * branch) mean the service settings are wrong; 401 and most 403s mean the credentials are.
      *
      * @param  array<string, mixed>  $query
      *
      * @throws RepositoryNotFoundException
+     * @throws CredentialsRejectedException
      * @throws Throwable
      */
     private function get(string $path, array $query = [], string $accept = 'application/vnd.github+json'): Response
@@ -213,13 +216,19 @@ class GitHubRepositoryReader implements RepositoryReader
         try {
             return CatalogHttp::client(config('psm.github.http_timeout_seconds'))
                 ->retry(2, 500, fn (Throwable $exception): bool => ! ($exception instanceof RequestException && $exception->response->clientError()))
-                ->withToken($this->authenticator->token())
+                ->withToken($this->credentials->token())
                 ->accept($accept)
                 ->withHeaders(['X-GitHub-Api-Version' => self::API_VERSION])
                 ->get(rtrim((string) config('psm.github.api_url'), '/')."/{$path}", $query);
         } catch (RequestException $exception) {
             if (in_array($exception->response->status(), [404, 409, 422], true)) {
                 throw new RepositoryNotFoundException("GitHub answered {$exception->response->status()} for [{$path}].", previous: $exception);
+            }
+
+            $rejection = CredentialsRejectedException::fromResponse($exception->response);
+
+            if ($rejection !== null) {
+                throw $rejection;
             }
 
             throw $exception;

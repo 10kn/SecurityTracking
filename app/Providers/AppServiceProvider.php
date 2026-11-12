@@ -10,6 +10,8 @@ use App\Services\Packages\OsvVulnerabilityMatcher;
 use App\Services\Packages\PackagistVulnerabilityMatcher;
 use App\Services\Packages\RubySecVulnerabilityMatcher;
 use App\Services\Packages\VulnerabilityMatcher;
+use App\Services\Repositories\GitHubAppAuthenticator;
+use App\Services\Repositories\GitHubCredentials;
 use App\Services\Repositories\GitHubRepositoryReader;
 use App\Services\Repositories\RepositoryReader;
 use App\Services\SystemSettings;
@@ -26,6 +28,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->tag([PackagistVulnerabilityMatcher::class, RubySecVulnerabilityMatcher::class, OsvVulnerabilityMatcher::class, GitHubActionsVulnerabilityMatcher::class], VulnerabilityMatcher::class);
 
         $this->app->bind(NoticeClassifier::class, ClaudeNoticeClassifier::class);
+        // The GitHub App; a repository connection gets its own reader from RepositoryReaders.
+        $this->app->bind(GitHubCredentials::class, GitHubAppAuthenticator::class);
         $this->app->bind(RepositoryReader::class, GitHubRepositoryReader::class);
         $this->app->singleton(SystemSettings::class);
         $this->app->singleton(Client::class, fn (): Client => new Client(

@@ -7,6 +7,7 @@ use App\Events\DeploymentInventoryChanged;
 use App\Jobs\SyncServiceLockfilesJob;
 use App\Models\AccessibleRepository;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Service;
 use App\Models\Team;
 use App\Services\ProjectImport\ImportSheet;
@@ -214,7 +215,7 @@ it('shows what is wrong with each row and allows no import until it is fixed', f
             ])
             ->where('rows.2.errors', ['"Java" không có trong danh sách Công nghệ 1.', 'Thiếu Version 2 của Ruby.'])
             ->where('rows.3.errors', ['Không đọc được repository "https://gitlab.com/acme/shop". Ghi link dạng https://github.com/acme/shop hoặc owner/repo.'])
-            ->where('rows.4.errors', ['Repository acme/secret chưa có trong danh sách GitHub App được đọc. Server chưa cấu hình GitHub App nên không làm mới được danh sách repository.'])
+            ->where('rows.4.errors', ['Repository acme/secret chưa có trong danh sách được đọc. Server chưa cấu hình GitHub App và chưa có kết nối repository nên không làm mới được danh sách repository.'])
             ->where('rows.5.errors', ['Tên branch không hợp lệ.'])
             ->where('rows.6.errors', ['Trùng repository và thư mục với dòng 4.']));
 
@@ -285,7 +286,7 @@ it('refreshes the repository list from github before checking a repository it do
             ->where('rows.0.errors', [])
             ->where('rows.1.service', 'New-Shop')
             ->where('rows.1.errors', [])
-            ->where('rows.2.errors', ['GitHub App không đọc được repository acme/secret. Cấp quyền cho GitHub App với repository này rồi tải lại trang.']));
+            ->where('rows.2.errors', ['GitHub App và các kết nối repository không đọc được acme/secret. Cấp quyền cho GitHub App, hoặc mời account của một kết nối vào repository này, rồi tải lại trang.']));
 
     expect(AccessibleRepository::orderBy('full_name')->pluck('full_name')->all())->toBe(['Acme/New-Shop', 'acme/api']);
     Http::assertSentCount(2);
@@ -319,7 +320,7 @@ it('keeps the repository list and says why when github cannot be reached to refr
     get("/admin/project-imports/{$import}")
         ->assertInertia(fn (Assert $page) => $page
             ->where('rows.0.errors', [])
-            ->where('rows.1.errors.0', fn (string $error): bool => str_starts_with($error, 'Repository acme/new-shop chưa có trong danh sách GitHub App được đọc. Không làm mới được danh sách repository từ GitHub, thử lại sau: ')));
+            ->where('rows.1.errors.0', fn (string $error): bool => str_starts_with($error, 'Repository acme/new-shop chưa có trong danh sách được đọc. Không làm mới được danh sách repository, thử lại sau: GitHub: ')));
 
     expect(AccessibleRepository::pluck('full_name')->all())->toBe(['acme/api']);
 });
@@ -356,6 +357,31 @@ it('creates the projects and services of a file without errors all at once', fun
     Storage::disk('local')->assertDirectoryEmpty('project-imports');
 
     get("/admin/project-imports/{$import}")->assertRedirect('/admin/project-imports/create');
+});
+
+it('reads a repository through the github app when it can, otherwise through the oldest connection that can', function () {
+    actingAsAdmin();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+    Event::fake([DeploymentInventoryChanged::class]);
+    Team::factory()->create(['name' => 'Commerce']);
+    $older = RepositoryConnection::factory()->create(['name' => 'Khách ABC']);
+    $newer = RepositoryConnection::factory()->create(['name' => 'Khách XYZ']);
+    accessibleRepositories('acme/api');
+    foreach ([$newer, $older] as $connection) {
+        AccessibleRepository::factory()->create(['repository_connection_id' => $connection->id, 'full_name' => 'customer/shop']);
+        AccessibleRepository::factory()->create(['repository_connection_id' => $connection->id, 'full_name' => 'acme/api']);
+    }
+
+    $import = uploadImport([importRow(), importRow([ImportSheet::REPOSITORY => 'customer/shop'])]);
+
+    get("/admin/project-imports/{$import}")->assertInertia(fn (Assert $page) => $page
+        ->where('rows.0.details', ['Server', 'Public', 'acme/api'])
+        ->where('rows.1.details', ['Server', 'Public', 'customer/shop · Khách ABC']));
+
+    post("/admin/project-imports/{$import}/confirm")->assertRedirect('/admin/projects');
+
+    expect(Service::orderBy('repository')->get()->map(fn (Service $service): array => [$service->repository, $service->repository_connection_id])->all())
+        ->toBe([['acme/api', null], ['customer/shop', $older->id]]);
 });
 
 it('refuses a file that is not the import template', function () {

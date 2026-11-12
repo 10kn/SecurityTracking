@@ -20,6 +20,7 @@ export default function ServicesCreate({ defaultProjectId, ...options }: Service
         os: defaultOperatingSystem(kind),
         repository_path: '/',
         repository: null,
+        repository_connection_id: null,
         repository_branch: '',
         lockfile_excludes: '',
         runtimes: [],

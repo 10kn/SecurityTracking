@@ -12,6 +12,7 @@ use App\Models\ChatNotification;
 use App\Models\Finding;
 use App\Models\GitHubRunnerImage;
 use App\Models\Incident;
+use App\Models\RepositoryConnection;
 use App\Models\Service;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
@@ -126,7 +127,7 @@ class OverviewController extends Controller
             $heartbeat->source === SyncKnownExploitedVulnerabilities::SOURCE => __('Có thể bỏ sót lỗ hổng đang bị khai thác mà CISA KEV mới thêm.'),
             $heartbeat->source === GitHubRunnerImage::SOURCE_KEY => __('Có thể bỏ sót runner GitHub Actions sắp bị gỡ. Finding đang mở vẫn giữ nguyên.'),
             $heartbeat->source === ResolveNoticeCves::SOURCE => __('Tin GitHub chưa có mã CVE chưa được đối chiếu với CISA KEV.'),
-            $heartbeat->source === $this->repositoryReader->sourceKey() => __('Lockfile không được đọc lại từ repository; package mới đổi có thể chưa được quét.'),
+            $heartbeat->source === $this->repositoryReader->sourceKey(), str_starts_with($heartbeat->source, RepositoryConnection::SOURCE_KEY_PREFIX) => __('Lockfile không được đọc lại từ repository; package mới đổi có thể chưa được quét.'),
             default => null,
         };
     }

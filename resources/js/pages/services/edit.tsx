@@ -23,6 +23,7 @@ interface Props extends ServiceFormOptions {
         os: string | null;
         repository_path: string;
         repository: string | null;
+        repository_connection_id: number | null;
         repository_branch: string | null;
         /** One path per line. */
         lockfile_excludes: string;
@@ -45,6 +46,7 @@ export default function ServicesEdit({ service, ...options }: Props) {
         os: service.os ?? '',
         repository_path: service.repository_path,
         repository: service.repository,
+        repository_connection_id: service.repository_connection_id,
         repository_branch: service.repository_branch ?? '',
         lockfile_excludes: service.lockfile_excludes,
         runtimes: service.runtimes.map((runtime) => newRuntimeRow(runtime.technology, runtime.raw_version)),

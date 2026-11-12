@@ -2,6 +2,7 @@
 
 use App\Events\DeploymentInventoryChanged;
 use App\Models\Lockfile;
+use App\Models\RepositoryConnection;
 use App\Models\Service;
 use App\Models\SourceHeartbeat;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
@@ -63,4 +64,18 @@ it('runs once a day at the configured time', function () {
 
     expect($event->expression)->toBe('30 6 * * *')
         ->and($event->timezone)->toBe('Asia/Ho_Chi_Minh');
+});
+
+it('forgets the heartbeat of a connection no service reads through any more, and of a deleted one', function () {
+    $used = RepositoryConnection::factory()->create();
+    $unused = RepositoryConnection::factory()->create();
+    Service::factory()->create(['repository_connection_id' => $used->id, 'repository' => 'acme/shop']);
+    fakeGitHub();
+    foreach (["github:connection-{$used->id}", "github:connection-{$unused->id}", 'github:connection-999'] as $source) {
+        SourceHeartbeat::factory()->create(['source' => $source]);
+    }
+
+    artisan('psm:sync-lockfiles')->assertSuccessful();
+
+    expect(SourceHeartbeat::pluck('source')->all())->toBe(["github:connection-{$used->id}"]);
 });

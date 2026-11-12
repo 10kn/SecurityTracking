@@ -251,6 +251,8 @@ return [
         'api_url' => env('PSM_GITHUB_API_URL', 'https://api.github.com'),
         'http_timeout_seconds' => (int) env('PSM_GITHUB_HTTP_TIMEOUT', 30),
         'sync_time' => env('PSM_GITHUB_SYNC_TIME', '06:30'),
+        // When the tokens of the repository connections are checked, in `timezone` (psm:check-repository-connections).
+        'connection_check_time' => env('PSM_GITHUB_CONNECTION_CHECK_TIME', '06:00'),
         'timezone' => env('PSM_GITHUB_SYNC_TIMEZONE', 'Asia/Ho_Chi_Minh'),
         'stale_after_minutes' => (int) env('PSM_GITHUB_STALE_AFTER_MINUTES', 1500),
 

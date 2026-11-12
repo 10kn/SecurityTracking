@@ -10,9 +10,10 @@ use App\Enums\Technology;
 use App\Models\AccessibleRepository;
 use App\Models\Lockfile;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Runtime;
 use App\Models\Service;
-use App\Services\Repositories\RepositoryReader;
+use App\Services\Repositories\RepositoryReaders;
 use App\Support\LockfilePath;
 use App\Support\Slug;
 use Closure;
@@ -26,7 +27,8 @@ use Throwable;
 
 /**
  * The service and what it runs in production: its operating system, one version per technology and the uploaded lockfiles. A service that
- * reads its lockfiles from a GitHub repository takes no uploads.
+ * reads its lockfiles from a GitHub repository takes no uploads. The repository is read through the GitHub App, or through the repository
+ * connection `repository_connection_id` that listed it.
  */
 class ServiceRequest extends FormRequest
 {
@@ -44,6 +46,8 @@ class ServiceRequest extends FormRequest
     {
         $service = $this->route('service');
         $syncsLockfiles = $this->filled('repository');
+        $connectionId = $this->filled('repository_connection_id') ? $this->integer('repository_connection_id') : null;
+        $isRepositoryChanged = ! $service instanceof Service || $this->input('repository') !== $service->repository || $connectionId !== $service->repository_connection_id;
 
         return [
             'project_id' => ['required', 'integer', Rule::exists(Project::class, 'id')],
@@ -58,8 +62,9 @@ class ServiceRequest extends FormRequest
             // A repository picked before stays valid after it leaves the list, until another one is picked.
             'repository' => [
                 'nullable', 'string', 'max:255', 'regex:'.Service::REPOSITORY_PATTERN,
-                Rule::when($this->input('repository') !== ($service instanceof Service ? $service->repository : null), [Rule::exists(AccessibleRepository::class, 'full_name')]),
+                Rule::when($isRepositoryChanged, [Rule::exists(AccessibleRepository::class, 'full_name')->where('repository_connection_id', $connectionId)]),
             ],
+            'repository_connection_id' => ['nullable', 'integer', Rule::exists(RepositoryConnection::class, 'id')],
             'repository_branch' => ['nullable', 'string', 'max:255', 'regex:'.Service::REPOSITORY_BRANCH_PATTERN, 'not_regex:/\.\./'],
             // Only a service reading its lockfiles from GitHub searches for them.
             'lockfile_excludes' => [Rule::excludeIf(! $syncsLockfiles), 'nullable', 'string', 'max:5000', $this->lockfileExcludesRule()],
@@ -90,15 +95,17 @@ class ServiceRequest extends FormRequest
                 $branch = $this->input('repository_branch');
                 $service = $this->route('service');
 
-                if (! is_string($repository) || ! is_string($branch) || $validator->errors()->hasAny(['repository', 'repository_branch'])) {
+                if (! is_string($repository) || ! is_string($branch) || $validator->errors()->hasAny(['repository', 'repository_connection_id', 'repository_branch'])) {
                     return;
                 }
 
-                if ($service instanceof Service && $service->repository === $repository && $service->repository_branch === $branch) {
+                $connection = $this->filled('repository_connection_id') ? RepositoryConnection::find($this->integer('repository_connection_id')) : null;
+
+                if ($service instanceof Service && $service->repository === $repository && $service->repository_connection_id === $connection?->id && $service->repository_branch === $branch) {
                     return;
                 }
 
-                $repositoryReader = app(RepositoryReader::class);
+                $repositoryReader = app(RepositoryReaders::class)->forConnection($connection);
 
                 if (! $repositoryReader->isConfigured()) {
                     $validator->errors()->add('repository_branch', __('Server chưa cấu hình GitHub App nên không kiểm tra được branch.'));
@@ -167,6 +174,7 @@ class ServiceRequest extends FormRequest
             'exposure' => __('Phạm vi truy cập'),
             'repository_path' => __('Thư mục trong repository'),
             'repository' => __('Repository'),
+            'repository_connection_id' => __('Kết nối repository'),
             'repository_branch' => __('Branch'),
             'os' => __('Hệ điều hành'),
             'runtimes.*.technology' => __('Công nghệ'),
@@ -187,7 +195,7 @@ class ServiceRequest extends FormRequest
             'runtimes.*.raw_version.regex' => __('Version chỉ gồm chữ, số và . + ~ _ -'),
             'runtimes.*.technology.distinct' => __('Mỗi công nghệ chỉ chọn một lần.'),
             'repository.regex' => __('Chọn repository trong danh sách.'),
-            'repository.exists' => __('Repository không có trong danh sách GitHub App được đọc. Làm mới danh sách rồi chọn lại.'),
+            'repository.exists' => __('Repository không có trong danh sách được đọc. Làm mới danh sách rồi chọn lại.'),
             'repository_branch.regex' => __('Tên branch không hợp lệ.'),
             'repository_branch.not_regex' => __('Tên branch không hợp lệ.'),
             'lockfile_uploads.prohibited' => __('Service lấy lockfile từ GitHub thì không tải lên hay xóa tay được.'),
@@ -196,18 +204,19 @@ class ServiceRequest extends FormRequest
     }
 
     /**
-     * The columns of the service itself. Without a repository there is no branch to read.
+     * The columns of the service itself. Without a repository there is no connection or branch to read.
      *
      * @return array<string, mixed>
      */
     public function serviceAttributes(): array
     {
-        $attributes = Arr::only($this->validated(), ['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path', 'repository', 'repository_branch']);
+        $attributes = Arr::only($this->validated(), ['project_id', 'name', 'slug', 'kind', 'exposure', 'repository_path', 'repository', 'repository_connection_id', 'repository_branch']);
         $excludes = self::lines($this->validated('lockfile_excludes'));
 
         return [
             ...$attributes,
             'repository' => $attributes['repository'] ?? null,
+            'repository_connection_id' => isset($attributes['repository']) ? ($attributes['repository_connection_id'] ?? null) : null,
             'repository_branch' => isset($attributes['repository']) ? ($attributes['repository_branch'] ?? null) : null,
             'lockfile_excludes' => isset($attributes['repository']) && $excludes !== [] ? $excludes : null,
         ];

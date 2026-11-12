@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AdminWebhookController;
 use App\Http\Controllers\Admin\AdminWebhookTestMessageController;
 use App\Http\Controllers\Admin\FindingAcknowledgementController;
 use App\Http\Controllers\Admin\FindingController;
+use App\Http\Controllers\Admin\GuideController;
 use App\Http\Controllers\Admin\IncidentAcknowledgementController;
 use App\Http\Controllers\Admin\IncidentController;
 use App\Http\Controllers\Admin\IncidentMergeController;
@@ -16,6 +17,8 @@ use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
 use App\Http\Controllers\Admin\ProjectImportController;
 use App\Http\Controllers\Admin\ProjectMonitoringPauseController;
+use App\Http\Controllers\Admin\RepositoryConnectionController;
+use App\Http\Controllers\Admin\RepositoryConnectionTokenController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
 use App\Http\Controllers\Admin\SearchController;
 use App\Http\Controllers\Admin\ServiceController;
@@ -49,6 +52,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::put('preferences', [PreferenceController::class, 'update'])->name('preferences.update');
         Route::get('search', SearchController::class)->name('search');
+        Route::get('guide', GuideController::class)->name('guide');
 
         Route::get('findings', [FindingController::class, 'index'])->name('findings.index');
         Route::post('findings/acknowledgements', [FindingAcknowledgementController::class, 'store'])->name('findings.acknowledgements.store');
@@ -73,6 +77,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('services/{service}/lockfile-sync', [ServiceLockfileSyncController::class, 'store'])->name('services.lockfile-sync.store');
         Route::post('repositories/sync', [AccessibleRepositorySyncController::class, 'store'])->name('repositories.sync.store');
         Route::get('runtime-evaluation', RuntimeEvaluationController::class)->name('runtime-evaluation');
+
+        Route::resource('repository-connections', RepositoryConnectionController::class)->except('show');
+        Route::put('repository-connections/{repository_connection}/token', [RepositoryConnectionTokenController::class, 'update'])->name('repository-connections.token.update');
 
         Route::resource('teams', TeamController::class)->except('show');
         Route::put('teams/{team}/webhook', [TeamWebhookController::class, 'update'])->name('teams.webhook.update');

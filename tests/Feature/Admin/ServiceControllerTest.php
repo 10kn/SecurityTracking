@@ -11,6 +11,7 @@ use App\Models\Deployment;
 use App\Models\Finding;
 use App\Models\Lockfile;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Runtime;
 use App\Models\Service;
 use Illuminate\Http\UploadedFile;
@@ -25,6 +26,7 @@ use function Pest\Laravel\delete;
 use function Pest\Laravel\get;
 use function Pest\Laravel\getJson;
 use function Pest\Laravel\post;
+use function Pest\Laravel\put;
 
 /**
  * The fields of the service form, with the project and name filled in.
@@ -402,12 +404,45 @@ it('creates a service that reads its lockfiles from a github repository right aw
     Queue::assertPushed(SyncServiceLockfilesJob::class, fn (SyncServiceLockfilesJob $job): bool => $job->service->is($service));
 });
 
+it('reads a repository through the connection whose list it was picked from, checking the branch with its token', function () {
+    actingAsAdmin();
+    Queue::fake([SyncServiceLockfilesJob::class]);
+    $connection = RepositoryConnection::factory()->create(['token' => 'ghp_customer']);
+    AccessibleRepository::factory()->create(['repository_connection_id' => $connection->id, 'full_name' => 'customer/shop']);
+    Http::preventStrayRequests();
+    Http::fake(['https://api.github.com/repos/customer/shop/branches/main' => Http::response(['name' => 'main'])]);
+
+    post('/admin/services', serviceForm(['repository' => 'customer/shop', 'repository_connection_id' => $connection->id, 'repository_branch' => 'main']))->assertSessionHasNoErrors();
+
+    expect(Service::sole())->repository->toBe('customer/shop')->repository_connection_id->toBe($connection->id)
+        ->and(gitHubRequests('repos/customer/shop/branches')[0]->header('Authorization'))->toBe(['Bearer ghp_customer']);
+});
+
+it('only takes a repository the chosen connection may read', function () {
+    actingAsAdmin();
+    $connection = RepositoryConnection::factory()->create();
+    AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
+
+    post('/admin/services', serviceForm(['repository' => 'acme/shop', 'repository_connection_id' => $connection->id]))
+        ->assertSessionHasErrors(['repository' => 'Repository không có trong danh sách được đọc. Làm mới danh sách rồi chọn lại.']);
+});
+
+it('drops the connection of a service that no longer reads a repository', function () {
+    actingAsAdmin();
+    $connection = RepositoryConnection::factory()->create();
+    $service = Service::factory()->syncingLockfiles('customer/shop', connection: $connection)->create();
+
+    put("/admin/services/{$service->id}", serviceForm(['project_id' => $service->project_id, 'repository' => null, 'repository_connection_id' => $connection->id]))->assertSessionHasNoErrors();
+
+    expect($service->fresh())->repository->toBeNull()->repository_connection_id->toBeNull();
+});
+
 it('only takes a repository the github app may read', function () {
     actingAsAdmin();
     AccessibleRepository::factory()->create(['full_name' => 'acme/shop']);
 
     post('/admin/services', serviceForm(['repository' => 'acme/secret']))
-        ->assertSessionHasErrors(['repository' => 'Repository không có trong danh sách GitHub App được đọc. Làm mới danh sách rồi chọn lại.']);
+        ->assertSessionHasErrors(['repository' => 'Repository không có trong danh sách được đọc. Làm mới danh sách rồi chọn lại.']);
 });
 
 it('keeps a repository that left the list until another one is picked', function () {
@@ -567,9 +602,16 @@ it('shows the repository list, the last sync and where each lockfile came from',
     Lockfile::factory()->for($deployment)->fromGitHub(GITHUB_COMMIT)->create(['path' => 'composer.lock']);
 
     get("/admin/services/{$service->id}/edit")->assertInertia(fn (Assert $page) => $page
-        ->where('repositories', [['value' => 'acme/shop', 'label' => 'acme/shop', 'description' => 'develop · private', 'default_branch' => 'develop']])
+        ->where('repositories', [[
+            'value' => 'app:acme/shop',
+            'label' => 'acme/shop',
+            'description' => 'GitHub App · develop · private',
+            'default_branch' => 'develop',
+            'repository' => 'acme/shop',
+            'repository_connection_id' => null,
+        ]])
         ->where('repositoriesSyncedAt', '25/10/2026 16:00 GMT+7')
-        ->where('gitHubConfigured', true)
+        ->where('hasRepositorySource', true)
         ->where('service.repository', 'acme/shop')
         ->where('service.lockfile_sync.status.label', 'Đã đồng bộ')
         ->where('service.lockfile_sync.commit_href', 'https://github.com/acme/shop/commit/'.GITHUB_COMMIT)

@@ -9,7 +9,8 @@ use App\Enums\ServiceKind;
 
 /**
  * One row of an import file once checked: what it creates, or why it cannot. The texts are the trimmed cells as
- * written; the other values are only set on a row that creates its service.
+ * written; the other values are only set on a row that creates its service. `repositorySource` names what reads the
+ * repository: "GitHub App" or the repository connection's name.
  */
 final readonly class ImportRow
 {
@@ -34,6 +35,8 @@ final readonly class ImportRow
         public ?OperatingSystem $os = null,
         public array $runtimeVersions = [],
         public ?string $repository = null,
+        public ?int $repositoryConnectionId = null,
+        public ?string $repositorySource = null,
         public ?string $repositoryBranch = null,
         public string $repositoryPath = '/',
     ) {}

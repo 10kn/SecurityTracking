@@ -11,11 +11,12 @@ use App\Enums\ServiceKind;
 use App\Enums\Technology;
 use App\Models\AccessibleRepository;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
 use App\Services\Repositories\GitHubRepository;
-use App\Services\Repositories\RepositoryReader;
+use App\Services\Repositories\RepositoryReaders;
 use App\Support\Slug;
 use BackedEnum;
 use Illuminate\Support\Facades\App;
@@ -32,8 +33,10 @@ use Throwable;
  * - slugs come from the names, with "-2", "-3"… when taken, e.g. "shop-apps-api" for "shop (apps/api)";
  * - a service whose repository and directory, or whose name, its project already has is skipped, nothing existing is
  *   changed;
- * - a repository missing from the list the GitHub App reads refreshes the list from GitHub first, once per check, so a
- *   repository the App was given since the last refresh is found.
+ * - a repository is read through the GitHub App when the App reads it, otherwise through the oldest repository
+ *   connection that does;
+ * - a repository missing from the lists of the GitHub App and the connections refreshes every list from GitHub first,
+ *   once per check, so a repository the App or an account was given since the last refresh is found.
  *
  * Dropdown values are read in any language of the application, or as their stored value, e.g. "server".
  */
@@ -62,16 +65,16 @@ class ImportPlanner
     /** @var array<string, Technology> */
     private array $technologies = [];
 
-    /** @var array<string, string> Full names keyed by their lowercase form, e.g. "acme/shop". */
+    /** @var array<string, array{full_name: string, repository_connection_id: int|null, source: string}> Keyed by the lowercase full name, e.g. "acme/shop". */
     private array $repositories = [];
 
     /** Why the repository list could not be refreshed from GitHub; null when it was, or did not need to be. */
     private ?string $repositorySyncProblem = null;
 
-    /** @var array<string, string|null> What is wrong with a branch, keyed by "repository#branch"; null when it exists. */
+    /** @var array<string, string|null> What is wrong with a branch, keyed by "connection:repository#branch"; null when it exists. */
     private array $branchProblems = [];
 
-    public function __construct(private RepositoryReader $repositoryReader, private SyncAccessibleRepositories $syncAccessibleRepositories) {}
+    public function __construct(private RepositoryReaders $repositoryReaders, private SyncAccessibleRepositories $syncAccessibleRepositories) {}
 
     /**
      * @param  list<array{row: int, cells: array<string, string>}>  $rows  As read by ImportSheetReader.
@@ -105,9 +108,20 @@ class ImportPlanner
         $this->loadRepositories();
     }
 
+    /**
+     * The GitHub App's listing of a repository first, then the oldest connection's.
+     */
     private function loadRepositories(): void
     {
-        $this->repositories = AccessibleRepository::pluck('full_name')->keyBy(fn (string $fullName): string => mb_strtolower($fullName))->all();
+        $this->repositories = [];
+
+        foreach (AccessibleRepository::with('repositoryConnection')->orderByRaw('repository_connection_id nulls first')->orderBy('id')->get() as $repository) {
+            $this->repositories[mb_strtolower($repository->full_name)] ??= [
+                'full_name' => $repository->full_name,
+                'repository_connection_id' => $repository->repository_connection_id,
+                'source' => $repository->repositoryConnection?->name ?? __('GitHub App'),
+            ];
+        }
     }
 
     /**
@@ -128,20 +142,18 @@ class ImportPlanner
             return;
         }
 
-        if (! $this->repositoryReader->isConfigured()) {
-            $this->repositorySyncProblem = __('Server chưa cấu hình GitHub App nên không làm mới được danh sách repository.');
+        try {
+            ['problems' => $problems] = $this->syncAccessibleRepositories->handleAll();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $this->repositorySyncProblem = __('Server chưa cấu hình GitHub App và chưa có kết nối repository nên không làm mới được danh sách repository.');
 
             return;
         }
 
-        try {
-            $this->syncAccessibleRepositories->handle();
-        } catch (Throwable $exception) {
-            report($exception);
-
-            $this->repositorySyncProblem = __('Không làm mới được danh sách repository từ :source, thử lại sau: :error', ['source' => $this->repositoryReader->sourceName(), 'error' => $exception->getMessage()]);
-
-            return;
+        if ($problems !== []) {
+            $this->repositorySyncProblem = __('Không làm mới được danh sách repository, thử lại sau: :error', ['error' => implode('; ', $problems)]);
         }
 
         $this->loadRepositories();
@@ -151,7 +163,7 @@ class ImportPlanner
      * The values of one row and what is wrong with them, before rows are grouped into projects.
      *
      * @param  array<string, string>  $cells
-     * @return array{row: int, team: Team|null, team_name: string, project_name: string, service_name: string, kind: ServiceKind|null, exposure: Exposure|null, os: OperatingSystem|null, runtime_versions: array<string, string>, repository: string|null, repository_branch: string|null, repository_path: string, errors: list<string>}
+     * @return array{row: int, team: Team|null, team_name: string, project_name: string, service_name: string, kind: ServiceKind|null, exposure: Exposure|null, os: OperatingSystem|null, runtime_versions: array<string, string>, repository: string|null, repository_connection_id: int|null, repository_source: string|null, repository_branch: string|null, repository_path: string, errors: list<string>}
      */
     private function check(int $rowNumber, array $cells): array
     {
@@ -167,7 +179,8 @@ class ImportPlanner
         }
 
         $repository = $this->repository($cell(ImportSheet::REPOSITORY), $errors);
-        $branch = $this->branch($cell(ImportSheet::BRANCH), $repository, $errors);
+        $listing = $repository === null ? null : $this->repositories[mb_strtolower($repository)];
+        $branch = $this->branch($cell(ImportSheet::BRANCH), $repository, $listing['repository_connection_id'] ?? null, $errors);
         $repositoryPath = $cell(ImportSheet::REPOSITORY_PATH) === '' ? '/' : $cell(ImportSheet::REPOSITORY_PATH);
         $serviceName = $repository === null ? '' : self::serviceName($repository, $repositoryPath);
 
@@ -191,6 +204,8 @@ class ImportPlanner
             'os' => $os,
             'runtime_versions' => $runtimeVersions,
             'repository' => $repository,
+            'repository_connection_id' => $listing['repository_connection_id'] ?? null,
+            'repository_source' => $listing['source'] ?? null,
             'repository_branch' => $branch,
             'repository_path' => $repositoryPath,
             'errors' => $errors,
@@ -290,6 +305,8 @@ class ImportPlanner
                 os: $checked['os'],
                 runtimeVersions: $checked['runtime_versions'],
                 repository: $checked['repository'],
+                repositoryConnectionId: $checked['repository_connection_id'],
+                repositorySource: $checked['repository_source'],
                 repositoryBranch: $checked['repository_branch'],
                 repositoryPath: $checked['repository_path'],
             );
@@ -390,7 +407,7 @@ class ImportPlanner
     }
 
     /**
-     * The full name of a repository the GitHub App reads, as GitHub writes it, from a link or "owner/repo".
+     * The full name of a repository the GitHub App or a connection reads, as GitHub writes it, from a link or "owner/repo".
      *
      * @param  list<string>  $errors
      */
@@ -410,12 +427,12 @@ class ImportPlanner
             return null;
         }
 
-        $fullName = $this->repositories[mb_strtolower("{$repository->owner}/{$repository->name}")] ?? null;
+        $fullName = $this->repositories[mb_strtolower("{$repository->owner}/{$repository->name}")]['full_name'] ?? null;
 
         if ($fullName === null) {
             $errors[] = $this->repositorySyncProblem === null
-                ? __('GitHub App không đọc được repository :repository. Cấp quyền cho GitHub App với repository này rồi tải lại trang.', ['repository' => "{$repository->owner}/{$repository->name}"])
-                : __('Repository :repository chưa có trong danh sách GitHub App được đọc. :problem', ['repository' => "{$repository->owner}/{$repository->name}", 'problem' => $this->repositorySyncProblem]);
+                ? __('GitHub App và các kết nối repository không đọc được :repository. Cấp quyền cho GitHub App, hoặc mời account của một kết nối vào repository này, rồi tải lại trang.', ['repository' => "{$repository->owner}/{$repository->name}"])
+                : __('Repository :repository chưa có trong danh sách được đọc. :problem', ['repository' => "{$repository->owner}/{$repository->name}", 'problem' => $this->repositorySyncProblem]);
         }
 
         return $fullName;
@@ -426,7 +443,7 @@ class ImportPlanner
      *
      * @param  list<string>  $errors
      */
-    private function branch(string $text, ?string $repository, array &$errors): ?string
+    private function branch(string $text, ?string $repository, ?int $connectionId, array &$errors): ?string
     {
         if ($text === '') {
             return null;
@@ -434,32 +451,34 @@ class ImportPlanner
 
         if (mb_strlen($text) > self::MAX_NAME_LENGTH || preg_match(Service::REPOSITORY_BRANCH_PATTERN, $text) !== 1 || str_contains($text, '..')) {
             $errors[] = __('Tên branch không hợp lệ.');
-        } elseif ($repository !== null && ($problem = $this->branchProblem($repository, $text)) !== null) {
+        } elseif ($repository !== null && ($problem = $this->branchProblem($repository, $connectionId, $text)) !== null) {
             $errors[] = $problem;
         }
 
         return $text;
     }
 
-    private function branchProblem(string $repository, string $branch): ?string
+    private function branchProblem(string $repository, ?int $connectionId, string $branch): ?string
     {
-        $key = "{$repository}#{$branch}";
+        $key = ($connectionId ?? 'app').":{$repository}#{$branch}";
 
         if (array_key_exists($key, $this->branchProblems)) {
             return $this->branchProblems[$key];
         }
 
-        if (! $this->repositoryReader->isConfigured()) {
+        $repositoryReader = $this->repositoryReaders->forConnection($connectionId === null ? null : RepositoryConnection::find($connectionId));
+
+        if (! $repositoryReader->isConfigured()) {
             return $this->branchProblems[$key] = __('Server chưa cấu hình GitHub App nên không kiểm tra được branch.');
         }
 
         try {
-            $exists = $this->repositoryReader->branchExists($repository, $branch);
+            $exists = $repositoryReader->branchExists($repository, $branch);
         } catch (Throwable $exception) {
             report($exception);
 
             // Not remembered: the next preview asks GitHub again.
-            return __('Không kiểm tra được branch trên :source, thử lại sau: :error', ['source' => $this->repositoryReader->sourceName(), 'error' => $exception->getMessage()]);
+            return __('Không kiểm tra được branch trên :source, thử lại sau: :error', ['source' => $repositoryReader->sourceName(), 'error' => $exception->getMessage()]);
         }
 
         return $this->branchProblems[$key] = $exists ? null : __('Không thấy branch :branch trong :repository.', ['branch' => $branch, 'repository' => $repository]);

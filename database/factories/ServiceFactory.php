@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Enums\Exposure;
 use App\Enums\ServiceKind;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Service;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -33,12 +34,13 @@ class ServiceFactory extends Factory
     }
 
     /**
-     * A service that reads its lockfiles from a GitHub repository every day.
+     * A service that reads its lockfiles from a GitHub repository every day, through the GitHub App or $connection.
      */
-    public function syncingLockfiles(string $repository = 'acme/shop', ?string $branch = null): static
+    public function syncingLockfiles(string $repository = 'acme/shop', ?string $branch = null, ?RepositoryConnection $connection = null): static
     {
         return $this->state([
             'repository' => $repository,
+            'repository_connection_id' => $connection?->id,
             'repository_branch' => $branch,
         ]);
     }

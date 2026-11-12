@@ -15,9 +15,10 @@ use App\Jobs\SyncServiceLockfilesJob;
 use App\Models\AccessibleRepository;
 use App\Models\Lockfile;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Runtime;
 use App\Models\Service;
-use App\Services\Repositories\RepositoryReader;
+use App\Services\Repositories\RepositoryReaders;
 use App\Support\LocalTime;
 use App\Support\TableQuery;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,7 +32,7 @@ class ServiceController extends Controller
 {
     public function __construct(
         private UpdateProductionInventory $updateProductionInventory,
-        private RepositoryReader $repositoryReader,
+        private RepositoryReaders $repositoryReaders,
     ) {}
 
     public function index(Request $request): Response
@@ -94,7 +95,7 @@ class ServiceController extends Controller
         return Inertia::render('services/edit', [
             ...$this->formOptions(),
             'service' => [
-                ...$service->only(['id', 'project_id', 'name', 'slug', 'repository_path', 'repository', 'repository_branch']),
+                ...$service->only(['id', 'project_id', 'name', 'slug', 'repository_path', 'repository', 'repository_connection_id', 'repository_branch']),
                 'kind' => $service->kind->value,
                 'exposure' => $service->exposure->value,
                 'os' => $deployment?->os?->value,
@@ -125,8 +126,8 @@ class ServiceController extends Controller
         DB::transaction(function () use ($request, $service): void {
             $service->fill($request->serviceAttributes());
 
-            // The state of the last sync belongs to the repository and branch it read.
-            if ($service->isDirty(['repository', 'repository_branch'])) {
+            // The state of the last sync belongs to the repository, connection and branch it read.
+            if ($service->isDirty(['repository', 'repository_connection_id', 'repository_branch'])) {
                 $service->fill(['lockfiles_synced_at' => null, 'lockfiles_commit_sha' => null, 'lockfiles_sync_error' => null]);
             }
 
@@ -161,12 +162,12 @@ class ServiceController extends Controller
     }
 
     /**
-     * A service that reads its lockfiles from GitHub gets them right away when it is created or its repository, branch,
-     * directory or lockfile exclusions changed, instead of at the next daily sync.
+     * A service that reads its lockfiles from GitHub gets them right away when it is created or its repository,
+     * connection, branch, directory or lockfile exclusions changed, instead of at the next daily sync.
      */
     private function syncLockfilesWhenRepositoryChanged(Service $service): void
     {
-        if ($service->syncsLockfiles() && ($service->wasRecentlyCreated || $service->wasChanged(['repository', 'repository_branch', 'repository_path', 'lockfile_excludes']))) {
+        if ($service->syncsLockfiles() && ($service->wasRecentlyCreated || $service->wasChanged(['repository', 'repository_connection_id', 'repository_branch', 'repository_path', 'lockfile_excludes']))) {
             SyncServiceLockfilesJob::dispatch($service);
         }
     }
@@ -192,7 +193,7 @@ class ServiceController extends Controller
             },
             'synced_at' => LocalTime::format($service->lockfiles_synced_at),
             'commit' => $commitSha === null ? null : substr($commitSha, 0, 7),
-            'commit_href' => $commitSha === null ? null : $this->repositoryReader->commitUrl((string) $service->repository, $commitSha),
+            'commit_href' => $commitSha === null ? null : $this->repositoryReaders->forService($service)->commitUrl((string) $service->repository, $commitSha),
             'error' => $service->lockfiles_sync_error,
         ];
     }
@@ -206,7 +207,7 @@ class ServiceController extends Controller
             'projects' => $this->projectOptions(),
             'repositories' => $this->repositoryOptions(),
             'repositoriesSyncedAt' => LocalTime::format(AccessibleRepository::latest('updated_at')->first()?->updated_at),
-            'gitHubConfigured' => $this->repositoryReader->isConfigured(),
+            'hasRepositorySource' => $this->repositoryReaders->gitHubApp()->isConfigured() || RepositoryConnection::exists(),
             'lockfileSkippedDirectories' => config('psm.github.lockfile_search.skip_directories'),
             'kinds' => array_map(fn (ServiceKind $kind): array => ['value' => $kind->value, 'label' => $kind->getLabel()], ServiceKind::cases()),
             'exposures' => array_map(fn (Exposure $exposure): array => ['value' => $exposure->value, 'label' => $exposure->getLabel()], Exposure::cases()),
@@ -224,22 +225,28 @@ class ServiceController extends Controller
     }
 
     /**
-     * The repositories the GitHub App may read, as last refreshed.
+     * The repositories the GitHub App and each repository connection may read, as last refreshed. A repository read
+     * by several is listed once per source; `value` tells them apart, e.g. "app:acme/shop" or "3:acme/shop".
      *
-     * @return list<array{value: string, label: string, description: string, default_branch: string|null}>
+     * @return list<array{value: string, label: string, description: string, default_branch: string|null, repository: string, repository_connection_id: int|null}>
      */
     private function repositoryOptions(): array
     {
-        return AccessibleRepository::orderBy('full_name')
+        return AccessibleRepository::with('repositoryConnection')
+            ->orderBy('full_name')
+            ->orderByRaw('repository_connection_id nulls first')
             ->get()
             ->map(fn (AccessibleRepository $repository): array => [
-                'value' => $repository->full_name,
+                'value' => ($repository->repository_connection_id ?? 'app').':'.$repository->full_name,
                 'label' => $repository->full_name,
                 'description' => implode(' · ', array_filter([
+                    $repository->repositoryConnection?->name ?? __('GitHub App'),
                     $repository->default_branch,
                     $repository->is_private ? __('private') : __('public'),
                 ])),
                 'default_branch' => $repository->default_branch,
+                'repository' => $repository->full_name,
+                'repository_connection_id' => $repository->repository_connection_id,
             ])
             ->all();
     }

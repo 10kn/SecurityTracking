@@ -9,8 +9,10 @@ use App\Models\ChatNotification;
 use App\Models\Deployment;
 use App\Models\Lockfile;
 use App\Models\Project;
+use App\Models\RepositoryConnection;
 use App\Models\Service;
 use App\Models\SourceHeartbeat;
+use App\Services\Repositories\CredentialsRejectedException;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
@@ -377,3 +379,58 @@ it('leaves services without a repository alone', function () {
 it('stores the source of uploaded lockfiles as upload', function () {
     expect(Lockfile::factory()->create()->source)->toBe(LockfileSource::Upload);
 });
+
+it('reads the repository of a service through its connection, with the token of the connection', function () {
+    $connection = RepositoryConnection::factory()->create(['name' => 'Khách ABC', 'token' => 'ghp_customer']);
+    $this->service->update(['repository_connection_id' => $connection->id]);
+    fakeGitHub(['apps/api/composer.lock' => '{"packages":[]}']);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect(array_keys(lockfilesOf($this->service)))->toBe(['composer.lock'])
+        ->and(gitHubRequests('repos/acme/shop')->map(fn (Request $request): string => $request->header('Authorization')[0])->unique()->all())->toBe(['Bearer ghp_customer'])
+        ->and(gitHubRequests('app/installations'))->toHaveCount(0)
+        ->and(SourceHeartbeat::firstWhere('source', "github:connection-{$connection->id}"))->name->toBe('GitHub · Khách ABC')->last_success_at->toEqual(now())
+        ->and(SourceHeartbeat::where('source', 'github')->exists())->toBeFalse();
+});
+
+it('reads through a connection while the github app is not configured', function () {
+    $connection = RepositoryConnection::factory()->create();
+    $this->service->update(['repository_connection_id' => $connection->id]);
+    fakeGitHub(['apps/api/composer.lock' => '{"packages":[]}']);
+    config(['psm.github.app_id' => null]);
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect($this->service->fresh()->lockfiles_sync_error)->toBeNull()
+        ->and(array_keys(lockfilesOf($this->service)))->toBe(['composer.lock']);
+});
+
+it('names the connection and its account when the repository cannot be read through it', function () {
+    $connection = RepositoryConnection::factory()->create(['name' => 'Khách ABC', 'account_login' => 'dev-abc']);
+    $this->service->update(['repository_connection_id' => $connection->id]);
+    Http::fake(['https://api.github.com/repos/*/commits*' => Http::response(['message' => 'Not Found'], 404)]);
+    fakeGitHub();
+
+    app(SyncServiceLockfiles::class)->handle($this->service);
+
+    expect($this->service->fresh()->lockfiles_sync_error)->toBe('Không đọc được repository acme/shop hoặc branch main qua kết nối Khách ABC. Kiểm tra account dev-abc còn được mời vào repository này và branch còn tồn tại.')
+        ->and(chatJson(chatMessagesTo('ADMIN')->sole()))->toContain('Đọc qua kết nối Khách ABC (account dev-abc).');
+});
+
+it('says github turned the token down instead of retrying it', function (int $status, array $headers, string $error) {
+    $connection = RepositoryConnection::factory()->create(['name' => 'Khách ABC']);
+    $this->service->update(['repository_connection_id' => $connection->id]);
+    Http::fake(['https://api.github.com/repos/*' => Http::response(['message' => 'Bad credentials'], $status, $headers)]);
+    fakeGitHub();
+
+    expect(fn () => app(SyncServiceLockfiles::class)->handle($this->service))->toThrow(CredentialsRejectedException::class, $error);
+
+    expect($this->service->fresh()->lockfiles_sync_error)->toBe("Không kết nối được GitHub · Khách ABC: {$error}")
+        ->and(gitHubRequests('repos/acme/shop'))->toHaveCount(1)
+        ->and(SourceHeartbeat::firstWhere('source', "github:connection-{$connection->id}"))->last_failure_at->toEqual(now());
+})->with([
+    'revoked' => [401, [], 'GitHub không nhận token: token đã bị thu hồi, hết hạn hoặc sai.'],
+    'sso' => [403, ['X-GitHub-SSO' => 'required; url=https://github.com/orgs/acme/sso?authorization_request=1'], 'Tổ chức trên GitHub bật SAML SSO: account cần Authorize SSO cho token với tổ chức này.'],
+    'forbidden' => [403, [], 'GitHub từ chối token: Bad credentials'],
+]);

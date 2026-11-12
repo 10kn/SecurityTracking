@@ -16,7 +16,7 @@ use UnexpectedValueException;
  * for one hour, limited to reading contents and metadata. The token is kept in memory only, and a new one is asked
  * for shortly before it expires.
  */
-class GitHubAppAuthenticator
+class GitHubAppAuthenticator implements GitHubCredentials
 {
     private ?string $token = null;
 
@@ -27,6 +27,24 @@ class GitHubAppAuthenticator
         return filled(config('psm.github.app_id'))
             && filled(config('psm.github.installation_id'))
             && filled(config('psm.github.private_key_path'));
+    }
+
+    public function sourceKey(): string
+    {
+        return 'github';
+    }
+
+    public function sourceName(): string
+    {
+        return 'GitHub';
+    }
+
+    /**
+     * The repositories the App was installed on.
+     */
+    public function repositoryListing(): array
+    {
+        return ['path' => 'installation/repositories', 'query' => [], 'key' => 'repositories'];
     }
 
     /**

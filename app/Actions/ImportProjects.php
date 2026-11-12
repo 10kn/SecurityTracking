@@ -45,6 +45,7 @@ class ImportProjects
                     'exposure' => $row->exposure,
                     'repository_path' => $row->repositoryPath,
                     'repository' => $row->repository,
+                    'repository_connection_id' => $row->repository !== null ? $row->repositoryConnectionId : null,
                     'repository_branch' => $row->repository !== null ? $row->repositoryBranch : null,
                 ]);
 
