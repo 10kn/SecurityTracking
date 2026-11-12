@@ -8,6 +8,7 @@ use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\ChatNotification;
 use App\Models\Incident;
+use App\Models\RuntimeRelease;
 use App\Models\Team;
 use App\Services\Notices\NoticeClassification;
 use Illuminate\Support\Facades\Http;
@@ -120,4 +121,54 @@ it('tells the admin space when the news space cannot be reached', function () {
 
     expect(ChatNotification::where('kind', ChatNotificationKind::SecurityNews)->sole())->failed_at->not->toBeNull()
         ->and(chatJson(chatMessagesTo('ADMIN')->sole()))->toContain('Không gửi được tin bảo mật tới space tin', 'Google Chat trả lỗi HTTP 404.');
+});
+
+it('names the fixes the incident has in its news and tells none of them again', function () {
+    fakeGoogleChat();
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    $this->preNotice->update(['patch_versions' => ['8.3.36']]);
+
+    expect(app(SendSecurityNews::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('NEWS')->sole()))->toContain('Bản vá: 8.3 → 8.3.36')
+        ->and($this->incident->refresh()->news_patches)->toBe(['8.3' => '8.3.36'])
+        ->and(app(SendSecurityNews::class)->handle())->toBe(0);
+});
+
+it('replies "Đã có bản vá" in the thread once the vendor adds the fixes to news it sent, once per version', function () {
+    fakeGoogleChat();
+    app(SendSecurityNews::class)->handle();
+
+    expect($this->incident->refresh()->news_patches)->toBe([])
+        ->and(app(SendSecurityNews::class)->handle())->toBe(0);
+
+    $this->travel(1)->day();
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+    RuntimeRelease::factory()->security()->create(['branch' => '8.4', 'version' => '8.4.27']);
+    $this->preNotice->update(['patch_versions' => ['8.3.36', '8.4.27'], 'published_at' => now(), 'first_published_at' => '2026-10-20 20:32:00', 'content_changed_at' => now()]);
+
+    expect(app(SendSecurityNews::class)->handle())->toBe(1)
+        ->and(app(SendSecurityNews::class)->handle())->toBe(0);
+
+    $messages = chatMessagesTo('NEWS');
+    expect($messages)->toHaveCount(2)
+        ->and($messages->pluck('thread.threadKey')->unique()->all())->toBe([SendSecurityNews::threadKeyFor($this->incident)])
+        ->and(chatJson($messages[1]))->toContain('Đã có bản vá · PHP', 'Hãng đã xác nhận bản vá: 8.3 → 8.3.36 · 8.4 → 8.4.27', 'Tin: Upcoming Critical PHP Security Release', 'Đăng lúc 21/10/2026 03:32 GMT+7', 'Cập nhật 22/10/2026 04:00 GMT+7', 'Xem incident')
+        ->and($this->incident->refresh()->news_patches)->toBe(['8.3' => '8.3.36', '8.4' => '8.4.27']);
+
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.37']);
+    $this->preNotice->update(['patch_versions' => ['8.3.37', '8.4.27']]);
+
+    expect(app(SendSecurityNews::class)->handle())->toBe(1)
+        ->and(chatJson(chatMessagesTo('NEWS')->last()))->toContain('Hãng đã xác nhận bản vá: 8.3 → 8.3.37', 'Bản vá đã báo trước đó: 8.4 → 8.4.27');
+});
+
+it('records the fixes of news sent before they were kept without telling them', function () {
+    fakeGoogleChat();
+    $sent = ChatNotification::factory()->create(['kind' => ChatNotificationKind::SecurityNews, 'sent_at' => now()]);
+    $this->preNotice->forceFill(['news_notification_id' => $sent->id, 'patch_versions' => ['8.3.36']])->save();
+    RuntimeRelease::factory()->security()->create(['branch' => '8.3', 'version' => '8.3.36']);
+
+    expect(app(SendSecurityNews::class)->handle())->toBe(0)
+        ->and(chatMessagesTo('NEWS'))->toBeEmpty()
+        ->and($this->incident->refresh()->news_patches)->toBe(['8.3' => '8.3.36']);
 });

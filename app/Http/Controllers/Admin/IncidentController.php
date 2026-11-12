@@ -143,6 +143,7 @@ class IncidentController extends Controller
         return Inertia::render('incidents/show', [
             'incident' => [
                 ...$this->summary($state),
+                ...$this->publishedDates($incident, $notices),
                 'planned_release' => LocalTime::format($incident->planned_release_at),
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
@@ -158,7 +159,8 @@ class IncidentController extends Controller
                 'title' => $notice->title,
                 'url' => $notice->url,
                 'severity' => $this->severity($notice->severity),
-                'published' => LocalTime::format($notice->published_at),
+                'published' => LocalTime::format($notice->firstPublishedAt()),
+                'updated' => LocalTime::format($notice->updatedByVendorAt()),
                 'affected_branches' => $notice->affected_branches ?? [],
                 'unaffected_branches' => $notice->unaffected_branches ?? [],
                 'patch_versions' => $notice->patch_versions ?? [],
@@ -516,6 +518,23 @@ class IncidentController extends Controller
                 ($row?->generation ?? 1) > 1 => __('Chưa có dữ liệu chuyển phát trong thread hiện tại (webhook của team đã đổi).'),
                 default => __('Chưa có dữ liệu chuyển phát trong thread hiện tại.'),
             },
+        ];
+    }
+
+    /**
+     * When the incident was first published, by the first date its pre-notices that count were published on, which
+     * their vendor may have moved since (see Advisory::firstPublishedAt()), and when one of them was last updated.
+     *
+     * @param  Collection<int, Advisory>  $notices
+     * @return array{first_published: string|null, updated: string|null}
+     */
+    private function publishedDates(Incident $incident, Collection $notices): array
+    {
+        $counted = $notices->where('is_dismissed', false);
+
+        return [
+            'first_published' => LocalTime::format($counted->map(fn (Advisory $notice) => $notice->firstPublishedAt())->filter()->min() ?? $incident->first_published_at),
+            'updated' => LocalTime::format($counted->map(fn (Advisory $notice) => $notice->updatedByVendorAt())->filter()->max()),
         ];
     }
 

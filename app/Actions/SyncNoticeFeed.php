@@ -270,6 +270,8 @@ class SyncNoticeFeed
             ...$this->platforms($entry, $advisory, $classification),
         ]);
 
+        $this->trackRevision($advisory, $entry);
+
         $isOngoingCritical = ($severity === Severity::Critical && $this->isFresh($entry)) || KnownExploitation::isFresh($advisory->known_exploited);
 
         if (! $advisory->exists) {
@@ -369,6 +371,24 @@ class SyncNoticeFeed
         $days = max(config('psm.notices.collect_days'), config('psm.notices.relevant_days'));
 
         return $entry->publishedAt === null || ! $entry->publishedAt->isBefore(now()->subDays($days));
+    }
+
+    /**
+     * Keeps the date the feed gave the entry when it was first stored, as `published_at` follows the date it gives now,
+     * which a vendor editing the entry may move (Node.js moves its pre-announcement to the release day). A poll that
+     * finds the title or text changed since the last one records when (`content_changed_at`); the first poll of an
+     * entry stored before its text was tracked records nothing.
+     */
+    private function trackRevision(Advisory $advisory, NoticeEntry $entry): void
+    {
+        $entryHash = $this->contentHash($entry);
+
+        if ($advisory->entry_hash !== null && $advisory->entry_hash !== $entryHash) {
+            $advisory->content_changed_at = now();
+        }
+
+        $advisory->first_published_at ??= $entry->publishedAt;
+        $advisory->entry_hash = $entryHash;
     }
 
     private function contentHash(NoticeEntry $entry): string

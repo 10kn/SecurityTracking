@@ -153,6 +153,38 @@ it('is idempotent and follows edits the vendor makes to an entry', function () {
         ->and(Advisory::where('external_id', 'https://www.php.net/archive/2026.php#2026-10-20-1')->value('title'))->toBe('Upcoming Critical PHP Security Release (updated)');
 });
 
+it('keeps the date an entry was first published and records when the vendor edits it', function () {
+    $feed = noticeFixture('php-feed.atom');
+    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+        return Http::response($feed);
+    }]);
+    $externalId = 'https://www.php.net/archive/2026.php#2026-10-20-1';
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    $this->travel(15)->minutes();
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    expect(Advisory::where('external_id', $externalId)->sole())
+        ->first_published_at->toIso8601String()->toBe('2026-10-20T20:32:00+00:00')
+        ->content_changed_at->toBeNull();
+
+    $this->travel(1)->day();
+    $feed = str_replace(
+        ['<title>Upcoming Critical PHP Security Release</title>', '<published>2026-10-20T20:32:00+00:00</published>'],
+        ['<title>Upcoming Critical PHP Security Release (updated)</title>', '<published>2026-10-21T14:00:00+00:00</published>'],
+        $feed,
+    );
+    app(SyncNoticeFeed::class)->handle(Technology::Php);
+
+    $notice = Advisory::where('external_id', $externalId)->sole();
+    expect($notice)
+        ->published_at->toIso8601String()->toBe('2026-10-21T14:00:00+00:00')
+        ->first_published_at->toIso8601String()->toBe('2026-10-20T20:32:00+00:00')
+        ->content_changed_at->toIso8601String()->toBe(now()->toIso8601String())
+        ->and($notice->firstPublishedAt()->toIso8601String())->toBe('2026-10-20T20:32:00+00:00')
+        ->and($notice->updatedByVendorAt()->toIso8601String())->toBe(now()->toIso8601String());
+});
+
 it('rates an entry by its CVSS score when the vendor gives no rating, and records what gave the severity', function () {
     $feed = str_replace('Upcoming Critical PHP Security Release', 'Upcoming PHP Security Release', noticeFixture('php-feed.atom'));
     $feed = str_replace('critical', 'serious', $feed);

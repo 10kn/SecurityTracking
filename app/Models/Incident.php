@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * One security issue of a technology, told by one or more vendor pre-notices (see AssignNoticeToIncident). Its title,
  * severity, dates and branches are derived from its pre-notices that were not dismissed (see refreshFromNotices()).
  */
-#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platform_scopes', 'merged_into_id', 'fingerprint', 'changed_at'])]
+#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platform_scopes', 'news_patches', 'merged_into_id', 'fingerprint', 'changed_at'])]
 class Incident extends Model
 {
     /** @use HasFactory<IncidentFactory> */
@@ -46,6 +46,7 @@ class Incident extends Model
             'affected_branches' => 'array',
             'unaffected_branches' => 'array',
             'platform_scopes' => 'array',
+            'news_patches' => 'array',
             'changed_at' => 'datetime',
         ];
     }

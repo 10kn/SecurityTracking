@@ -1035,5 +1035,12 @@
     "Dùng cho monorepo: mỗi thư mục một dòng, tên service kèm thư mục, vd. :example. Để trống hoặc \"/\" nếu service nằm ở gốc repository.": "モノレポ用です。ディレクトリごとに 1 行で、サービス名にディレクトリが付きます（例: :example）。リポジトリ直下のサービスは空欄か「/」にしてください。",
     "Tên service lấy từ tên repository. Slug của project và service do hệ thống tự tạo.": "サービス名はリポジトリ名から付けます。プロジェクトとサービスのスラッグは自動で作成されます。",
     "Trùng repository và thư mục với dòng :row.": ":row 行目と同じリポジトリとディレクトリです。",
-    "Gõ version đầy đủ của công nghệ bên trái, vd. 8.3.12 hoặc bản build của distro như 8.1.2-1ubuntu2.14.": "左の技術の完全なバージョンを入力してください（例: 8.3.12、ディストリビューションのビルド 8.1.2-1ubuntu2.14）。"
+    "Gõ version đầy đủ của công nghệ bên trái, vd. 8.3.12 hoặc bản build của distro như 8.1.2-1ubuntu2.14.": "左の技術の完全なバージョンを入力してください（例: 8.3.12、ディストリビューションのビルド 8.1.2-1ubuntu2.14）。",
+    "Bản vá: :patches": "修正版: :patches",
+    "Hãng đã xác nhận bản vá: :patches": "ベンダーが修正版を確認しました: :patches",
+    "Bản vá đã báo trước đó: :patches": "通知済みの修正版: :patches",
+    "Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.": "修正版があってもサービスが安全になったわけではありません。アップグレードして初めて安全になります。",
+    "Cập nhật :time": "更新 :time",
+    "Đã có bản vá · :technology": "修正版公開 · :technology",
+    "Ngày hãng đăng tin lần đầu. Hãng có thể sửa lại tin sau đó (vd. Node.js thêm bản vá vào tin báo trước và đổi ngày đăng): “Cập nhật” là lúc hệ thống thấy tin đổi.": "ベンダーが最初に情報を公開した日時。ベンダーは後から情報を書き換えることがあります(例: Node.js は事前告知に修正版を追記し、公開日も変更します)。「更新」はシステムが変更を検知した日時です。"
 }

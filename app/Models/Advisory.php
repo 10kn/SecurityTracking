@@ -11,6 +11,7 @@ use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Services\Packages\PackagistVulnerabilityMatcher;
 use App\Services\Packages\RubySecVulnerabilityMatcher;
+use Carbon\CarbonInterface;
 use Database\Factories\AdvisoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'affected_ranges', 'content_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
+#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'first_published_at', 'content_changed_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'affected_ranges', 'content_hash', 'entry_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -51,6 +52,8 @@ class Advisory extends Model
             'technology' => Technology::class,
             'links' => 'array',
             'published_at' => 'datetime',
+            'first_published_at' => 'datetime',
+            'content_changed_at' => 'datetime',
             'source_modified_at' => 'datetime',
             'withdrawn_at' => 'datetime',
             'fixed_versions' => 'array',
@@ -199,6 +202,27 @@ class Advisory extends Model
     public function isExploited(): bool
     {
         return $this->is_exploited === true || $this->isKnownExploited();
+    }
+
+    /**
+     * When the vendor first published the pre-notice: the date its feed gave when it was first stored. A vendor editing
+     * the entry in place may move the date it gives (see SyncNoticeFeed).
+     */
+    public function firstPublishedAt(): ?CarbonInterface
+    {
+        return $this->first_published_at ?? $this->published_at;
+    }
+
+    /**
+     * When the vendor last edited the pre-notice, as far as its feed tells: when a poll found its text changed, or the
+     * later date the vendor gives it now. Null when neither happened.
+     */
+    public function updatedByVendorAt(): ?CarbonInterface
+    {
+        $first = $this->firstPublishedAt();
+        $movedDate = $first !== null && $this->published_at?->gt($first) ? $this->published_at : null;
+
+        return collect([$this->content_changed_at, $movedDate])->filter()->max();
     }
 
     /**

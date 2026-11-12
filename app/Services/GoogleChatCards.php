@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\FindingState;
 use App\Enums\Severity;
+use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\Incident;
@@ -197,27 +198,97 @@ class GoogleChatCards
 
     /**
      * "Tin bảo mật": one vendor security news item for the admin's news space, whether or not a team runs the
-     * technology, saying which teams do.
+     * technology, saying which teams do and the fixes the incident has.
      *
      * @param  Collection<int, Advisory>  $others  The incident's other pre-notices that count now.
      * @param  list<string>  $teams  The names of the teams running the technology.
+     * @param  array<string, string>  $patches  Branch => fixed version, for every branch the incident has a fix for.
      * @return array<string, mixed>
      */
-    public function securityNews(Incident $incident, Advisory $advisory, Collection $others, array $teams): array
+    public function securityNews(Incident $incident, Advisory $advisory, Collection $others, array $teams, array $patches = []): array
     {
         $technology = $advisory->technology;
 
         $widgets = $this->incidentWidgets($incident, $advisory, null, __('Hãng vừa đăng tin bảo mật về :technology.', ['technology' => $technology->getLabel()]));
 
-        $widgets[] = ['textParagraph' => ['text' => e($teams === []
-            ? __('Chưa team nào chạy :technology.', ['technology' => $technology->getLabel()])
-            : __('Team đang chạy :technology: :teams', ['technology' => $technology->getLabel(), 'teams' => implode(', ', $teams)]))]];
+        if ($patches !== []) {
+            $widgets[] = ['textParagraph' => ['text' => e(__('Bản vá: :patches', ['patches' => $this->patchList($patches)]))]];
+        }
+
+        $widgets[] = $this->teamsWidget($technology, $teams);
 
         return $this->card("news-{$advisory->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Tin bảo mật · :technology', ['technology' => $technology->getLabel()]), [
             ['widgets' => $widgets],
             ...$this->otherNoticesSection($others),
             ['widgets' => [$this->buttons(array_filter([__('Mở nguồn tin') => $advisory->url, __('Xem incident') => route('admin.incidents.show', $incident)], filled(...)))]],
         ], $advisory->severity);
+    }
+
+    /**
+     * "Đã có bản vá" for the admin's news space: a reply in the incident's thread when the vendor confirmed fixes the
+     * news did not tell, e.g. once Node.js adds the fixed versions to its pre-announcement. It names the pre-notice that
+     * gives them, with when it was first published and last updated.
+     *
+     * @param  Advisory  $advisory  The pre-notice that names the new fixes.
+     * @param  array<string, string>  $news  Branch => fixed version, for the fixes not told before.
+     * @param  array<string, string>  $patches  Branch => fixed version, for every branch the incident has a fix for.
+     * @param  list<string>  $teams  The names of the teams running the technology.
+     * @return array<string, mixed>
+     */
+    public function securityNewsPatches(Incident $incident, Advisory $advisory, array $news, array $patches, array $teams): array
+    {
+        $technology = $incident->technology;
+        $earlier = array_diff_key($patches, $news);
+
+        $widgets = array_values(array_filter([
+            ['textParagraph' => ['text' => '<b>'.e(__('Hãng đã xác nhận bản vá: :patches', ['patches' => $this->patchList($news)])).'</b>']],
+            $earlier === [] ? null : ['textParagraph' => ['text' => e(__('Bản vá đã báo trước đó: :patches', ['patches' => $this->patchList($earlier)]))]],
+            ['textParagraph' => ['text' => e(__('Có bản vá không có nghĩa service đã an toàn: chỉ an toàn sau khi nâng cấp.'))]],
+            ['textParagraph' => ['text' => e(implode(' · ', [__('Tin: :title', ['title' => $advisory->title]), ...$this->publishedFacts($advisory)]))]],
+            $this->teamsWidget($technology, $teams),
+        ]));
+
+        return $this->card("news-patch-{$incident->id}", $this->severityTitle($incident->severity, $incident->title), __('Đã có bản vá · :technology', ['technology' => $technology->getLabel()]), [
+            ['widgets' => $widgets],
+            ['widgets' => [$this->buttons(array_filter([__('Mở nguồn tin') => $advisory->url, __('Xem incident') => route('admin.incidents.show', $incident)], filled(...)))]],
+        ], $incident->severity);
+    }
+
+    /**
+     * @param  list<string>  $teams
+     * @return array<string, mixed>
+     */
+    private function teamsWidget(Technology $technology, array $teams): array
+    {
+        return ['textParagraph' => ['text' => e($teams === []
+            ? __('Chưa team nào chạy :technology.', ['technology' => $technology->getLabel()])
+            : __('Team đang chạy :technology: :teams', ['technology' => $technology->getLabel(), 'teams' => implode(', ', $teams)]))]];
+    }
+
+    /**
+     * E.g. "22 → 22.23.5 · 24 → 24.22.3".
+     *
+     * @param  array<string, string>  $patches  Branch => fixed version.
+     */
+    private function patchList(array $patches): string
+    {
+        return collect($patches)->map(fn (string $version, string $branch): string => "{$branch} → {$version}")->join(' · ');
+    }
+
+    /**
+     * When the pre-notice was first published and, when the vendor edited it since, last updated.
+     *
+     * @return list<string>
+     */
+    private function publishedFacts(Advisory $advisory): array
+    {
+        $first = $advisory->firstPublishedAt();
+        $updated = $advisory->updatedByVendorAt();
+
+        return array_values(array_filter([
+            $first === null ? null : __('Đăng lúc :time', ['time' => LocalTime::format($first)]),
+            $updated === null ? null : __('Cập nhật :time', ['time' => LocalTime::format($updated)]),
+        ]));
     }
 
     /**
@@ -434,7 +505,7 @@ class GoogleChatCards
 
         $facts = array_filter([
             __('Nguồn: :source', ['source' => $advisory->technology->releaseSourceLabel()]),
-            $advisory->published_at === null ? null : __('Đăng lúc :time', ['time' => LocalTime::format($advisory->published_at)]),
+            ...$this->publishedFacts($advisory),
             $advisory->cvss_score === null ? null : "CVSS {$advisory->cvss_score}",
             $advisory->severity_basis?->getLabel($advisory->technology),
         ]);
@@ -478,7 +549,7 @@ class GoogleChatCards
                 ->take($this->maxListedItems())
                 ->map(fn (Advisory $other): array => ['decoratedText' => array_filter([
                     'text' => e($this->severityTitle($other->severity, $other->title)),
-                    'bottomLabel' => $other->published_at === null ? null : __('Đăng lúc :time', ['time' => LocalTime::format($other->published_at)]),
+                    'bottomLabel' => implode(' · ', $this->publishedFacts($other)) ?: null,
                     'wrapText' => true,
                     'button' => filled($other->url) ? ['text' => __('Mở nguồn tin'), 'onClick' => ['openLink' => ['url' => $other->url]]] : null,
                 ])])

@@ -46,6 +46,7 @@ interface Notice {
     url: string | null;
     severity: Severity;
     published: string | null;
+    updated: string | null;
     affected_branches: string[];
     unaffected_branches: string[];
     patch_versions: string[];
@@ -121,6 +122,7 @@ interface RelatedFinding {
 
 interface Props {
     incident: IncidentSummary & {
+        updated: string | null;
         planned_release: string | null;
         affected_branches: string[];
         unaffected_branches: string[];
@@ -162,7 +164,13 @@ export default function IncidentsShow({ incident, notices, suggestions, teams, f
                 <CardBody>
                     {incident.lead_notice && <LeadNotice notice={incident.lead_notice} isDismissed={incident.is_dismissed} />}
                     <dl className="grid grid-cols-3 gap-x-6 gap-y-5 max-lg:grid-cols-2 max-sm:grid-cols-1">
-                        {incident.is_dismissed ? <Detail label={t('Đăng lúc')}>{incident.first_published ?? '—'}</Detail> : <SecurityDetails incident={incident} />}
+                        {incident.is_dismissed ? (
+                            <Detail label={t('Đăng lúc')}>
+                                <PublishedAt published={incident.first_published} updated={incident.updated} />
+                            </Detail>
+                        ) : (
+                            <SecurityDetails incident={incident} />
+                        )}
                         {incident.merged_from.length > 0 && (
                             <Detail label={t('Đã gộp vào đây')}>{incident.merged_from.map((merged) => `#${merged.id} ${merged.title}`).join(' · ')}</Detail>
                         )}
@@ -205,7 +213,9 @@ function SecurityDetails({ incident }: { incident: Props['incident'] }) {
             >
                 <FixStatus incident={incident} />
             </Detail>
-            <Detail label={t('Đăng lúc')}>{incident.first_published ?? '—'}</Detail>
+            <Detail label={t('Đăng lúc')} hint={t('Ngày hãng đăng tin lần đầu. Hãng có thể sửa lại tin sau đó (vd. Node.js thêm bản vá vào tin báo trước và đổi ngày đăng): “Cập nhật” là lúc hệ thống thấy tin đổi.')}>
+                <PublishedAt published={incident.first_published} updated={incident.updated} />
+            </Detail>
             <Detail
                 label={t('Nhánh bị ảnh hưởng')}
                 hint={t('Các nhánh mà tin trên trang chính thức ghi rõ là bị ảnh hưởng. Trống khi tin không nêu nhánh nào; danh sách bản vá không được tính là danh sách nhánh.')}
@@ -257,6 +267,18 @@ function LeadNotice({ notice, isDismissed }: { notice: NonNullable<Props['incide
                 </p>
             )}
         </div>
+    );
+}
+
+/** When a notice was first published, then when its vendor last updated it, if it did. */
+function PublishedAt({ published, updated }: { published: string | null; updated: string | null }) {
+    const t = useTranslation();
+
+    return (
+        <>
+            {published ?? '—'}
+            {updated && <span className="block text-sm text-muted-foreground">{t('Cập nhật :time', { time: updated })}</span>}
+        </>
     );
 }
 
@@ -871,7 +893,9 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                                     </span>
                                 )}
                             </Td>
-                            <Td className="align-top text-sm whitespace-nowrap text-muted-foreground tabular-nums">{notice.published ?? '—'}</Td>
+                            <Td className="align-top text-sm whitespace-nowrap text-muted-foreground tabular-nums">
+                                <PublishedAt published={notice.published} updated={notice.updated} />
+                            </Td>
                             <Td className="align-top text-sm">
                                 {notice.affected_branches.length > 0 && <span className="block">{t('Ảnh hưởng: :branches', { branches: notice.affected_branches.join(', ') })}</span>}
                                 {notice.unaffected_branches.length > 0 && (
