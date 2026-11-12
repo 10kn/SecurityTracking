@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A repository the GitHub App may read, e.g. "acme/shop". The list only changes when an admin refreshes it
- * (SyncAccessibleRepositories); a service keeps its repository when the repository later leaves the list.
+ * A repository the GitHub App may read, e.g. "acme/shop". The list only changes when an admin refreshes it, or an
+ * import file names a repository it does not have (SyncAccessibleRepositories); a service keeps its repository when the repository later leaves the list.
  */
 #[Fillable(['full_name', 'default_branch', 'is_private'])]
 class AccessibleRepository extends Model

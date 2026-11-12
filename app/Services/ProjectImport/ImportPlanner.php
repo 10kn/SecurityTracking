@@ -2,6 +2,7 @@
 
 namespace App\Services\ProjectImport;
 
+use App\Actions\SyncAccessibleRepositories;
 use App\Enums\Exposure;
 use App\Enums\ImportRowStatus;
 use App\Enums\Locale;
@@ -30,7 +31,9 @@ use Throwable;
  * - a service is named after its repository, with the directory for one of a monorepo, e.g. "shop (apps/api)";
  * - slugs come from the names, with "-2", "-3"… when taken, e.g. "shop-apps-api" for "shop (apps/api)";
  * - a service whose repository and directory, or whose name, its project already has is skipped, nothing existing is
- *   changed.
+ *   changed;
+ * - a repository missing from the list the GitHub App reads refreshes the list from GitHub first, once per check, so a
+ *   repository the App was given since the last refresh is found.
  *
  * Dropdown values are read in any language of the application, or as their stored value, e.g. "server".
  */
@@ -62,10 +65,13 @@ class ImportPlanner
     /** @var array<string, string> Full names keyed by their lowercase form, e.g. "acme/shop". */
     private array $repositories = [];
 
+    /** Why the repository list could not be refreshed from GitHub; null when it was, or did not need to be. */
+    private ?string $repositorySyncProblem = null;
+
     /** @var array<string, string|null> What is wrong with a branch, keyed by "repository#branch"; null when it exists. */
     private array $branchProblems = [];
 
-    public function __construct(private RepositoryReader $repositoryReader) {}
+    public function __construct(private RepositoryReader $repositoryReader, private SyncAccessibleRepositories $syncAccessibleRepositories) {}
 
     /**
      * @param  list<array{row: int, cells: array<string, string>}>  $rows  As read by ImportSheetReader.
@@ -73,6 +79,7 @@ class ImportPlanner
     public function plan(array $rows): ImportPlan
     {
         $this->load();
+        $this->syncRepositoriesWhenMissing($rows);
 
         $checkedRows = array_map(fn (array $row): array => $this->check($row['row'], $row['cells']), $rows);
 
@@ -94,7 +101,50 @@ class ImportPlanner
         $this->exposures = self::labelMap(Exposure::cases());
         $this->operatingSystems = self::labelMap(OperatingSystem::cases());
         $this->technologies = self::labelMap(Technology::cases());
+        $this->repositorySyncProblem = null;
+        $this->loadRepositories();
+    }
+
+    private function loadRepositories(): void
+    {
         $this->repositories = AccessibleRepository::pluck('full_name')->keyBy(fn (string $fullName): string => mb_strtolower($fullName))->all();
+    }
+
+    /**
+     * Refreshes the repository list from GitHub when a row names a repository it does not have yet, before any row is
+     * checked against it.
+     *
+     * @param  list<array{row: int, cells: array<string, string>}>  $rows
+     */
+    private function syncRepositoriesWhenMissing(array $rows): void
+    {
+        $isMissing = function (array $row): bool {
+            $repository = GitHubRepository::fromUrl($row['cells'][ImportSheet::REPOSITORY] ?? '');
+
+            return $repository !== null && ! isset($this->repositories[mb_strtolower("{$repository->owner}/{$repository->name}")]);
+        };
+
+        if (array_filter($rows, $isMissing) === []) {
+            return;
+        }
+
+        if (! $this->repositoryReader->isConfigured()) {
+            $this->repositorySyncProblem = __('Server chưa cấu hình GitHub App nên không làm mới được danh sách repository.');
+
+            return;
+        }
+
+        try {
+            $this->syncAccessibleRepositories->handle();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $this->repositorySyncProblem = __('Không làm mới được danh sách repository từ :source, thử lại sau: :error', ['source' => $this->repositoryReader->sourceName(), 'error' => $exception->getMessage()]);
+
+            return;
+        }
+
+        $this->loadRepositories();
     }
 
     /**
@@ -363,7 +413,9 @@ class ImportPlanner
         $fullName = $this->repositories[mb_strtolower("{$repository->owner}/{$repository->name}")] ?? null;
 
         if ($fullName === null) {
-            $errors[] = __('Repository :repository không có trong danh sách GitHub App được đọc. Làm mới danh sách ở form service rồi import lại.', ['repository' => "{$repository->owner}/{$repository->name}"]);
+            $errors[] = $this->repositorySyncProblem === null
+                ? __('GitHub App không đọc được repository :repository. Cấp quyền cho GitHub App với repository này rồi tải lại trang.', ['repository' => "{$repository->owner}/{$repository->name}"])
+                : __('Repository :repository chưa có trong danh sách GitHub App được đọc. :problem', ['repository' => "{$repository->owner}/{$repository->name}", 'problem' => $this->repositorySyncProblem]);
         }
 
         return $fullName;

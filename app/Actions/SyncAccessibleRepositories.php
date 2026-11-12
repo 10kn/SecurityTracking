@@ -9,8 +9,8 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Replaces the list of repositories a service can pick with the ones the GitHub App may read now. Runs only when an
- * admin asks for it, from the service form.
+ * Replaces the list of repositories a service can pick with the ones the GitHub App may read now. Runs when an
+ * admin asks for it from the service form, and when an import file names a repository the list does not have yet.
  */
 class SyncAccessibleRepositories
 {

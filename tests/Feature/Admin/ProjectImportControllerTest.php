@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
@@ -213,7 +214,7 @@ it('shows what is wrong with each row and allows no import until it is fixed', f
             ])
             ->where('rows.2.errors', ['"Java" không có trong danh sách Công nghệ 1.', 'Thiếu Version 2 của Ruby.'])
             ->where('rows.3.errors', ['Không đọc được repository "https://gitlab.com/acme/shop". Ghi link dạng https://github.com/acme/shop hoặc owner/repo.'])
-            ->where('rows.4.errors', ['Repository acme/secret không có trong danh sách GitHub App được đọc. Làm mới danh sách ở form service rồi import lại.'])
+            ->where('rows.4.errors', ['Repository acme/secret chưa có trong danh sách GitHub App được đọc. Server chưa cấu hình GitHub App nên không làm mới được danh sách repository.'])
             ->where('rows.5.errors', ['Tên branch không hợp lệ.'])
             ->where('rows.6.errors', ['Trùng repository và thư mục với dòng 4.']));
 
@@ -260,6 +261,67 @@ it('takes a repository link and checks its branch on github once', function () {
             ->where('rows.2.errors', ['Không thấy branch gone trong Acme/Shop.']));
 
     Http::assertSentCount(3);
+});
+
+it('refreshes the repository list from github before checking a repository it does not have yet', function () {
+    actingAsAdmin();
+    Team::factory()->create(['name' => 'Commerce']);
+    accessibleRepositories('acme/api', 'acme/revoked');
+    Http::fake(['https://api.github.com/installation/repositories*' => Http::response(['total_count' => 2, 'repositories' => [
+        ['full_name' => 'acme/api', 'default_branch' => 'main', 'private' => true],
+        ['full_name' => 'Acme/New-Shop', 'default_branch' => 'main', 'private' => true],
+    ]])]);
+    fakeGitHub();
+    config(['inertia.ssr.enabled' => false]);
+
+    $import = uploadImport([
+        importRow(),
+        importRow([ImportSheet::REPOSITORY => 'https://github.com/acme/new-shop']),
+        importRow([ImportSheet::REPOSITORY => 'acme/secret']),
+    ]);
+
+    get("/admin/project-imports/{$import}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('rows.0.errors', [])
+            ->where('rows.1.service', 'New-Shop')
+            ->where('rows.1.errors', [])
+            ->where('rows.2.errors', ['GitHub App không đọc được repository acme/secret. Cấp quyền cho GitHub App với repository này rồi tải lại trang.']));
+
+    expect(AccessibleRepository::orderBy('full_name')->pluck('full_name')->all())->toBe(['Acme/New-Shop', 'acme/api']);
+    Http::assertSentCount(2);
+});
+
+it('does not ask github for the repository list when the file names only repositories it has', function () {
+    actingAsAdmin();
+    Team::factory()->create(['name' => 'Commerce']);
+    accessibleRepositories('acme/api');
+    fakeGitHub();
+    config(['inertia.ssr.enabled' => false]);
+
+    $import = uploadImport([importRow()]);
+
+    get("/admin/project-imports/{$import}")->assertInertia(fn (Assert $page) => $page->where('rows.0.errors', []));
+
+    Http::assertNothingSent();
+});
+
+it('keeps the repository list and says why when github cannot be reached to refresh it', function () {
+    actingAsAdmin();
+    Sleep::fake();
+    Team::factory()->create(['name' => 'Commerce']);
+    accessibleRepositories('acme/api');
+    Http::fake(['https://api.github.com/installation/repositories*' => Http::response('Service Unavailable', 503)]);
+    fakeGitHub();
+    config(['inertia.ssr.enabled' => false]);
+
+    $import = uploadImport([importRow(), importRow([ImportSheet::REPOSITORY => 'acme/new-shop'])]);
+
+    get("/admin/project-imports/{$import}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('rows.0.errors', [])
+            ->where('rows.1.errors.0', fn (string $error): bool => str_starts_with($error, 'Repository acme/new-shop chưa có trong danh sách GitHub App được đọc. Không làm mới được danh sách repository từ GitHub, thử lại sau: ')));
+
+    expect(AccessibleRepository::pluck('full_name')->all())->toBe(['acme/api']);
 });
 
 it('creates the projects and services of a file without errors all at once', function () {
