@@ -6,7 +6,8 @@ use App\Enums\Technology;
 
 /**
  * https://cache.ruby-lang.org/pub/ruby/index.txt lists every Ruby tarball. It does not say which releases are security
- * fixes, so `isSecurityRelease` stays null. Previews and release candidates are skipped.
+ * fixes, so `isSecurityRelease` stays null and a fix is confirmed by the ruby-lang.org pre-notice that names it. Previews
+ * and release candidates are skipped.
  */
 class RubyLangReleaseFeed implements ReleaseFeed
 {
@@ -23,5 +24,10 @@ class RubyLangReleaseFeed implements ReleaseFeed
         }
 
         return array_map(fn (string $version): ReleaseData => new ReleaseData($version), array_keys($versions));
+    }
+
+    public static function flagsSecurityReleases(): bool
+    {
+        return false;
     }
 }

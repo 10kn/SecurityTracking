@@ -9,6 +9,7 @@ use App\Models\Advisory;
 use App\Models\Incident;
 use App\Models\Runtime;
 use App\Models\RuntimeBranch;
+use App\Models\RuntimeRelease;
 
 it('confirms a branch only when the vendor names it, rules one out only when the vendor says so, and never rules out an end-of-life branch', function (?string $branch, string $version, RuntimeStatus $status, IncidentScope $scope) {
     $incident = Incident::factory()->make(['affected_branches' => ['8.3', '8.4'], 'unaffected_branches' => ['8.5', '8.1']]);
@@ -107,4 +108,29 @@ it('derives itself from its pre-notices that were not dismissed, and moves chang
     $second->update(['severity' => Severity::Critical]);
 
     expect($incident->refresh())->severity->toBe(Severity::Critical)->changed_at->toDateTimeString()->toBe(now()->toDateTimeString());
+});
+
+it('takes the version a pre-notice names for the fix when the catalog lists it as a security release, or lists it unflagged for a technology whose source does not say', function (Technology $technology, string $branch, string $version, ?bool $isSecurityRelease, bool $isConfirmed) {
+    RuntimeRelease::factory()->create(['technology' => $technology, 'branch' => $branch, 'version' => $version, 'is_security_release' => $isSecurityRelease]);
+    $incident = Incident::factory()->create(['technology' => $technology]);
+    Advisory::factory()->preNotice($technology)->create(['incident_id' => $incident->id, 'patch_versions' => [$version]]);
+
+    expect(array_map(fn (array $patch): string => $patch['version'], $incident->confirmedPatches()))->toBe($isConfirmed ? [$branch => $version] : []);
+})->with([
+    'Ruby, the source does not say' => [Technology::Ruby, '4.0', '4.0.9', null, true],
+    'Ruby, a security release' => [Technology::Ruby, '4.0', '4.0.9', true, true],
+    'Ruby, said not to be a security release' => [Technology::Ruby, '4.0', '4.0.9', false, false],
+    'PHP, the flag is missing' => [Technology::Php, '8.3', '8.3.36', null, false],
+    'PHP, a security release' => [Technology::Php, '8.3', '8.3.36', true, true],
+    'Node.js, the flag is missing' => [Technology::Nodejs, '22', '22.20.1', null, false],
+    'Node.js, a security release' => [Technology::Nodejs, '22', '22.20.1', true, true],
+]);
+
+it('confirms no Ruby fix from a version the catalog does not list, such as a gem\'s, nor from a dismissed pre-notice', function () {
+    RuntimeRelease::factory()->create(['technology' => Technology::Ruby, 'branch' => '4.0', 'version' => '4.0.9', 'is_security_release' => null]);
+    $incident = Incident::factory()->create(['technology' => Technology::Ruby]);
+    Advisory::factory()->preNotice(Technology::Ruby)->create(['incident_id' => $incident->id, 'patch_versions' => ['0.7.2', '0.3.2']]);
+    Advisory::factory()->preNotice(Technology::Ruby)->create(['incident_id' => $incident->id, 'patch_versions' => ['4.0.9'], 'is_dismissed' => true]);
+
+    expect($incident->confirmedPatches())->toBe([]);
 });

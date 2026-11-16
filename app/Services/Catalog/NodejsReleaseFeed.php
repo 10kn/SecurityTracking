@@ -23,4 +23,9 @@ class NodejsReleaseFeed implements ReleaseFeed
             releasedAt: isset($release['date']) ? CarbonImmutable::parse($release['date']) : null,
         ), $releases);
     }
+
+    public static function flagsSecurityReleases(): bool
+    {
+        return true;
+    }
 }

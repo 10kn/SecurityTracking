@@ -33,4 +33,9 @@ class PhpNetReleaseFeed implements ReleaseFeed
 
         return $releases;
     }
+
+    public static function flagsSecurityReleases(): bool
+    {
+        return true;
+    }
 }

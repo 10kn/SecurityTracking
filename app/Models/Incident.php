@@ -274,7 +274,7 @@ class Incident extends Model
     /**
      * The branches the vendor has a fix for: the classifier read in a pre-notice of the incident that was not dismissed
      * that the version is the one to update to (`patch_versions`), and the catalog lists that version as a security
-     * release of the branch. A pre-notice limited to some operating systems confirms no fix: a Windows build such as
+     * release of the branch (see securityReleases()). A pre-notice limited to some operating systems confirms no fix: a Windows build such as
      * 8.4.27-1 does not fix 8.4 on Linux, and the catalog's 8.4.27 is not that build. The highest such version of each branch, with the pre-notice that named it. Given the
      * incident's pre-notices, it reads them instead of loading them again; given the security releases (version =>
      * branch, e.g. read once for several incidents of the technology), it reads those too.
@@ -313,7 +313,10 @@ class Incident extends Model
     }
 
     /**
-     * The security releases of the technology among the versions, version => branch.
+     * The security releases of the technology among the versions, version => branch. For a technology whose catalog
+     * source does not say which releases fix vulnerabilities (see ReleaseFeed::flagsSecurityReleases()), a release it
+     * lists without the flag counts too: the versions are those a vendor's pre-notice names as the fix. A release the
+     * source says is not a security release never counts.
      *
      * @param  list<string>  $versions
      * @return Collection<string, string>
@@ -325,7 +328,9 @@ class Incident extends Model
         }
 
         return RuntimeRelease::where('technology', $technology)
-            ->where('is_security_release', true)
+            ->where(fn (Builder $query): Builder => $technology->releaseFeed()::flagsSecurityReleases()
+                ? $query->where('is_security_release', true)
+                : $query->where('is_security_release', true)->orWhereNull('is_security_release'))
             ->whereIn('version', $versions)
             ->pluck('branch', 'version');
     }
