@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\Locale;
 use App\Enums\Severity;
 use App\Http\Controllers\Controller;
+use App\Services\Notices\NodejsNoticeFeed;
+use App\Services\Notices\PhpNetNoticeFeed;
+use App\Services\Notices\RubyLangNoticeFeed;
 use Carbon\CarbonImmutable;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -24,6 +27,11 @@ class GuideController extends Controller
 
         return Inertia::render('guide/index', [
             'timezone' => Locale::current()->timezoneLabel(),
+            'vendor_sources' => [
+                ['key' => 'php', 'name' => 'PHP', 'website_url' => 'https://www.php.net/', 'feed_url' => PhpNetNoticeFeed::URL],
+                ['key' => 'nodejs', 'name' => 'Node.js', 'website_url' => 'https://nodejs.org/en/blog/vulnerability', 'feed_url' => NodejsNoticeFeed::URL],
+                ['key' => 'ruby', 'name' => 'Ruby', 'website_url' => 'https://www.ruby-lang.org/en/news/', 'feed_url' => RubyLangNoticeFeed::URL],
+            ],
             'schedule' => [
                 $this->repeating('notices', 15),
                 $this->repeating('catalog', 60),

@@ -1,0 +1,345 @@
+.guide-diagram {
+    position: relative;
+    min-width: 1040px;
+    aspect-ratio: 1120 / 648;
+}
+
+.guide-connections {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.guide-edge {
+    fill: none;
+    stroke: var(--border-strong);
+    stroke-width: 1.7;
+    stroke-dasharray: 5 7;
+    animation: guide-flow 1.8s linear infinite;
+}
+
+.guide-edge.is-active {
+    stroke: var(--link);
+    stroke-width: 2.4;
+    animation-duration: 0.9s;
+}
+
+.guide-unused {
+    opacity: 0.4;
+}
+
+.guide-edge-label {
+    fill: var(--text-3);
+    font-size: 14px;
+    paint-order: stroke;
+    stroke: var(--surface);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+}
+
+.guide-node {
+    position: absolute;
+    display: flex;
+    width: 180px;
+    transform: translate(-50%, -36px);
+    flex-direction: column;
+    align-items: center;
+    background: transparent;
+    color: var(--text-2);
+    text-align: center;
+}
+
+.guide-node,
+.guide-node:focus,
+.guide-node:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+.guide-node-circle,
+.guide-source-circle {
+    position: relative;
+    display: grid;
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+    place-items: center;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--text-2);
+}
+
+.guide-node:hover .guide-node-circle,
+.guide-node.is-current .guide-node-circle {
+    border-color: var(--link);
+    background: var(--primary-soft);
+    color: var(--link);
+}
+
+.guide-node:focus-visible .guide-node-circle,
+.guide-source:focus-visible .guide-source-circle {
+    border-color: var(--text-2);
+    border-style: dashed;
+    border-width: 2px;
+}
+
+.guide-node.is-off {
+    opacity: 0.5;
+}
+.guide-mechanism {
+    width: 42px;
+    height: 42px;
+    stroke-width: 1.5;
+}
+.guide-node-label {
+    margin-top: 12px;
+    font-size: var(--fs-base);
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text);
+}
+.guide-node-sub {
+    margin-top: 4px;
+    font-size: var(--fs-xs);
+    line-height: 1.4;
+    color: var(--text-3);
+}
+
+.guide-source {
+    top: 0;
+    left: calc(20 / 1120 * 100%);
+    width: calc(240 / 1120 * 100%);
+    height: 150px;
+    transform: none;
+}
+
+.guide-source .guide-node-label {
+    margin-top: 0;
+}
+.guide-feeds {
+    display: flex;
+    width: 100%;
+    margin-top: 8px;
+    justify-content: space-around;
+}
+.guide-feed {
+    display: flex;
+    width: 80px;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    font-size: var(--fs-xs);
+    line-height: 1.2;
+}
+.guide-source-circle {
+    width: 46px;
+    height: 46px;
+}
+.guide-source-circle svg {
+    width: 26px;
+    height: 26px;
+    stroke-width: 1.5;
+}
+.guide-check {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--link);
+}
+.guide-check svg {
+    width: 13px;
+    height: 13px;
+}
+.guide-cron {
+    position: absolute;
+    top: calc(195 / 648 * 100%);
+    left: calc(40 / 1120 * 100%);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-3);
+    font-size: var(--fs-xs);
+}
+.guide-cron svg {
+    width: 22px;
+    height: 22px;
+    padding: 3px;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+}
+
+.guide-packet {
+    pointer-events: none;
+}
+.guide-packet rect {
+    fill: var(--surface);
+    stroke: var(--border-strong);
+    stroke-width: 1.5;
+}
+.guide-packet .guide-packet-back {
+    fill: var(--surface-2);
+}
+.guide-packet circle,
+.guide-source-packet {
+    fill: var(--orange);
+    stroke: var(--surface);
+    stroke-width: 1.5;
+}
+.guide-packet text {
+    fill: var(--link);
+    font-family: var(--font-code);
+    font-size: 14px;
+}
+
+.guide-grains {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.guide-grains i {
+    position: absolute;
+    top: 10px;
+    left: 24px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--orange);
+    opacity: 0;
+}
+.guide-grains i:nth-child(2) {
+    left: 33px;
+    animation-delay: 0.15s !important;
+}
+.guide-grains i:nth-child(3) {
+    left: 42px;
+    animation-delay: 0.3s !important;
+}
+.guide-scan {
+    position: absolute;
+    top: 24px;
+    left: 25px;
+    width: 17px;
+    border-top: 2px solid var(--link);
+    opacity: 0;
+    pointer-events: none;
+}
+.is-processing .guide-grains i {
+    animation: guide-grain 0.65s ease-in infinite;
+}
+.is-processing .guide-classify-icon {
+    animation: guide-stamp 0.65s ease-in-out infinite alternate;
+}
+.is-processing .guide-scan {
+    opacity: 1;
+    animation: guide-scan 0.6s ease-in-out infinite alternate;
+}
+.is-processing .guide-immediate-icon {
+    animation: guide-stamp 0.65s ease-in-out infinite alternate;
+}
+.is-processing .guide-digest-icon {
+    animation: guide-stack 0.7s ease-out infinite;
+}
+.is-processing .guide-webhook-icon {
+    animation: guide-send 0.65s ease-in-out infinite;
+}
+.is-processing .guide-team-icon {
+    animation: guide-stack 0.7s ease-out infinite;
+}
+.is-processing .guide-admin-icon {
+    animation: guide-stamp 0.65s ease-in-out infinite alternate;
+}
+.guide-diagram[data-playing='false'] .is-processing * {
+    animation-play-state: paused !important;
+}
+
+@keyframes guide-flow {
+    to {
+        stroke-dashoffset: -24;
+    }
+}
+@keyframes guide-grain {
+    0% {
+        transform: translateY(-6px);
+        opacity: 0;
+    }
+    25% {
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(23px);
+        opacity: 0;
+    }
+}
+@keyframes guide-stamp {
+    from {
+        transform: scale(0.94) rotate(-4deg);
+    }
+    to {
+        transform: scale(1.03) rotate(0);
+    }
+}
+@keyframes guide-scan {
+    from {
+        transform: translateY(-5px);
+    }
+    to {
+        transform: translateY(9px);
+    }
+}
+@keyframes guide-stack {
+    0% {
+        transform: translate(3px, -5px);
+        opacity: 0.5;
+    }
+    70%,
+    100% {
+        transform: translate(0, 0);
+        opacity: 1;
+    }
+}
+@keyframes guide-send {
+    0% {
+        transform: translateX(-4px);
+        opacity: 0.5;
+    }
+    70%,
+    100% {
+        transform: translateX(4px);
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .guide-diagram * {
+        animation: none !important;
+    }
+    .guide-grains i,
+    .guide-scan {
+        opacity: 0 !important;
+    }
+}
+
+.guide-feed {
+    outline: none;
+}
+.guide-feed:hover .guide-source-circle,
+.guide-feed[aria-expanded='true'] .guide-source-circle {
+    border-color: var(--link);
+    color: var(--link);
+    background: var(--primary-soft);
+}
+.guide-feed:focus-visible .guide-source-circle {
+    border-color: var(--text-2);
+    border-style: dashed;
+    border-width: 2px;
+}
