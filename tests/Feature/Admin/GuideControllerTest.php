@@ -41,3 +41,14 @@ it('shows the alert policy as it is set now', function () {
 it('sends a guest to the login page', function () {
     get('/admin/guide')->assertRedirect('/admin/login');
 });
+
+it('shows the official news pages and the feeds polled for each vendor', function () {
+    actingAsAdmin();
+
+    get('/admin/guide')->assertInertia(fn (Assert $page) => $page
+        ->where('vendor_sources', [
+            ['key' => 'php', 'name' => 'PHP', 'website_url' => 'https://www.php.net/', 'feed_url' => 'https://www.php.net/feed.atom'],
+            ['key' => 'nodejs', 'name' => 'Node.js', 'website_url' => 'https://nodejs.org/en/blog/vulnerability', 'feed_url' => 'https://nodejs.org/en/feed/vulnerability.xml'],
+            ['key' => 'ruby', 'name' => 'Ruby', 'website_url' => 'https://www.ruby-lang.org/en/news/', 'feed_url' => 'https://www.ruby-lang.org/en/feeds/news.rss'],
+        ]));
+});
