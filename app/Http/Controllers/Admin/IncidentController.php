@@ -232,7 +232,8 @@ class IncidentController extends Controller
      * is none. Whether the incident is too old for reminders is a mark of its own, beside the fix status.
      *
      * The teams told (a card was queued) and those Google Chat accepted a message of the current thread for are
-     * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again.
+     * counted apart; `has_delivery_failures` when a message of a current thread failed and was not sent again, an
+     * alert an admin's "Không" withholds aside (see IncidentOverview::withholding()).
      * `is_dismissed` when the classifier dismissed every pre-notice as not security news: one it has not read yet is
      * dismissed too while it waits for it (see SyncNoticeFeed), which is no verdict.
      * `is_known_exploited` while CISA KEV still lists a CVE of a pre-notice that is not dismissed; one it removed
@@ -375,8 +376,8 @@ class IncidentController extends Controller
             'is_told' => $team['is_told'],
             'is_actionable' => $team['is_actionable'],
             'needs_acknowledgement' => $team['needs_acknowledgement'],
-            'thread' => $this->thread($row, $team['delivery']['is_webhook_changed']),
-            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row, $row?->isRuledOut($team['exposure']) === true) : null,
+            'thread' => $this->thread($row, $team['delivery']['is_webhook_changed'], $team['is_ruled_out']),
+            'delivery' => $team['is_told'] || $team['delivery']['has_messages'] ? $this->delivery($team['delivery'], $row, $team['is_ruled_out']) : null,
             'assessment' => $row?->impact === null ? null : [
                 'impact' => ['value' => $row->impact->value, 'label' => $row->impact->getLabel()],
                 'note' => $row->impact_note,
@@ -466,11 +467,13 @@ class IncidentController extends Controller
 
     /**
      * The team's Google Chat thread of the incident, with a link once Google named it. A thread of the webhook the team
-     * no longer posts to is shown as the old one: the next message opens a new thread.
+     * no longer posts to is shown as the old one: the next message opens a new thread. An opening alert that failed
+     * while an admin's "Không" for the team holds is withheld, not failed (see isWithheld()).
      *
+     * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
      * @return array{status: array{label: string, tone: string}, url: string|null, is_old: bool}
      */
-    private function thread(?IncidentTeam $row, bool $isWebhookChanged): array
+    private function thread(?IncidentTeam $row, bool $isWebhookChanged, bool $isRuledOut): array
     {
         $opener = $row?->openingNotification;
 
@@ -478,6 +481,7 @@ class IncidentController extends Controller
             $row === null || ! $row->hasThread() => ['label' => __('Chưa có thread'), 'tone' => 'unknown'],
             $isWebhookChanged => ['label' => __('Thread của webhook cũ'), 'tone' => 'unknown'],
             $row->thread_name !== null => ['label' => __('Đã mở thread'), 'tone' => 'success'],
+            $opener instanceof ChatNotification && $this->isWithheld($opener, $isRuledOut) => ['label' => __('Không gửi'), 'tone' => 'neutral'],
             $opener instanceof ChatNotification && $opener->failed_at !== null => ['label' => __('Gửi lỗi'), 'tone' => 'danger'],
             default => ['label' => __('Đang gửi'), 'tone' => 'warning'],
         };
@@ -490,8 +494,9 @@ class IncidentController extends Controller
      * opener), the last one it accepted, and each message that failed and was not sent again, with the command that
      * sends it again. "Đã gửi" says Google Chat accepted the message, not that anyone read it. A team told before
      * incident threads, or with no message in its current thread, shows what cannot be told from here. While an admin's
-     * "Không" for the team holds, its failed alerts get no command: psm:resend-notification would not send them (see
-     * ChatNotification::isWithheldByAssessment()); a failed admin update still does.
+     * "Không" for the team holds, its failed alerts are withheld, counted apart from the failures and with no command:
+     * psm:resend-notification would not send them (see ChatNotification::isWithheldByAssessment()); a failed admin
+     * update still fails and gets one.
      *
      * @param  Delivery  $delivery
      * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
@@ -500,16 +505,17 @@ class IncidentController extends Controller
     private function delivery(array $delivery, ?IncidentTeam $row, bool $isRuledOut): array
     {
         return [
-            'opener' => $this->messageStatus($delivery['opener']),
-            'latest' => $delivery['latest']?->id === $delivery['opener']?->id ? null : $this->messageStatus($delivery['latest']),
+            'opener' => $this->messageStatus($delivery['opener'], $isRuledOut),
+            'latest' => $delivery['latest']?->id === $delivery['opener']?->id ? null : $this->messageStatus($delivery['latest'], $isRuledOut),
             'last_sent' => LocalTime::format($delivery['last_sent_at']),
             'failures_count' => $delivery['failures_count'],
+            'withheld_count' => $delivery['withheld_count'],
             'pending_count' => $delivery['pending_count'],
             'failures' => $delivery['failures']->take(IncidentOverview::FAILURES_SHOWN)->map(fn (ChatNotification $notification): array => [
                 'id' => $notification->id,
                 'error' => Str::limit((string) $notification->last_error, 160),
                 'failed' => LocalTime::format($notification->failed_at),
-                'command' => $isRuledOut && $notification->kind === ChatNotificationKind::PreNotice ? null : "php artisan psm:resend-notification {$notification->id}",
+                'command' => $this->isWithheld($notification, $isRuledOut) ? null : "php artisan psm:resend-notification {$notification->id}",
             ])->values()->all(),
             'limit' => match (true) {
                 $delivery['is_webhook_changed'] => __('Webhook của team đã đổi: dữ liệu thread cũ không tính cho webhook hiện tại; tin tiếp theo sẽ mở thread mới.'),
@@ -539,13 +545,23 @@ class IncidentController extends Controller
     }
 
     /**
+     * Whether the message is a failed alert an admin's "Không" for the team keeps from being sent again.
+     */
+    private function isWithheld(ChatNotification $notification, bool $isRuledOut): bool
+    {
+        return $isRuledOut && $notification->kind === ChatNotificationKind::PreNotice && $notification->failed_at !== null && $notification->sent_at === null;
+    }
+
+    /**
+     * @param  bool  $isRuledOut  Whether an admin's "Không" for the team still holds (see IncidentTeam::isRuledOut()).
      * @return array{label: string, tone: string, at: string|null}|null
      */
-    private function messageStatus(?ChatNotification $notification): ?array
+    private function messageStatus(?ChatNotification $notification, bool $isRuledOut): ?array
     {
         return match (true) {
             $notification === null => null,
             $notification->sent_at !== null => ['label' => __('Đã gửi'), 'tone' => 'success', 'at' => LocalTime::format($notification->sent_at)],
+            $this->isWithheld($notification, $isRuledOut) => ['label' => __('Không gửi'), 'tone' => 'neutral', 'at' => LocalTime::format($notification->failed_at)],
             $notification->failed_at !== null => ['label' => __('Gửi lỗi'), 'tone' => 'danger', 'at' => LocalTime::format($notification->failed_at)],
             default => ['label' => __('Đang chờ gửi'), 'tone' => 'warning', 'at' => LocalTime::format($notification->created_at)],
         };

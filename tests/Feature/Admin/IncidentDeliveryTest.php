@@ -103,6 +103,8 @@ it('offers no resend of a failed alert while the admin ruling the team out holds
     $row = assessIncident($this->incident, $this->commerce, IncidentImpact::No);
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.failures_count', 1)
+        ->where('teams.0.delivery.withheld_count', 1)
         ->where('teams.0.delivery.failures.0.id', $alert->id)
         ->where('teams.0.delivery.failures.0.command', null)
         ->where('teams.0.delivery.failures.1.id', $update->id)
@@ -113,7 +115,28 @@ it('offers no resend of a failed alert while the admin ruling the team out holds
     expect($row->refresh()->impact)->toBe(IncidentImpact::No);
 
     get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.delivery.failures_count', 2)
+        ->where('teams.0.delivery.withheld_count', 0)
         ->where('teams.0.delivery.failures.0.command', "php artisan psm:resend-notification {$alert->id}"));
+});
+
+it('shows an opening alert the admin then ruled the team out of as withheld, not as a delivery failure', function () {
+    actingAsAdmin();
+    $this->opener->update(['sent_at' => null, 'failed_at' => now(), 'last_error' => 'Team chưa có webhook.']);
+    $this->row->update(['thread_name' => null]);
+
+    get('/admin/incidents')->assertInertia(fn (Assert $page) => $page->where('incidents.data.0.has_delivery_failures', true));
+
+    assessIncident($this->incident, $this->commerce, IncidentImpact::No);
+
+    get('/admin/incidents')->assertInertia(fn (Assert $page) => $page->where('incidents.data.0.has_delivery_failures', false));
+    get("/admin/incidents/{$this->incident->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('teams.0.thread.status', ['label' => 'Không gửi', 'tone' => 'neutral'])
+        ->where('teams.0.delivery.opener', ['label' => 'Không gửi', 'tone' => 'neutral', 'at' => '21/10/2026 04:00 GMT+7'])
+        ->where('teams.0.delivery.failures_count', 0)
+        ->where('teams.0.delivery.withheld_count', 1)
+        ->where('teams.0.delivery.failures.0.id', $this->opener->id)
+        ->where('teams.0.delivery.failures.0.command', null));
 });
 
 it('keeps an earlier failure after a later message was delivered, until that message is sent again', function () {

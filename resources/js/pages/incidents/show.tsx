@@ -83,6 +83,7 @@ interface Delivery {
     latest: MessageStatus | null;
     last_sent: string | null;
     failures_count: number;
+    withheld_count: number;
     pending_count: number;
     failures: { id: number; error: string; failed: string | null; command: string | null }[];
     limit: string | null;
@@ -671,7 +672,8 @@ function Teams({ incidentId, teams, focusTeam, notToldReason }: { incidentId: nu
 
 /**
  * What Google Chat accepted of the team's current thread. "Đã gửi" means Google Chat accepted the message, not that anyone
- * read it; a failure stays until that message is sent again, whatever was delivered after it.
+ * read it; a failure stays until that message is sent again, whatever was delivered after it. A failed alert an admin's
+ * "Không" keeps from being sent again is withheld, not failed: it is listed without a command and counted apart.
  */
 function DeliveryStatus({ delivery }: { delivery: Delivery }) {
     const t = useTranslation();
@@ -700,7 +702,8 @@ function DeliveryStatus({ delivery }: { delivery: Delivery }) {
             {delivery.pending_count > 0 && <span className="block text-muted-foreground">{t('Đang chờ gửi: :count', { count: delivery.pending_count })}</span>}
             {delivery.failures.length > 0 && (
                 <span className="mt-1 block">
-                    <span className="block text-danger-text">{t('Gửi lỗi chưa gửi lại: :count', { count: delivery.failures_count })}</span>
+                    {delivery.failures_count > 0 && <span className="block text-danger-text">{t('Gửi lỗi chưa gửi lại: :count', { count: delivery.failures_count })}</span>}
+                    {delivery.withheld_count > 0 && <span className="block text-muted-foreground">{t('Không gửi lại: :count', { count: delivery.withheld_count })}</span>}
                     {delivery.failures.map((failure) => (
                         <span key={failure.id} className="mt-0.5 block text-muted-foreground">
                             #{failure.id}
