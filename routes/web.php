@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\IncidentMergeController;
 use App\Http\Controllers\Admin\IncidentSuggestionDecisionController;
 use App\Http\Controllers\Admin\IncidentUpdateController;
 use App\Http\Controllers\Admin\NoticeSplitController;
+use App\Http\Controllers\Admin\OsAdvisoryController;
 use App\Http\Controllers\Admin\OverviewController;
 use App\Http\Controllers\Admin\PreferenceController;
 use App\Http\Controllers\Admin\ProjectController;
@@ -64,6 +65,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('incidents/{incident}/updates', [IncidentUpdateController::class, 'store'])->name('incidents.updates.store');
         Route::post('incident-suggestions/{suggestion}/decision', [IncidentSuggestionDecisionController::class, 'store'])->name('incident-suggestions.decision.store');
         Route::post('notices/{notice}/split', [NoticeSplitController::class, 'store'])->name('notices.split.store');
+        Route::get('os-advisories', [OsAdvisoryController::class, 'index'])->name('os-advisories.index');
 
         Route::get('project-imports/create', [ProjectImportController::class, 'create'])->name('project-imports.create');
         Route::get('project-imports/template', [ProjectImportController::class, 'template'])->name('project-imports.template');

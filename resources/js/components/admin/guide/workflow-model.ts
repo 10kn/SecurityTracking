@@ -159,15 +159,14 @@ export const routes: Record<EdgeId, { points: [number, number][]; line: string; 
     retry: {
         points: [
             [1010, 350],
-            [1098, 350],
-            [1098, 484],
-            [938, 484],
-            [938, 350],
+            [1088, 350],
+            [1088, 270],
+            [1010, 270],
             [1010, 350],
         ],
-        line: 'M1048 350H1098V484H938V350H972',
+        line: 'M1048 350H1088V270H1010V312',
         label: 'thử lại khi lỗi',
-        labelAt: [958, 505],
+        labelAt: [987, 248],
     },
 };
 

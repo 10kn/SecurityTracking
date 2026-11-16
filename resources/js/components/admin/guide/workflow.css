@@ -162,8 +162,8 @@
 }
 .guide-cron {
     position: absolute;
-    top: calc(216 / 648 * 100%);
-    left: calc(192 / 1120 * 100%);
+    top: calc(195 / 648 * 100%);
+    left: calc(40 / 1120 * 100%);
     display: inline-flex;
     align-items: center;
     gap: 6px;
