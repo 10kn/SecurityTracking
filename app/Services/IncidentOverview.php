@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\BranchSupport;
+use App\Enums\ChatNotificationKind;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentSuggestionStatus;
 use App\Enums\Severity;
@@ -36,14 +37,16 @@ use Illuminate\Support\Collection;
  * read apart, from the messages of the team's current thread (`delivery`): the thread key and generation of its row,
  * so a thread taken over in a merge counts and one left behind by a webhook change does not, also before the next
  * message moves the row (`is_webhook_changed`). A message that failed and was not sent again stays a failure, whatever
- * was delivered after it.
+ * was delivered after it, unless it is an alert an admin's "Không" for the team keeps from being sent again
+ * (`is_ruled_out`, see ChatNotification::isWithheldByAssessment()): it is counted as withheld instead, as nothing is
+ * left to fix, e.g. an alert to a team with no webhook yet about news the admin then found to concern Windows only.
  *
  * Everything is read for a set of incidents at once, in a number of queries that does not grow with the incidents or
  * the teams, so a list page costs the same whatever it shows.
  *
- * @phpstan-type ThreadDelivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
- * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>, is_legacy: bool, is_webhook_changed: bool}
- * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_actionable: bool, is_assessed: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
+ * @phpstan-type ThreadDelivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, alert_failures_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
+ * @phpstan-type Delivery array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, withheld_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>, is_legacy: bool, is_webhook_changed: bool}
+ * @phpstan-type TeamState array{team: Team, runtimes: EloquentCollection<int, Runtime>, row: IncidentTeam|null, exposure: IncidentTeamExposure, told_severity: Severity|null, is_told: bool, is_actionable: bool, is_assessed: bool, is_ruled_out: bool, waiting_branches: list<string>, needs_acknowledgement: bool, delivery: Delivery}
  * @phpstan-type IncidentState array{incident: Incident, notices: EloquentCollection<int, Advisory>, fixes: list<array{branch: string, version: string|null, is_affected: bool, is_eol: bool}>, is_within_reminder_window: bool, pending_suggestions_count: int, teams: Collection<int, TeamState>}
  */
 class IncidentOverview
@@ -51,7 +54,7 @@ class IncidentOverview
     /**
      * The delivery of a team whose current thread has no message.
      */
-    private const array NO_DELIVERY = ['has_messages' => false, 'last_sent_at' => null, 'failures_count' => 0, 'pending_count' => 0, 'opener' => null, 'latest' => null];
+    private const array NO_DELIVERY = ['has_messages' => false, 'last_sent_at' => null, 'failures_count' => 0, 'alert_failures_count' => 0, 'pending_count' => 0, 'opener' => null, 'latest' => null];
 
     /**
      * The failures of a thread the incident page lists, oldest first.
@@ -251,6 +254,7 @@ class IncidentOverview
                 $isTold = $toldTeamIds->contains($team->id);
                 $toldSeverity = $isTold ? $ledger->where('team_id', $team->id)->map(fn (array $entry): Severity => $entry['severity'])->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() : null;
                 $isAssessed = $row?->hasValidAssessment($exposure) ?? false;
+                $isRuledOut = $row?->isRuledOut($exposure) ?? false;
                 $waiting = IncidentTeamExposure::waitingBranches($incident, $teamRuntimes, $patches, $securityReleases);
 
                 return [
@@ -262,12 +266,11 @@ class IncidentOverview
                     'is_told' => $isTold,
                     'is_actionable' => $isTold,
                     'is_assessed' => $isAssessed,
+                    'is_ruled_out' => $isRuledOut,
                     'waiting_branches' => $waiting,
                     'needs_acknowledgement' => $isTold && ! $isAssessed && $waiting !== [] && $isWithinWindow && $this->policy->remindsOfIncident($toldSeverity),
                     'delivery' => [
-                        ...self::NO_DELIVERY,
-                        'failures' => collect(),
-                        ...($row === null || $isWebhookChanged ? [] : $deliveries->get($row->id) ?? []),
+                        ...$this->withholding([...self::NO_DELIVERY, 'failures' => collect(), ...($row === null || $isWebhookChanged ? [] : $deliveries->get($row->id) ?? [])], $isRuledOut),
                         'is_legacy' => $ledger->where('team_id', $team->id)->contains('is_legacy', true),
                         'is_webhook_changed' => $isWebhookChanged,
                     ],
@@ -309,7 +312,7 @@ class IncidentOverview
 
     /**
      * The delivery of each row's current thread, by row id: whether it has any message, when Google Chat last accepted
-     * one, how many failed and were not sent again and how many wait to be sent (one sent again included). With
+     * one, how many failed and were not sent again (alerts apart too) and how many wait to be sent (one sent again included). With
      * `$withDetails`, also the opener, the latest message and the first FAILURES_SHOWN failures. Rows whose thread has
      * no message are left out.
      *
@@ -326,7 +329,7 @@ class IncidentOverview
 
         $threads = ChatNotification::whereIn('thread_key', $threadKeys)
             ->groupBy('thread_key', 'generation')
-            ->selectRaw('thread_key, generation, max(sent_at) as last_sent_at, max(id) as latest_id, count(*) filter (where failed_at is not null and sent_at is null) as failures_count, count(*) filter (where failed_at is null and sent_at is null) as pending_count')
+            ->selectRaw('thread_key, generation, max(sent_at) as last_sent_at, max(id) as latest_id, count(*) filter (where failed_at is not null and sent_at is null) as failures_count, count(*) filter (where failed_at is not null and sent_at is null and kind = ?) as alert_failures_count, count(*) filter (where failed_at is null and sent_at is null) as pending_count', [ChatNotificationKind::PreNotice->value])
             ->toBase()
             ->get()
             ->keyBy(fn (object $thread): string => "{$thread->thread_key}#{$thread->generation}");
@@ -348,12 +351,28 @@ class IncidentOverview
                     'has_messages' => true,
                     'last_sent_at' => $thread->last_sent_at === null ? null : Carbon::parse($thread->last_sent_at),
                     'failures_count' => (int) $thread->failures_count,
+                    'alert_failures_count' => (int) $thread->alert_failures_count,
                     'pending_count' => (int) $thread->pending_count,
                     'opener' => $isOfThread($row->openingNotification) ? $row->openingNotification : null,
                     'latest' => $latest->get($thread->latest_id),
                     'failures' => $failures->filter($isOfThread)->values(),
                 ]];
             });
+    }
+
+    /**
+     * The delivery of a thread as the admin reads it: while an admin's "Không" for the team holds, its failed alerts are
+     * withheld rather than failed, as psm:resend-notification would not send them; a failed admin update still fails.
+     *
+     * @param  ThreadDelivery  $thread
+     * @return array{has_messages: bool, last_sent_at: Carbon|null, failures_count: int, withheld_count: int, pending_count: int, opener: ChatNotification|null, latest: ChatNotification|null, failures: Collection<int, ChatNotification>}
+     */
+    private function withholding(array $thread, bool $isRuledOut): array
+    {
+        $withheld = $isRuledOut ? $thread['alert_failures_count'] : 0;
+        unset($thread['alert_failures_count']);
+
+        return [...$thread, 'failures_count' => $thread['failures_count'] - $withheld, 'withheld_count' => $withheld];
     }
 
     /**
