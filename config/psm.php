@@ -142,32 +142,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Operating system advisories
-    |--------------------------------------------------------------------------
-    |
-    | psm:watch-os-advisories polls the security advisories of the free AWS images every 30 minutes: Amazon Linux 2023
-    | and 2 (ALAS), Ubuntu (USN) and Debian (DSA). They are structured, so no classifier reads them: the severity is
-    | the distribution's own rating, and for Ubuntu, whose notices give none, the highest Ubuntu priority of their CVE
-    | ids, read from OSV (`packages.osv_url`, `UBUNTU-CVE-…` records) at most `ubuntu_cve_lookups` per poll and kept
-    | for `ubuntu_cve_cache_days`: a kernel notice lists hundreds, so it is rated over several polls. Debian rates none.
-    | Ubuntu and Debian advisories count for the releases still in standard support on endoflife.date only, and an
-    | Ubuntu fix only in Ubuntu Pro (the `esm-*` pockets) does not count, as the free images do not get it.
-    |
-    | Like vendor news, only advisories published within `notices.collect_days` are stored, those a feed lists on its
-    | first successful poll are history, and those published within `notices.relevant_days` at a severity of
-    | `alerts.immediate_severities`, or with a CVE id CISA KEV lists, go once to the security news space. A feed
-    | that has not been polled successfully within `stale_after_minutes` alerts the admin.
-    |
-    */
-
-    'os_advisories' => [
-        'stale_after_minutes' => (int) env('PSM_OS_ADVISORIES_STALE_AFTER_MINUTES', 180),
-        'ubuntu_cve_lookups' => (int) env('PSM_OS_ADVISORIES_UBUNTU_CVE_LOOKUPS', 200),
-        'ubuntu_cve_cache_days' => (int) env('PSM_OS_ADVISORIES_UBUNTU_CVE_CACHE_DAYS', 7),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | Incidents
     |--------------------------------------------------------------------------
     |

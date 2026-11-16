@@ -292,36 +292,6 @@ class GoogleChatCards
     }
 
     /**
-     * A security advisory of an operating system, for the admin's security news space: the releases it fixes, the
-     * packages to update and its CVE ids, CISA KEV first when it lists one.
-     *
-     * @return array<string, mixed>
-     */
-    public function osAdvisory(Advisory $advisory): array
-    {
-        $os = $advisory->operating_system;
-        $cves = collect($advisory->aliases ?? []);
-        $packages = collect($advisory->fixed_packages ?? [])
-            ->map(fn (array $package): string => filled($package['version'] ?? null) ? "{$package['name']} {$package['version']} ({$package['release']})" : "{$package['name']} ({$package['release']})")
-            ->unique()
-            ->values();
-
-        $widgets = array_values(array_filter([
-            $advisory->isKnownExploited() ? ['textParagraph' => ['text' => '<b>'.e(KnownExploitation::describe($advisory->known_exploited)).'</b>']] : null,
-            filled($advisory->summary) ? ['textParagraph' => ['text' => e($advisory->summary)]] : null,
-            filled($advisory->os_releases) ? ['decoratedText' => ['topLabel' => __('Phiên bản'), 'text' => e($os->getLabel().' '.implode(', ', $advisory->os_releases)), 'wrapText' => true]] : null,
-            $packages->isEmpty() ? null : ['decoratedText' => ['topLabel' => __('Gói cần cập nhật'), 'text' => e($packages->take($this->maxListedItems())->join(', ')).($packages->count() > $this->maxListedItems() ? ' '.e(__('… và :count gói khác', ['count' => $packages->count() - $this->maxListedItems()])) : ''), 'wrapText' => true]],
-            $cves->isEmpty() ? null : ['decoratedText' => ['topLabel' => 'CVE', 'text' => e($cves->take($this->maxListedItems())->join(', ')).($cves->count() > $this->maxListedItems() ? ' '.e(__('… và :count CVE khác', ['count' => $cves->count() - $this->maxListedItems()])) : ''), 'wrapText' => true]],
-            $advisory->published_at === null ? null : ['decoratedText' => ['topLabel' => __('Đăng lúc'), 'text' => e(LocalTime::format($advisory->published_at))]],
-        ]));
-
-        return $this->card("os-news-{$advisory->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Tin bảo mật · :os', ['os' => $os->getLabel()]), [
-            ['widgets' => $widgets],
-            ['widgets' => [$this->buttons(array_filter([__('Mở nguồn tin') => $advisory->url, __('Xem tin hệ điều hành') => route('admin.os-advisories.index', ['search' => $advisory->external_id])], filled(...)))]],
-        ]);
-    }
-
-    /**
      * "Theo dõi lại project": an admin resumed a paused project and chose to tell the team what it missed meanwhile:
      * its open findings, the incidents that affect its services, its runtimes reaching end of life within
      * `psm.digest.eol_warning_days` and its unreadable lockfiles. The urgent cards follow on their own.

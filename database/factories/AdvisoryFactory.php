@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Enums\AdvisoryKind;
-use App\Enums\LinuxDistribution;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Models\Advisory;
@@ -50,28 +49,6 @@ class AdvisoryFactory extends Factory
             'cvss_score' => null,
             'technology' => $technology,
         ]);
-    }
-
-    /**
-     * A security advisory of an operating system, e.g. an Ubuntu notice fixing 24.04.
-     */
-    public function osAdvisory(LinuxDistribution $os = LinuxDistribution::Ubuntu): static
-    {
-        return $this->state(function (array $attributes) use ($os) {
-            $externalId = 'DEMO-USN-'.fake()->unique()->numerify('####').'-1';
-
-            return [
-                'source' => $os->sourceKey(),
-                'external_id' => $externalId,
-                'kind' => AdvisoryKind::OsAdvisory,
-                'operating_system' => $os,
-                'title' => "{$externalId}: ".fake()->words(2, true).' vulnerabilities',
-                'cvss_score' => null,
-                'url' => null,
-                'os_releases' => ['24.04'],
-                'fixed_packages' => [['release' => '24.04', 'name' => 'openssl', 'version' => '3.0.13-0ubuntu3.6']],
-            ];
-        });
     }
 
     /**

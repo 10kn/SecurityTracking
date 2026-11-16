@@ -18,9 +18,6 @@ use App\Services\Notices\NoticeClassifier;
 use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\PhpNetNoticeFeed;
 use App\Services\Notices\RubyLangNoticeFeed;
-use App\Services\OsAdvisories\AmazonLinuxAlasFeed;
-use App\Services\OsAdvisories\DebianDsaFeed;
-use App\Services\OsAdvisories\UbuntuUsnFeed;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -626,64 +623,4 @@ function classifyNoticeFixtures(array $answers = []): ArrayObject
     ];
 
     return classifyNoticesWith(fn (NoticeEntry $entry): NoticeClassification => $answers[$entry->title] ?? new NoticeClassification(isSecurityNews: false, severity: Severity::Unknown));
-}
-
-/**
- * A file of tests/Fixtures/os: real responses of 2026-11-09, trimmed. The ALAS feeds keep their three latest
- * advisories (Amazon Linux 2: two) and one of December 2023; the USN list keeps five notices with three packages per
- * release; the DSA feed its three latest advisories, whose tracker pages are kept whole.
- */
-function osFixture(string $name): string
-{
-    return (string) file_get_contents(base_path("tests/Fixtures/os/{$name}"));
-}
-
-/**
- * Fakes the advisory feeds of the operating systems, endoflife.date and the Ubuntu priorities OSV gives
- * (tests/Fixtures/os/ubuntu-priorities.json, all "medium"). The USN list reads as it did at the current (travelled)
- * time: notices published later are left out, and it pages with `offset` and `limit` as the API does. `$priorities` replaces the priority of CVE ids; a CVE without one is
- * unknown to OSV.
- *
- * @param  array<string, string>  $priorities
- */
-function fakeOsAdvisoryFeeds(array $priorities = []): void
-{
-    $priorities = [...json_decode(osFixture('ubuntu-priorities.json'), true), ...$priorities];
-
-    Http::preventStrayRequests();
-    Http::fake([
-        AmazonLinuxAlasFeed::AL2023_URL => fn () => Http::response(osFixture('alas-al2023.rss')),
-        AmazonLinuxAlasFeed::AL2_URL => fn () => Http::response(osFixture('alas-al2.rss')),
-        UbuntuUsnFeed::URL.'*' => function (Request $request) {
-            $list = json_decode(osFixture('usn-notices.json'), true);
-            $notices = array_values(array_filter($list['notices'], fn (array $notice): bool => ! CarbonImmutable::parse($notice['published'], 'UTC')->isAfter(now())));
-            $list['notices'] = array_slice($notices, (int) ($request['offset'] ?? 0), (int) ($request['limit'] ?? 20));
-
-            return Http::response($list);
-        },
-        DebianDsaFeed::URL => fn () => Http::response(osFixture('debian-dsa.rdf')),
-        DebianDsaFeed::TRACKER_URL.'*' => function (Request $request) {
-            $page = base_path('tests/Fixtures/os/debian-tracker-'.basename($request->url()).'.html');
-
-            return is_file($page) ? Http::response((string) file_get_contents($page)) : Http::response('Not Found', 404);
-        },
-        'https://endoflife.date/api/v1/products/*' => fn (Request $request) => Http::response(osFixture('endoflife-'.basename(rtrim($request->url(), '/')).'.json')),
-        rtrim((string) config('psm.packages.osv_url'), '/').'/vulns/UBUNTU-*' => function (Request $request) use ($priorities) {
-            $cveId = Str::after(basename($request->url()), 'UBUNTU-');
-
-            return isset($priorities[$cveId])
-                ? Http::response(['id' => "UBUNTU-{$cveId}", 'upstream' => [$cveId], 'severity' => [['type' => 'Ubuntu', 'score' => $priorities[$cveId]]]])
-                : Http::response(['code' => 5, 'message' => 'Bug not found.'], 404);
-        },
-    ]);
-}
-
-/**
- * The requests made to OSV for Ubuntu priorities.
- *
- * @return Collection<int, Request>
- */
-function ubuntuPriorityRequests(): Collection
-{
-    return Http::recorded()->map(fn (array $pair): Request => $pair[0])->filter(fn (Request $request): bool => str_contains($request->url(), '/vulns/UBUNTU-'))->values();
 }

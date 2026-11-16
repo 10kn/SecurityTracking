@@ -1,12 +1,11 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { BookOpenIcon, CpuIcon, FolderIcon, GitBranchIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, MonitorIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import { BookOpenIcon, CpuIcon, FolderIcon, GitBranchIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import { index as findingsIndex } from '@/actions/App/Http/Controllers/Admin/FindingController';
 import GuideController from '@/actions/App/Http/Controllers/Admin/GuideController';
 import { index as incidentsIndex } from '@/actions/App/Http/Controllers/Admin/IncidentController';
-import { index as osAdvisoriesIndex } from '@/actions/App/Http/Controllers/Admin/OsAdvisoryController';
 import OverviewController from '@/actions/App/Http/Controllers/Admin/OverviewController';
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { index as repositoryConnectionsIndex } from '@/actions/App/Http/Controllers/Admin/RepositoryConnectionController';
@@ -60,7 +59,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             items: [
                 { label: t('Findings'), href: findingsIndex.url(), icon: ShieldAlertIcon },
                 { label: t('Sự kiện bảo mật'), href: incidentsIndex.url(), icon: SirenIcon },
-                { label: t('Tin hệ điều hành'), href: osAdvisoriesIndex.url(), icon: MonitorIcon },
             ],
         },
         {

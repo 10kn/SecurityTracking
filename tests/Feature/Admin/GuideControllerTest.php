@@ -11,16 +11,15 @@ it('shows when each source runs, in the timezone of the reader', function () {
     get('/admin/guide')->assertInertia(fn (Assert $page) => $page
         ->component('guide/index')
         ->where('timezone', 'GMT+7')
-        ->has('schedule', 11)
+        ->has('schedule', 10)
         ->where('schedule.0', ['key' => 'notices', 'every_minutes' => 15, 'minute' => 0, 'times' => []])
-        ->where('schedule.1', ['key' => 'os_advisories', 'every_minutes' => 30, 'minute' => 0, 'times' => []])
-        ->where('schedule.3', ['key' => 'kev', 'every_minutes' => 60, 'minute' => 20, 'times' => []])
-        ->where('schedule.4.key', 'packages')
-        ->where('schedule.4.times', ['01:00', '07:00', '13:00', '19:00'])
-        ->where('schedule.5.times', ['07:05'])
-        ->where('schedule.7', ['key' => 'repository_connections', 'every_minutes' => null, 'minute' => 0, 'times' => ['06:00']])
-        ->where('schedule.8', ['key' => 'lockfiles', 'every_minutes' => null, 'minute' => 0, 'times' => ['06:30']])
-        ->where('schedule.9', ['key' => 'digest', 'every_minutes' => null, 'minute' => 0, 'times' => ['08:00']]));
+        ->where('schedule.2', ['key' => 'kev', 'every_minutes' => 60, 'minute' => 20, 'times' => []])
+        ->where('schedule.3.key', 'packages')
+        ->where('schedule.3.times', ['01:00', '07:00', '13:00', '19:00'])
+        ->where('schedule.4.times', ['07:05'])
+        ->where('schedule.6', ['key' => 'repository_connections', 'every_minutes' => null, 'minute' => 0, 'times' => ['06:00']])
+        ->where('schedule.7', ['key' => 'lockfiles', 'every_minutes' => null, 'minute' => 0, 'times' => ['06:30']])
+        ->where('schedule.8', ['key' => 'digest', 'every_minutes' => null, 'minute' => 0, 'times' => ['08:00']]));
 });
 
 it('shows the alert policy as it is set now', function () {

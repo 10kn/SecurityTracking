@@ -34,7 +34,6 @@ class GuideController extends Controller
             ],
             'schedule' => [
                 $this->repeating('notices', 15),
-                $this->repeating('os_advisories', 30),
                 $this->repeating('catalog', 60),
                 $this->repeating('kev', 60, 20),
                 $this->daily('packages', ['00:00', '06:00', '12:00', '18:00'], $applicationTimezone),

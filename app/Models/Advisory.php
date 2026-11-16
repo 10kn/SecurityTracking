@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Enums\AdvisoryKind;
 use App\Enums\Ecosystem;
 use App\Enums\IncidentBasis;
-use App\Enums\LinuxDistribution;
 use App\Enums\OperatingSystem;
 use App\Enums\Severity;
 use App\Enums\SeverityBasis;
@@ -22,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'first_published_at', 'content_changed_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'affected_ranges', 'content_hash', 'entry_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary', 'operating_system', 'os_releases', 'fixed_packages'])]
+#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'first_published_at', 'content_changed_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'affected_ranges', 'content_hash', 'entry_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -75,9 +74,6 @@ class Advisory extends Model
             'severity_before_kev' => Severity::class,
             'resolved_cve_ids' => 'array',
             'cves_resolved_at' => 'datetime',
-            'operating_system' => LinuxDistribution::class,
-            'os_releases' => 'array',
-            'fixed_packages' => 'array',
         ];
     }
 

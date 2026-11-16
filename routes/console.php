@@ -9,12 +9,10 @@ use Illuminate\Support\Facades\Schedule;
  * The source check pings an external dead man's switch when one is configured, so a stopped scheduler is noticed.
  * The CISA KEV catalog is read hourly. Project import files never confirmed are deleted once a day. GitHub runner image
  * removals are read once a day, after midnight like end-of-life. The tokens of the repository connections are checked
- * once a day, before the lockfiles are read. Operating system advisories (Amazon Linux, Ubuntu, Debian) are read every
- * 30 minutes. The guide page lists these runs (GuideController).
+ * once a day, before the lockfiles are read. The guide page lists these runs (GuideController).
  */
 Schedule::command('psm:sync-runtimes')->hourly()->withoutOverlapping();
 Schedule::command('psm:watch-notices')->everyFifteenMinutes()->withoutOverlapping();
-Schedule::command('psm:watch-os-advisories')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('psm:evaluate-runtimes')->dailyAt('00:05')->withoutOverlapping();
 Schedule::command('psm:scan-packages')->everySixHours()->withoutOverlapping();
 Schedule::command('psm:sync-kev')->hourlyAt(20)->withoutOverlapping();

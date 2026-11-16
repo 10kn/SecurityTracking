@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Actions\ResolveNoticeCves;
-use App\Enums\LinuxDistribution;
 use App\Enums\Technology;
 use Database\Factories\SourceHeartbeatFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -42,12 +41,10 @@ class SourceHeartbeat extends Model
     public function localizedName(): string
     {
         $noticeFeed = collect(Technology::cases())->first(fn (Technology $technology): bool => $technology->noticeSourceKey() === $this->source);
-        $osFeed = LinuxDistribution::fromSourceKey($this->source);
 
         return match (true) {
             $this->catalogTechnology() !== null => __('Danh mục version :technology', ['technology' => $this->catalogTechnology()->getLabel()]),
             $noticeFeed !== null => __('Tin bảo mật :source', ['source' => $noticeFeed->releaseSourceLabel()]),
-            $osFeed !== null => __('Tin bảo mật :source', ['source' => $osFeed->getLabel()]),
             $this->source === ResolveNoticeCves::SOURCE => __('Mã CVE của tin GitHub (GHSA)'),
             $this->source === GitHubRunnerImage::SOURCE_KEY => __('Danh mục runner GitHub Actions'),
             default => $this->name,
