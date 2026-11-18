@@ -3,9 +3,13 @@
 namespace App\Models;
 
 use App\Actions\ResolveNoticeCves;
+use App\Actions\SyncJpcertNews;
 use App\Enums\Technology;
+use App\Services\SystemSettings;
 use Database\Factories\SourceHeartbeatFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -32,6 +36,25 @@ class SourceHeartbeat extends Model
     {
         return $this->last_success_at === null
             || $this->last_success_at->lt(now()->subMinutes($this->threshold_minutes));
+    }
+
+    /** @param Builder<SourceHeartbeat> $query */
+    #[Scope]
+    protected function monitored(Builder $query): void
+    {
+        $jpcert = SyncJpcertNews::SOURCE_PREFIX.'%';
+        if (config('psm.jpcert.tags') === []) {
+            $query->whereNotLike('source', $jpcert);
+
+            return;
+        }
+
+        $activatedAt = app(SystemSettings::class)->jpcertActivatedAt();
+        if ($activatedAt !== null) {
+            $query->where(fn (Builder $query) => $query->whereNotLike('source', $jpcert)
+                ->orWhere('last_success_at', '>=', $activatedAt)
+                ->orWhere('last_failure_at', '>=', $activatedAt));
+        }
     }
 
     /**

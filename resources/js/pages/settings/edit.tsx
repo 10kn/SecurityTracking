@@ -1,5 +1,5 @@
 import { useForm } from '@inertiajs/react';
-import { RotateCcwIcon } from 'lucide-react';
+import { RotateCcwIcon, XIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 import { update } from '@/actions/App/Http/Controllers/Admin/SystemSettingController';
@@ -40,6 +40,7 @@ interface SettingValues {
     classifier_model: string;
     classifier_effort: string;
     classifier_alert_after_minutes: number | '';
+    jpcert_tags: string[];
     incident_patch_hold_hours: number | '';
     incident_review_after_days: number | '';
     incident_awaiting_patch_days: number | '';
@@ -107,6 +108,7 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
     const t = useTranslation();
     const form = useForm<SettingValues>(settings);
     const [reminderDaysText, setReminderDaysText] = useState(settings.eol_reminder_days.join(', '));
+    const [jpcertTag, setJpcertTag] = useState('');
 
     const labels: Record<string, string> = {
         admin_webhook: t('Webhook sự cố hệ thống'),
@@ -134,6 +136,7 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
         classifier_model: t('Model phân loại'),
         classifier_effort: t('Mức suy luận'),
         classifier_alert_after_minutes: t('Báo tin chưa phân loại sau'),
+        jpcert_tags: t('Tag theo dõi JPCERT/CC'),
         incident_patch_hold_hours: t('Giữ thẻ "thiếu bản vá"'),
         incident_review_after_days: t('Nhắc review sau'),
         incident_awaiting_patch_days: t('Theo dõi "đang chờ bản vá"'),
@@ -211,10 +214,10 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
                         {change && !isDefault(name) && <span aria-hidden>·</span>}
                         {!isDefault(name) && (
                             <>
-                                <span>{t('.env: :value', { value: formatValue(name, defaults[name]) })}</span>
+                                <span>{t(name === 'jpcert_tags' ? 'Mặc định: :value' : '.env: :value', { value: formatValue(name, defaults[name]) })}</span>
                                 <button type="button" className="inline-flex items-center gap-1 text-link hover:underline" onClick={() => resetToDefault(name)}>
                                     <RotateCcwIcon className="size-3" aria-hidden />
-                                    {t('Dùng giá trị .env')}
+                                    {t(name === 'jpcert_tags' ? 'Dùng mặc định' : 'Dùng giá trị .env')}
                                 </button>
                             </>
                         )}
@@ -287,6 +290,14 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
     const itemError = (name: SettingName) => Object.entries(form.errors as Record<string, string>).find(([key]) => key.startsWith(`${name}.`))?.[1];
 
     const severityChoices = options.severities;
+    const pendingTag = jpcertTag.trim();
+    const canAddJpcertTag = pendingTag !== '' && form.data.jpcert_tags.length < 30 && !form.data.jpcert_tags.some((tag) => tag.toLowerCase() === pendingTag.toLowerCase());
+    const addJpcertTag = () => {
+        if (canAddJpcertTag) {
+            form.setData('jpcert_tags', [...form.data.jpcert_tags, pendingTag]);
+            setJpcertTag('');
+        }
+    };
 
     return (
         <>
@@ -294,7 +305,7 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
                 title={t('Cài đặt hệ thống')}
                 description={t('Giá trị đặt ở đây được dùng thay cho .env. API key, GitHub App và database vẫn chỉ đặt trong .env.')}
                 actions={
-                    <Button type="submit" form="system-settings" loading={form.processing} disabled={!form.isDirty}>
+                    <Button type="submit" form="system-settings" loading={form.processing} disabled={!form.isDirty && !canAddJpcertTag}>
                         {t('Lưu thay đổi')}
                     </Button>
                 }
@@ -304,7 +315,18 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
                 className="rounded-lg border border-border bg-surface"
                 onSubmit={(event) => {
                     event.preventDefault();
-                    form.submit(update(), { preserveScroll: true, onSuccess: () => form.setDefaults() });
+                    const tags = canAddJpcertTag ? [...form.data.jpcert_tags, pendingTag] : form.data.jpcert_tags;
+                    form.transform((data) => ({ ...data, jpcert_tags: tags }));
+                    form.submit(update(), {
+                        preserveScroll: true,
+                        onSuccess: () => {
+                            form.setData('jpcert_tags', tags);
+                            form.setDefaults({ ...form.data, jpcert_tags: tags });
+                            if (canAddJpcertTag) {
+                                setJpcertTag('');
+                            }
+                        },
+                    });
                 }}
                 noValidate
             >
@@ -460,6 +482,39 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
                             )}
                             {numberField('classifier_alert_after_minutes', t('Báo admin khi một tin vẫn chưa được phân loại sau chừng này.'), { min: 5, max: 1440 })}
                         </FormFields>
+                    </FormSection>
+
+                    <FormSection title={t('Tin JPCERT/CC')}>
+                        <Field label={labels.jpcert_tags} htmlFor="jpcert_tag" error={form.errors.jpcert_tags ?? itemError('jpcert_tags')} help={hint('jpcert_tags', t('Thêm tên sản phẩm hoặc dịch vụ cần theo dõi. Để trống để tạm dừng thu thập.'))}>
+                            <div className="flex max-w-xl items-center gap-2">
+                                <Input
+                                    id="jpcert_tag"
+                                    value={jpcertTag}
+                                    placeholder="OpenSSH"
+                                    maxLength={80}
+                                    onChange={(event) => setJpcertTag(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                                            event.preventDefault();
+                                            addJpcertTag();
+                                        }
+                                    }}
+                                />
+                                <Button type="button" variant="secondary" disabled={!canAddJpcertTag} onClick={addJpcertTag}>{t('Thêm')}</Button>
+                            </div>
+                            {form.data.jpcert_tags.length > 0 && (
+                                <ul className="mt-2 flex flex-wrap gap-2">
+                                    {form.data.jpcert_tags.map((tag) => (
+                                        <li key={tag} className="inline-flex items-center gap-1 rounded-md border border-border py-1 pl-2 pr-1 text-sm">
+                                            {tag}
+                                            <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted" aria-label={t('Bỏ tag :tag', { tag })} onClick={() => form.setData('jpcert_tags', form.data.jpcert_tags.filter((value) => value !== tag))}>
+                                                <XIcon className="size-3.5" />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </Field>
                     </FormSection>
 
                     <FormSection title={t('Sự cố')} description={t('Cách gom tin thành sự cố và theo dõi bản vá.')}>

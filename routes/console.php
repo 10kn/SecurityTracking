@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Schedule;
  */
 Schedule::command('psm:sync-runtimes')->hourly()->withoutOverlapping();
 Schedule::command('psm:watch-notices')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('psm:watch-jpcert')->everyThirtyMinutes()->withoutOverlapping(15)->runInBackground();
 Schedule::command('psm:evaluate-runtimes')->dailyAt('00:05')->withoutOverlapping();
 Schedule::command('psm:scan-packages')->everySixHours()->withoutOverlapping();
 Schedule::command('psm:sync-kev')->hourlyAt(20)->withoutOverlapping();

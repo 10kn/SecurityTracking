@@ -60,6 +60,8 @@ class UpdateSystemSettingsRequest extends FormRequest
             'classifier_model' => ['required', Rule::in(app(SystemSettings::class)->classifierModels())],
             'classifier_effort' => ['required', Rule::in(SystemSettings::CLASSIFIER_EFFORTS)],
             'classifier_alert_after_minutes' => ['required', 'integer', 'between:5,1440'],
+            'jpcert_tags' => ['sometimes', 'array', 'list', 'max:30'],
+            'jpcert_tags.*' => ['required', 'string', 'max:80', 'not_regex:/[\p{Cc}\p{Zl}\p{Zp}]/u'],
 
             'incident_patch_hold_hours' => ['required', 'integer', 'between:0,168'],
             'incident_review_after_days' => ['required', 'integer', 'between:1,365'],
@@ -128,6 +130,8 @@ class UpdateSystemSettingsRequest extends FormRequest
             'classifier_model' => __('Model phân loại'),
             'classifier_effort' => __('Mức suy luận'),
             'classifier_alert_after_minutes' => __('Báo tin chưa phân loại sau'),
+            'jpcert_tags' => __('Tag theo dõi JPCERT/CC'),
+            'jpcert_tags.*' => __('Tag theo dõi JPCERT/CC'),
             'incident_patch_hold_hours' => __('Giữ thẻ "thiếu bản vá"'),
             'incident_review_after_days' => __('Nhắc review sau'),
             'incident_awaiting_patch_days' => __('Theo dõi "đang chờ bản vá"'),

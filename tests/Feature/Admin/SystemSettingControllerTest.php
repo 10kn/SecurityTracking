@@ -228,3 +228,22 @@ it('lists the latest changes first', function () {
         ->where('changed.digest_time.by', $admin->name)
         ->etc());
 });
+
+it('saves the JPCERT watch tags and allows clearing them to pause polling', function () {
+    actingAsAdmin();
+
+    put('/admin/settings', submittedSettings(['jpcert_tags' => [' OpenSSH ', 'openssh', 'Amazon ECS']]))
+        ->assertRedirect('/admin/settings');
+    expect(config('psm.jpcert.tags'))->toBe(['OpenSSH', 'Amazon ECS']);
+
+    put('/admin/settings', submittedSettings(['jpcert_tags' => []]))
+        ->assertRedirect('/admin/settings');
+    expect(config('psm.jpcert.tags'))->toBe([]);
+});
+
+it('rejects multiline JPCERT tags', function () {
+    actingAsAdmin();
+
+    put('/admin/settings', submittedSettings(['jpcert_tags' => ["OpenSSH\nAmazon ECS"]]))
+        ->assertSessionHasErrors('jpcert_tags.0');
+});

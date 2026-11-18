@@ -6,6 +6,7 @@ use App\Enums\Severity;
 use App\Models\Setting;
 use App\Models\SettingChange;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
@@ -27,7 +28,7 @@ class SystemSettings
      * Every setting: its name on the screen => its path in config/psm.php and its kind, which says how a value is
      * normalised before it is compared and stored.
      *
-     * @var array<string, array{0: string, 1: 'webhook'|'string'|'nullable_string'|'int'|'bool'|'days'|'reminder_days'|'severities'}>
+     * @var array<string, array{0: string, 1: 'webhook'|'string'|'nullable_string'|'int'|'bool'|'days'|'reminder_days'|'severities'|'tags'}>
      */
     public const array DEFINITIONS = [
         'admin_webhook' => ['alerts.admin_webhook', 'webhook'],
@@ -59,6 +60,7 @@ class SystemSettings
         'classifier_model' => ['notices.classifier.model', 'string'],
         'classifier_effort' => ['notices.classifier.effort', 'string'],
         'classifier_alert_after_minutes' => ['notices.classifier.alert_after_minutes', 'int'],
+        'jpcert_tags' => ['jpcert.tags', 'tags'],
 
         'incident_patch_hold_hours' => ['incidents.patch_hold_hours', 'int'],
         'incident_review_after_days' => ['incidents.review_after_days', 'int'],
@@ -87,6 +89,12 @@ class SystemSettings
      * @var list<string>
      */
     public const array CLASSIFIER_EFFORTS = ['low', 'medium', 'high'];
+
+    /** When the currently enabled JPCERT/CC feed was last turned on, even if tags have changed since. */
+    public function jpcertActivatedAt(): ?CarbonInterface
+    {
+        return SettingChange::where('key', 'jpcert_tags')->where('old_value', '[]')->latest('id')->first()?->created_at;
+    }
 
     /**
      * The values of config/psm.php before any setting is written over them, i.e. from the .env.
@@ -257,6 +265,10 @@ class SystemSettings
             'days' => collect((array) $value)->map(fn (mixed $day): int => (int) $day)->unique()->sort()->values()->all(),
             'reminder_days' => collect((array) $value)->map(fn (mixed $day): int => (int) $day)->unique()->sortDesc()->values()->all(),
             'severities' => collect(Severity::cases())->map(fn (Severity $severity): string => $severity->value)->intersect((array) $value)->values()->all(),
+            'tags' => collect((array) $value)->map(fn (string $tag): string => trim($tag))
+                ->filter(fn (string $tag): bool => $tag !== '')
+                ->unique(fn (string $tag): string => mb_strtolower($tag))
+                ->values()->all(),
         };
     }
 }

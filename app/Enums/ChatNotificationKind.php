@@ -11,6 +11,7 @@ enum ChatNotificationKind: string
     case Digest = 'digest';
     case AdminAlert = 'admin_alert';
     case SecurityNews = 'security_news';
+    case JpcertNews = 'jpcert_news';
     case ProjectResumed = 'project_resumed';
 
     public function getLabel(): string
@@ -23,6 +24,7 @@ enum ChatNotificationKind: string
             self::Digest => __('Bản tổng hợp'),
             self::AdminAlert => __('Cảnh báo admin'),
             self::SecurityNews => __('Tin bảo mật'),
+            self::JpcertNews => __('Tin JPCERT/CC'),
             self::ProjectResumed => __('Theo dõi lại project'),
         };
     }

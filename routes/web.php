@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\RepositoryConnectionController;
 use App\Http\Controllers\Admin\RepositoryConnectionTokenController;
 use App\Http\Controllers\Admin\RuntimeEvaluationController;
 use App\Http\Controllers\Admin\SearchController;
+use App\Http\Controllers\Admin\SecurityNewsController;
 use App\Http\Controllers\Admin\ServiceController;
 use App\Http\Controllers\Admin\ServiceLockfileSyncController;
 use App\Http\Controllers\Admin\SessionController;
@@ -56,6 +57,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('findings', [FindingController::class, 'index'])->name('findings.index');
         Route::post('findings/acknowledgements', [FindingAcknowledgementController::class, 'store'])->name('findings.acknowledgements.store');
+
+        Route::get('security-news', [SecurityNewsController::class, 'index'])->name('security-news.index');
+        Route::get('security-news/{article}', [SecurityNewsController::class, 'show'])->whereNumber('article')->name('security-news.show');
 
         Route::get('incidents', [IncidentController::class, 'index'])->name('incidents.index');
         Route::get('incidents/{incident}', [IncidentController::class, 'show'])->name('incidents.show');

@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { BookOpenIcon, CpuIcon, FolderIcon, GitBranchIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import { BookOpenIcon, CpuIcon, FolderIcon, GitBranchIcon, LayoutDashboardIcon, LogOutIcon, MenuIcon, NewspaperIcon, ServerIcon, ShieldAlertIcon, ShieldIcon, SirenIcon, SlidersHorizontalIcon, UsersIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
@@ -10,6 +10,7 @@ import OverviewController from '@/actions/App/Http/Controllers/Admin/OverviewCon
 import { index as projectsIndex } from '@/actions/App/Http/Controllers/Admin/ProjectController';
 import { index as repositoryConnectionsIndex } from '@/actions/App/Http/Controllers/Admin/RepositoryConnectionController';
 import { store as storeImport } from '@/actions/App/Http/Controllers/Admin/ProjectImportController';
+import { index as securityNewsIndex } from '@/actions/App/Http/Controllers/Admin/SecurityNewsController';
 import { index as servicesIndex } from '@/actions/App/Http/Controllers/Admin/ServiceController';
 import { destroy as logout } from '@/actions/App/Http/Controllers/Admin/SessionController';
 import { edit as settingsEdit } from '@/actions/App/Http/Controllers/Admin/SystemSettingController';
@@ -59,6 +60,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             items: [
                 { label: t('Findings'), href: findingsIndex.url(), icon: ShieldAlertIcon },
                 { label: t('Sự kiện bảo mật'), href: incidentsIndex.url(), icon: SirenIcon },
+                { label: t('Tin bảo mật'), href: securityNewsIndex.url(), icon: NewspaperIcon },
             ],
         },
         {

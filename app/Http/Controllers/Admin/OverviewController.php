@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Actions\ResolveNoticeCves;
+use App\Actions\SyncJpcertNews;
 use App\Actions\SyncKnownExploitedVulnerabilities;
 use App\Enums\Ecosystem;
 use App\Enums\Severity;
@@ -92,7 +93,7 @@ class OverviewController extends Controller
      */
     private function sources(): array
     {
-        return SourceHeartbeat::orderBy('source')
+        return SourceHeartbeat::monitored()->orderBy('source')
             ->get()
             ->sortBy(fn (SourceHeartbeat $heartbeat): int => $heartbeat->isStale() ? 0 : 1)
             ->map(fn (SourceHeartbeat $heartbeat): array => [
@@ -127,6 +128,7 @@ class OverviewController extends Controller
             $heartbeat->source === SyncKnownExploitedVulnerabilities::SOURCE => __('Có thể bỏ sót lỗ hổng đang bị khai thác mà CISA KEV mới thêm.'),
             $heartbeat->source === GitHubRunnerImage::SOURCE_KEY => __('Có thể bỏ sót runner GitHub Actions sắp bị gỡ. Finding đang mở vẫn giữ nguyên.'),
             $heartbeat->source === ResolveNoticeCves::SOURCE => __('Tin GitHub chưa có mã CVE chưa được đối chiếu với CISA KEV.'),
+            str_starts_with($heartbeat->source, SyncJpcertNews::SOURCE_PREFIX) => __('Tin JPCERT/CC mới có thể đến chậm cho tới khi nguồn hoạt động lại.'),
             $heartbeat->source === $this->repositoryReader->sourceKey(), str_starts_with($heartbeat->source, RepositoryConnection::SOURCE_KEY_PREFIX) => __('Lockfile không được đọc lại từ repository; package mới đổi có thể chưa được quét.'),
             default => null,
         };

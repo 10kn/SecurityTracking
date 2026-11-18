@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Actions\SendAdminAlert;
+use App\Actions\SyncJpcertNews;
 use App\Enums\AdvisoryKind;
 use App\Jobs\SendChatNotification;
 use App\Models\Advisory;
@@ -25,7 +26,7 @@ class CheckSourceHeartbeats extends Command
      */
     public function handle(SendAdminAlert $sendAdminAlert, NoticeClassifier $classifier): int
     {
-        $stale = SourceHeartbeat::orderBy('source')->get()->filter(fn (SourceHeartbeat $heartbeat): bool => $heartbeat->isStale());
+        $stale = SourceHeartbeat::monitored()->orderBy('source')->get()->filter(fn (SourceHeartbeat $heartbeat): bool => $heartbeat->isStale());
 
         foreach ($stale as $heartbeat) {
             $sendAdminAlert->handle(
@@ -35,7 +36,9 @@ class CheckSourceHeartbeats extends Command
                     __('Thành công gần nhất: :time', ['time' => LocalTime::format($heartbeat->last_success_at) ?? __('chưa có')]),
                     __('Ngưỡng: :minutes phút', ['minutes' => $heartbeat->threshold_minutes]),
                     __('Lỗi gần nhất: :error', ['error' => $heartbeat->last_error ?? '—']),
-                    __('Runtime và package phụ thuộc nguồn này được coi là Thiếu dữ liệu cho tới khi nguồn hoạt động lại.'),
+                    str_starts_with($heartbeat->source, SyncJpcertNews::SOURCE_PREFIX)
+                        ? __('Tin JPCERT/CC mới có thể đến chậm cho tới khi nguồn hoạt động lại.')
+                        : __('Runtime và package phụ thuộc nguồn này được coi là Thiếu dữ liệu cho tới khi nguồn hoạt động lại.'),
                 ],
             );
         }

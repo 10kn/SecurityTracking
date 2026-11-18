@@ -10,6 +10,7 @@ use App\Models\Finding;
 use App\Models\Incident;
 use App\Models\Project;
 use App\Models\Runtime;
+use App\Models\SecurityNewsArticle;
 use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
@@ -704,6 +705,19 @@ class GoogleChatCards
         }
 
         return $this->card('admin', $title, __('Security Manager · cảnh báo hệ thống'), [['widgets' => $widgets]]);
+    }
+
+    /** @return array<string, mixed> */
+    public function jpcertNews(SecurityNewsArticle $article): array
+    {
+        return $this->card('jpcert-'.$article->id, $article->title, 'JPCERT/CC', [
+            ['widgets' => [
+                ['textParagraph' => ['text' => e($article->summary)]],
+                ['textParagraph' => ['text' => e(__('Tag khớp: :tags', ['tags' => implode(', ', $article->matched_tags ?? [])]))]],
+                ['textParagraph' => ['text' => e($article->reason)]],
+                $this->buttons([__('Đọc tin trong PSM') => route('admin.security-news.show', $article), __('Mở nguồn tin') => $article->url]),
+            ]],
+        ]);
     }
 
     public function serviceUrl(Service $service): string
