@@ -386,6 +386,7 @@ it('classifies every entry it stores, release announcements and the history of t
         affectedBranches: ['8.3', '8.4'],
         summary: 'PHP sẽ vá hai lỗ hổng nghiêm trọng.',
         patchVersions: str_starts_with($entry->title, 'Security advisory') ? ['8.5.12', '8.4.27', '8.3.36', '8.2.35'] : [],
+        answer: ['is_security_news' => true, 'affected_branches' => ['8.3', '8.4', 'all supported']],
     ));
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
@@ -402,6 +403,7 @@ it('classifies every entry it stores, release announcements and the history of t
         ->classified_severity->toBe(Severity::Critical)
         ->planned_release_at->toIso8601String()->toBe('2026-10-21T14:00:00+00:00')
         ->affected_branches->toBe(['8.3', '8.4'])
+        ->classifier_answer->toBe(['is_security_news' => true, 'affected_branches' => ['8.3', '8.4', 'all supported']])
         ->localized_summary->toBe('PHP sẽ vá hai lỗ hổng nghiêm trọng.')
         ->patch_versions->toBeNull()
         ->is_dismissed->toBeFalse()

@@ -16,14 +16,15 @@ it('lists every supported technology with the health of its catalog', function (
 
     get('/admin/technologies')->assertInertia(fn (Assert $page) => $page
         ->component('technologies/index')
-        ->has('technologies', 3)
-        ->where('technologies.0.name', 'Node.js')
+        ->has('technologies', 5)
+        ->where('technologies.0.name', 'Apache HTTP Server')
         ->where('technologies.0.catalog.label', 'Chưa đồng bộ')
-        ->where('technologies.1.name', 'PHP')
-        ->where('technologies.1.release_source', 'php.net')
-        ->where('technologies.1.catalog.label', 'Đã đồng bộ')
-        ->where('technologies.1.branches_count', 4)
-        ->where('technologies.1.runtimes_count', 1));
+        ->where('technologies.1.name', 'NGINX')
+        ->where('technologies.3.name', 'PHP')
+        ->where('technologies.3.release_source', 'php.net')
+        ->where('technologies.3.catalog.label', 'Đã đồng bộ')
+        ->where('technologies.3.branches_count', 4)
+        ->where('technologies.3.runtimes_count', 1));
 });
 
 it('shows the branches and the releases of a technology, newest first', function () {

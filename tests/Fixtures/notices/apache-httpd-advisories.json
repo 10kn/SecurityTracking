@@ -1,0 +1,15 @@
+[
+    {
+        "CVE_data_meta": {
+            "STATE": "PUBLIC",
+            "DATE_PUBLIC": "2021-10-07",
+            "ID": "CVE-2021-42013",
+            "TITLE": "Path traversal and remote code execution"
+        },
+        "timeline": [{"time": "2021-10-07", "value": "2.4.51 released"}],
+        "impact": [{"other": "critical"}],
+        "description": {
+            "description_data": [{"lang": "eng", "value": "An earlier fix for CVE-2021-41773 was incomplete."}]
+        }
+    }
+]

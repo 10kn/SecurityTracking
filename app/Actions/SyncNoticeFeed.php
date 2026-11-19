@@ -217,6 +217,7 @@ class SyncNoticeFeed
                 'content_hash' => $this->contentHash($entry),
                 'classified_by' => $this->classifier->name(),
                 'classifier_revision' => $this->classifier->revision(),
+                'classifier_answer' => $classification->answer ?: null,
                 'classified_severity' => $classification->severity,
                 'classification_failed_at' => null,
                 'is_dismissed' => ! $classification->isSecurityNews,
@@ -226,6 +227,10 @@ class SyncNoticeFeed
                 'patch_versions' => $classification->patchVersions ?: null,
                 'localized_summary' => $classification->summary,
             ]);
+        }
+
+        if ($entry->vendorCveId !== null) {
+            $advisory->patch_versions = $entry->vendorPatchVersions ?: null;
         }
 
         $vendorAdvisories = collect($this->vendorAdvisories->fixedIn($technology, $advisory->patch_versions ?? []));
@@ -243,7 +248,7 @@ class SyncNoticeFeed
         $isDismissed = $advisory->classified_by === null || $advisory->is_dismissed;
         $ratings = collect([
             SeverityBasis::Kev->value => $advisory->isKnownExploited() ? $this->knownExploitation->severity() : Severity::Unknown,
-            SeverityBasis::VendorAdvisory->value => $vendorAdvisories->pluck('severity')->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() ?? Severity::Unknown,
+            SeverityBasis::VendorAdvisory->value => $entry->vendorSeverity ?? $vendorAdvisories->pluck('severity')->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() ?? Severity::Unknown,
             SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
             SeverityBasis::Classifier->value => $advisory->classified_severity ?? Severity::Unknown,
         ])
@@ -260,7 +265,7 @@ class SyncNoticeFeed
             'severity' => $severity,
             'severity_basis' => $basis,
             'severity_before_kev' => $basis === SeverityBasis::Kev->value ? $withoutKev : null,
-            'is_dismissed' => $isDismissed && ! $ratings->has(SeverityBasis::Cvss->value) && $vendorAdvisories->isEmpty() && ! $advisory->isKnownExploited(),
+            'is_dismissed' => $isDismissed && $entry->vendorCveId === null && ! $ratings->has(SeverityBasis::Cvss->value) && $vendorAdvisories->isEmpty() && ! $advisory->isKnownExploited(),
             'cvss_score' => $cvssScore ?? $vendorAdvisories->pluck('cvssScore')->filter(fn (?float $score): bool => $score !== null)->max(),
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,

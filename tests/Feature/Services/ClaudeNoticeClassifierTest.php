@@ -127,6 +127,27 @@ it('drops a summary that is not written in the summary language', function (stri
     'English' => ['en', 'Ruby 4.0.8 is a routine update with bug fixes only.', true],
 ]);
 
+it('reads a release line written as 22.x as its branch, and keeps the answer as the model gave it', function () {
+    $answer = [
+        'is_security_news' => true,
+        'severity' => 'high',
+        'planned_release_at' => null,
+        'affected_branches' => ['26.x', '24.X', ' 22.x ', '22', 'all release lines'],
+        'summary' => 'Node.js phát hành bản vá bảo mật cho các nhánh 26.x, 24.x và 22.x.',
+        'unaffected_branches' => ['8.3.x'],
+        'related_incident_id' => null,
+        'patch_versions' => ['22.23.5', '24.22.3', '26.13.1'],
+    ];
+    $claude = fakeClaude($answer);
+
+    expect(app(ClaudeNoticeClassifier::class)->classify(Technology::Nodejs, upcomingPhpSecurityRelease()))
+        ->affectedBranches->toBe(['26', '24', '22'])
+        ->unaffectedBranches->toBe(['8.3'])
+        ->answer->toBe($answer)
+        ->and(app(ClaudeNoticeClassifier::class)->revision())->toBe(3)
+        ->and(json_decode((string) $claude->requests[0]->getBody(), true)['system'])->toContain('the major number for Node.js, e.g. "22" for "22.x"', 'Updates are now available for the 24.x, 22.x release lines', 'leave', 'out versions of a library, package or gem it bundles');
+});
+
 it('only relates an entry to an incident it was offered', function (mixed $answer) {
     fakeClaude([
         'is_security_news' => true,
@@ -235,7 +256,7 @@ it('reads the operating systems the entry is limited to, with the sentence it qu
         ->platforms->toBe($read)
         ->platformsEvidence->toBe($quote)
         ->patchVersions->toBe([])
-        ->and(app(ClaudeNoticeClassifier::class)->revision())->toBe(2)
+        ->and(app(ClaudeNoticeClassifier::class)->revision())->toBeGreaterThanOrEqual(2)
         ->and(json_decode((string) $claude->requests[0]->getBody(), true)['system'])->toContain('platforms: the operating systems', 'Windows builds 8.x.y-1');
 })->with([
     'windows only' => [['windows', 'windows'], '  Only the Windows builds  are affected. ', ['windows'], 'Only the Windows builds are affected.'],

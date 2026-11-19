@@ -4,7 +4,7 @@ namespace App\Enums;
 
 /**
  * What gave a pre-notice its severity: CISA KEV listing one of its CVE ids, the security advisories the vendor published
- * on GitHub for the versions it updates to (see VendorSecurityAdvisories), the CVSS score the entry gives, or the
+ * for the versions it updates to, the CVSS score the entry gives, or the
  * classifier. `Vendor`, the vendor's words read by keywords, is no longer given: it stays for pre-notices rated before.
  */
 enum SeverityBasis: string
@@ -17,7 +17,7 @@ enum SeverityBasis: string
 
     /**
      * Which basis gives the severity when several rate the same pre-notice, the highest first: CISA KEV, then the
-     * vendor's GitHub advisories, then the CVSS score the entry gives, then the classifier, whatever severity each
+     * vendor's advisories, then the CVSS score the entry gives, then the classifier, whatever severity each
      * gives (see SyncNoticeFeed).
      */
     public function precedence(): int
@@ -41,7 +41,7 @@ enum SeverityBasis: string
             self::Cvss => __('Điểm CVSS'),
             self::Classifier => __('Phân loại bởi AI'),
             self::Kev => 'CISA KEV',
-            self::VendorAdvisory => __('GitHub advisory của hãng'),
+            self::VendorAdvisory => __('Advisory chính thức của hãng'),
         };
     }
 
@@ -55,7 +55,7 @@ enum SeverityBasis: string
             self::Cvss => __('Mức theo điểm CVSS'),
             self::Classifier => __('Mức do AI đánh giá'),
             self::Kev => __('Mức theo CISA KEV'),
-            self::VendorAdvisory => __('Mức theo GitHub advisory của hãng'),
+            self::VendorAdvisory => __('Mức theo advisory chính thức của hãng'),
         };
     }
 }

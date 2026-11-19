@@ -11,7 +11,10 @@ use App\Models\Runtime;
 use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Catalog\WebServerReleaseFeed;
 use App\Services\IncidentTeamExposure;
+use App\Services\Notices\ApacheHttpdNoticeFeed;
+use App\Services\Notices\NginxNoticeFeed;
 use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeClassifier;
@@ -106,10 +109,15 @@ function fakeCatalogSources(): void
         'https://endoflife.date/api/v1/products/php/' => Http::response($fixture('endoflife-php.json')),
         'https://endoflife.date/api/v1/products/nodejs/' => Http::response($fixture('endoflife-nodejs.json')),
         'https://endoflife.date/api/v1/products/ruby/' => Http::response($fixture('endoflife-ruby.json')),
+        'https://endoflife.date/api/v1/products/nginx/' => Http::response($fixture('endoflife-nginx.json')),
+        'https://endoflife.date/api/v1/products/apache-http-server/' => Http::response($fixture('endoflife-apache-http-server.json')),
         'https://www.php.net/releases/*' => Http::response($fixture('php-releases-8.json')),
         'https://nodejs.org/dist/index.json' => Http::response($fixture('nodejs-index.json')),
         'https://cache.ruby-lang.org/pub/ruby/index.txt' => Http::response($fixture('ruby-index.txt')),
+        WebServerReleaseFeed::NGINX_ARCHIVE => Http::response('<a href="nginx-1.30.0.tar.gz">1.30.0</a><a href="nginx-1.30.1.tar.gz">1.30.1</a><a href="nginx-1.31.0.tar.gz">1.31.0</a>'),
+        WebServerReleaseFeed::APACHE_ARCHIVE => Http::response('<a href="httpd-2.4.50.tar.gz">2.4.50</a><a href="httpd-2.4.51.tar.gz">2.4.51</a><a href="httpd-2.2.34.tar.gz">2.2.34</a>'),
     ]);
+    fakeWebServerNotices();
 }
 
 /**
@@ -239,6 +247,16 @@ function fakeNoticeFeeds(): void
         NodejsNoticeFeed::URL => $feed('nodejs-vulnerability.xml'),
         NodejsNoticeFeed::POSTS.'*' => fn (Request $request) => Http::response(nodejsPostFixture($request->url()) ?? 'Not Found', nodejsPostFixture($request->url()) === null ? 404 : 200),
         RubyLangNoticeFeed::URL => $feed('ruby-news.rss'),
+    ]);
+    fakeWebServerNotices();
+}
+
+function fakeWebServerNotices(): void
+{
+    Http::fake([
+        ApacheHttpdNoticeFeed::URL => Http::response(file_get_contents(base_path('tests/Fixtures/notices/apache-httpd-advisories.json'))),
+        NginxNoticeFeed::URL => Http::response(file_get_contents(base_path('tests/Fixtures/notices/nginx-advisories.xml'))),
+        NginxNoticeFeed::CHANGELOG => Http::response("Changes with nginx 1.31.0                                        13 May 2026\n"),
     ]);
 }
 

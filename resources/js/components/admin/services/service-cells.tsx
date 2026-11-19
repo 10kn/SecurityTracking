@@ -5,6 +5,7 @@ import { LockfileName } from '@/components/admin/lockfile-logo';
 import { StatusDot } from '@/components/admin/status-dot';
 import { TechnologyName } from '@/components/admin/technology-logo';
 import { useTranslation } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import type { StatusDotData } from '@/types';
 
 export interface ServiceRow {
@@ -47,7 +48,7 @@ function Missing({ reason }: { reason: string }) {
  * One line per runtime: "PHP 8.3.12" and its status, with the reason below unless the runtime is fine, so the reason
  * also reads on a phone.
  */
-export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] }) {
+export function RuntimesCell({ runtimes, stackStatus = false }: { runtimes: ServiceRow['runtimes']; stackStatus?: boolean }) {
     const t = useTranslation();
 
     if (runtimes.length === 0) {
@@ -58,8 +59,8 @@ export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] })
         <div className="grid gap-1">
             {runtimes.map((runtime) => (
                 <div key={runtime.name}>
-                    <div className="flex flex-wrap items-center gap-x-2">
-                        <TechnologyName technology={runtime.technology} label={runtime.name} className="font-mono text-sm" />
+                    <div className={cn('flex flex-wrap items-center gap-x-2', stackStatus && 'flex-col items-start')}>
+                        <TechnologyName technology={runtime.technology} label={runtime.name} className={cn('font-mono text-sm', stackStatus && 'whitespace-nowrap')} />
                         <StatusDot status={runtime.status} />
                     </div>
                     {runtime.status.tone !== 'success' && <span className="block max-w-[320px] text-sm text-muted-foreground">{runtime.reason}</span>}
@@ -73,7 +74,7 @@ export function RuntimesCell({ runtimes }: { runtimes: ServiceRow['runtimes'] })
  * One line per lockfile: its package count, how many packages have an open vulnerability, and why it cannot be read.
  * A failed sync from the repository comes first, so a service listed as not fully evaluated says why.
  */
-export function LockfilesCell({ lockfiles, syncError }: { lockfiles: ServiceRow['lockfiles']; syncError: string | null }) {
+export function LockfilesCell({ lockfiles, syncError = null }: { lockfiles: ServiceRow['lockfiles']; syncError?: string | null }) {
     const t = useTranslation();
 
     return (
@@ -92,12 +93,12 @@ export function LockfilesCell({ lockfiles, syncError }: { lockfiles: ServiceRow[
             {lockfiles.map((lockfile) => (
                 <div key={lockfile.path}>
                     <div className="flex flex-wrap items-center gap-x-2">
-                        <LockfileName path={lockfile.path} className="font-mono text-sm" />
-                        {lockfile.state && <StatusDot status={lockfile.state} />}
+                        <LockfileName path={lockfile.path} className="max-w-full items-start font-mono text-sm wrap-anywhere" />
+                        {lockfile.state && <StatusDot status={lockfile.state} className="wrap-anywhere whitespace-normal" />}
                         {lockfile.packages && <span className="text-sm text-muted-foreground">{lockfile.packages}</span>}
                         {lockfile.vulnerable && <StatusDot status={lockfile.vulnerable} />}
                     </div>
-                    {lockfile.error && <span className="block max-w-[320px] text-sm text-muted-foreground">{lockfile.error}</span>}
+                    {lockfile.error && <span className="block max-w-[320px] text-sm wrap-anywhere text-muted-foreground">{lockfile.error}</span>}
                 </div>
             ))}
         </div>

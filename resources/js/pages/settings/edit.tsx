@@ -467,7 +467,7 @@ export default function SettingsEdit({ settings, defaults, changed, webhooks, hi
                         </FormFields>
                     </FormSection>
 
-                    <FormSection title={t('Tin bảo mật từ vendor')} description={t('Tin từ php.net, nodejs.org, ruby-lang.org và cách AI phân loại tin.')}>
+                    <FormSection title={t('Tin bảo mật từ vendor')} description={t('Nguồn tin bảo mật của các công nghệ được theo dõi và cách AI phân loại tin.')}>
                         <FormFields columns={2}>
                             {numberField('notice_relevant_days', t('Chỉ tin đăng trong khoảng này mới được gửi cho team.'), { min: 1, max: 365 })}
                             {numberField('notice_collect_days', t('Không ngắn hơn số ngày tin còn hiệu lực.'), { min: 1, max: 3650 })}

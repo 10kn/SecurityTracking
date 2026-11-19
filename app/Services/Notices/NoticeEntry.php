@@ -2,6 +2,7 @@
 
 namespace App\Services\Notices;
 
+use App\Enums\Severity;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
 
@@ -13,6 +14,7 @@ final readonly class NoticeEntry
 {
     /**
      * @param  list<string>  $links
+     * @param  list<string>  $vendorPatchVersions  Releases explicitly identified as fixes by the vendor.
      */
     public function __construct(
         public string $externalId,
@@ -21,6 +23,9 @@ final readonly class NoticeEntry
         public ?string $url = null,
         public ?CarbonImmutable $publishedAt = null,
         public array $links = [],
+        public ?string $vendorCveId = null,
+        public ?Severity $vendorSeverity = null,
+        public array $vendorPatchVersions = [],
     ) {}
 
     /**
@@ -43,6 +48,10 @@ final readonly class NoticeEntry
      */
     public function cveIds(): array
     {
+        if ($this->vendorCveId !== null) {
+            return [$this->vendorCveId];
+        }
+
         preg_match_all('/\bCVE-\d{4}-\d{4,}\b/i', "{$this->title} {$this->text}", $matches);
 
         return array_values(array_unique(array_map('strtoupper', $matches[0])));

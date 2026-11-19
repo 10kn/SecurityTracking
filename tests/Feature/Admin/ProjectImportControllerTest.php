@@ -116,7 +116,9 @@ it('gives a template with a dropdown for each list and versions typed by hand', 
         ->and($data->getCell('N1')->getValue())->toBe('Version 3')
         ->and($data->getCell('O1')->getValue())->toBeNull()
         ->and($lists->getCell('A2')->getValue())->toBe('Commerce')
-        ->and($spreadsheet->getNamedRange('psm_technologies')->getRange())->toBe("'Lists'!\$E\$2:\$E\$4");
+        ->and($lists->getCell('E5')->getValue())->toBe('NGINX')
+        ->and($lists->getCell('E6')->getValue())->toBe('Apache HTTP Server')
+        ->and($spreadsheet->getNamedRange('psm_technologies')->getRange())->toBe("'Lists'!\$E\$2:\$E\$6");
 
     $team = $data->getDataValidation('A2');
     expect($team->getType())->toBe(DataValidation::TYPE_LIST)

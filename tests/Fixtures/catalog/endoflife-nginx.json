@@ -1,0 +1,4 @@
+{"result":{"releases":[
+    {"name":"1.31","latest":{"name":"1.31.0"},"releaseDate":"2026-05-13","isEol":false},
+    {"name":"1.30","latest":{"name":"1.30.0"},"releaseDate":"2026-04-14","isEol":false}
+]}}

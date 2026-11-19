@@ -8,6 +8,9 @@ use App\Services\Catalog\NodejsReleaseFeed;
 use App\Services\Catalog\PhpNetReleaseFeed;
 use App\Services\Catalog\ReleaseFeed;
 use App\Services\Catalog\RubyLangReleaseFeed;
+use App\Services\Catalog\WebServerReleaseFeed;
+use App\Services\Notices\ApacheHttpdNoticeFeed;
+use App\Services\Notices\NginxNoticeFeed;
 use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeFeed;
 use App\Services\Notices\PhpNetNoticeFeed;
@@ -22,6 +25,8 @@ enum Technology: string
     case Php = 'php';
     case Nodejs = 'nodejs';
     case Ruby = 'ruby';
+    case Nginx = 'nginx';
+    case Apache = 'apache';
 
     public function getLabel(): string
     {
@@ -29,6 +34,8 @@ enum Technology: string
             self::Php => 'PHP',
             self::Nodejs => 'Node.js',
             self::Ruby => 'Ruby',
+            self::Nginx => 'NGINX',
+            self::Apache => 'Apache HTTP Server',
         };
     }
 
@@ -37,7 +44,7 @@ enum Technology: string
      */
     public function endoflifeProduct(): string
     {
-        return $this->value;
+        return $this === self::Apache ? 'apache-http-server' : $this->value;
     }
 
     public function endoflifeUrl(): string
@@ -54,6 +61,8 @@ enum Technology: string
             self::Php => 'php.net',
             self::Nodejs => 'nodejs.org',
             self::Ruby => 'ruby-lang.org',
+            self::Nginx => 'nginx.org',
+            self::Apache => 'httpd.apache.org',
         };
     }
 
@@ -66,6 +75,8 @@ enum Technology: string
             self::Php => 'https://www.php.net/releases/',
             self::Nodejs => 'https://nodejs.org/en/about/previous-releases',
             self::Ruby => 'https://www.ruby-lang.org/en/downloads/releases/',
+            self::Nginx => WebServerReleaseFeed::NGINX_ARCHIVE,
+            self::Apache => WebServerReleaseFeed::APACHE_ARCHIVE,
         };
     }
 
@@ -77,7 +88,7 @@ enum Technology: string
     {
         return match ($this) {
             self::Php => 'php/php-src',
-            self::Nodejs, self::Ruby => null,
+            self::Nodejs, self::Ruby, self::Nginx, self::Apache => null,
         };
     }
 
@@ -90,6 +101,7 @@ enum Technology: string
             self::Php => PhpNetReleaseFeed::class,
             self::Nodejs => NodejsReleaseFeed::class,
             self::Ruby => RubyLangReleaseFeed::class,
+            self::Nginx, self::Apache => WebServerReleaseFeed::class,
         };
     }
 
@@ -102,6 +114,8 @@ enum Technology: string
             self::Php => 'https://www.php.net/ChangeLog-'.explode('.', $version)[0].'.php#'.$version,
             self::Nodejs => 'https://nodejs.org/en/blog/release/v'.$version,
             self::Ruby => 'https://www.ruby-lang.org/en/downloads/releases/',
+            self::Nginx => 'https://nginx.org/en/security_advisories.html',
+            self::Apache => 'https://httpd.apache.org/security/vulnerabilities_24.html',
         };
     }
 
@@ -117,6 +131,8 @@ enum Technology: string
             self::Php => PhpNetNoticeFeed::class,
             self::Nodejs => NodejsNoticeFeed::class,
             self::Ruby => RubyLangNoticeFeed::class,
+            self::Nginx => NginxNoticeFeed::class,
+            self::Apache => ApacheHttpdNoticeFeed::class,
         };
     }
 

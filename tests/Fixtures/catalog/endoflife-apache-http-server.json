@@ -1,0 +1,4 @@
+{"result":{"releases":[
+    {"name":"2.4","latest":{"name":"2.4.51"},"releaseDate":"2012-02-21","isEol":false},
+    {"name":"2.2","latest":{"name":"2.2.34"},"releaseDate":"2005-12-01","isEol":true,"eolFrom":"2017-07-11"}
+]}}

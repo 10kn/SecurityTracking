@@ -59,8 +59,11 @@ it('reports nothing to fix when monitoring works, and still says what it checked
 
     get('/admin')->assertInertia(fn (Assert $page) => $page
         ->where('checked.time', '17:00 GMT+7')
-        ->has('sources', 3)
+        ->has('sources', 5)
+        ->where('sources.0.source', 'catalog:apache')
         ->where('sources.0.is_stale', false)
+        ->where('sources.1.source', 'catalog:nginx')
+        ->where('sources.1.is_stale', false)
         ->where('delivery.destinations', [])
         ->where('delivery.last_sent', '24/10/2026 08:00 GMT+7')
         ->where('coverage.count', 0)
@@ -76,7 +79,7 @@ it('lists the sources over their threshold first, with what they miss and a reru
     SourceHeartbeat::factory()->create(['source' => 'kev', 'name' => 'CISA KEV', 'last_success_at' => null]);
 
     get('/admin')->assertInertia(fn (Assert $page) => $page
-        ->has('sources', 6)
+        ->has('sources', 8)
         ->where('sources.0.source', 'catalog:nodejs')
         ->where('sources.0.name', 'Danh mục version Node.js')
         ->where('sources.0.technology', 'nodejs')

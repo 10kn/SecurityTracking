@@ -143,7 +143,7 @@ export default function GuideIndex({ vendor_sources = [], timezone, schedule, di
     const setupId = useId();
 
     const scheduleText: Record<ScheduleKey, { title: string; description: string }> = {
-        notices: { title: t('Tin bảo mật từ vendor'), description: t('php.net, nodejs.org, ruby-lang.org. AI đọc và phân loại từng tin.') },
+        notices: { title: t('Tin bảo mật từ vendor'), description: t('Đồng bộ tin và advisory chính thức của các công nghệ được theo dõi.') },
         catalog: { title: t('Danh mục version'), description: t('endoflife.date và trang phát hành chính thức: bản mới, ngày hết hỗ trợ.') },
         kev: { title: t('CISA KEV'), description: t('Danh sách lỗ hổng đang bị khai thác thực tế.') },
         packages: { title: t('Quét lỗ hổng package'), description: t('Package trong lockfile, đối chiếu với Packagist, RubySec và OSV.') },

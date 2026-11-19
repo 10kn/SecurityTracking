@@ -3,12 +3,15 @@
 use App\Enums\FindingEventType;
 use App\Enums\FindingRule;
 use App\Enums\Severity;
+use App\Enums\SeverityBasis;
 use App\Enums\Technology;
 use App\Models\Advisory;
 use App\Models\Finding;
 use App\Models\FindingEvent;
 use App\Models\SourceHeartbeat;
 use App\Models\Team;
+use App\Services\Notices\ApacheHttpdNoticeFeed;
+use App\Services\Notices\NginxNoticeFeed;
 use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeEntry;
@@ -34,14 +37,60 @@ it('polls the news feed of every technology, once each', function () {
 
     expect(Advisory::groupBy('source')->selectRaw('source, count(*) as total')->pluck('total', 'source')->all())
         ->toEqual(['notice:nodejs' => 2, 'notice:php' => 6, 'notice:ruby' => 4])
-        ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:nodejs', 'notice:php', 'notice:ruby'])
+        ->and(SourceHeartbeat::orderBy('source')->pluck('source')->all())->toBe(['notice:apache', 'notice:nginx', 'notice:nodejs', 'notice:php', 'notice:ruby'])
         ->and(Http::recorded(fn (Request $request): bool => ! str_starts_with($request->url(), Team::GOOGLE_CHAT_WEBHOOK_PREFIX))->map(fn (array $pair): string => $pair[0]->url())->sort()->values()->all())->toBe([
+            ApacheHttpdNoticeFeed::URL,
+            NginxNoticeFeed::CHANGELOG,
             'https://nodejs.org/en/blog/vulnerability/july-2026-security-releases',
             'https://nodejs.org/en/blog/vulnerability/october-2026-security-releases',
             NodejsNoticeFeed::URL,
+            NginxNoticeFeed::URL,
             PhpNetNoticeFeed::URL,
             RubyLangNoticeFeed::URL,
         ]);
+});
+
+it('records web server CVEs and confirms vendor patches without the AI classifier', function () {
+    $this->travelTo('2026-11-19 10:00:00');
+    config(['psm.notices.collect_days' => 60]);
+    Http::fake([
+        ApacheHttpdNoticeFeed::URL => Http::response([[
+            'cveMetadata' => ['cveId' => 'CVE-2026-119618', 'state' => 'PUBLISHED'],
+            'containers' => ['cna' => [
+                'title' => 'HTTP/2 module memory corruption',
+                'descriptions' => [['lang' => 'en', 'value' => 'Affected releases can allow remote code execution.']],
+                'metrics' => [['other' => ['content' => ['text' => 'critical']]]],
+                'timeline' => [['time' => '2026-11-11T12:00:00Z', 'value' => '2.4.71 released']],
+            ]],
+        ]]),
+        NginxNoticeFeed::URL => Http::response('<article><section><security><item name="HTTP/2 memory corruption" severity="major" cve="2026-123007" vulnerable="1.9.5-1.31.8" good="1.31.9+, 1.30.7+"/></security></section></article>'),
+        NginxNoticeFeed::CHANGELOG => Http::response("Changes with nginx 1.31.9                                        18 Nov 2026\n"),
+        'https://archive.apache.org/dist/httpd/' => Http::response('<a href="httpd-2.4.71.tar.gz">2.4.71</a>'),
+        'https://nginx.org/download/' => Http::response('<a href="nginx-1.31.9.tar.gz">1.31.9</a><a href="nginx-1.30.7.tar.gz">1.30.7</a>'),
+    ]);
+    fakeCatalogSources();
+    fakeNoticeFeeds();
+
+    artisan('psm:sync-runtimes', ['--technology' => ['apache', 'nginx']])->assertSuccessful();
+    artisan('psm:watch-notices')->assertSuccessful();
+    artisan('psm:watch-notices')->assertSuccessful();
+
+    $apache = Advisory::where('source', 'notice:apache')->sole();
+    expect($apache)
+        ->severity->toBe(Severity::Critical)
+        ->severity_basis->toBe(SeverityBasis::VendorAdvisory)
+        ->is_backfill->toBeFalse()
+        ->is_dismissed->toBeFalse()
+        ->classified_by->toBeNull()
+        ->aliases->toBe(['CVE-2026-119618'])
+        ->and($apache->incident->confirmedPatches()['2.4']['version'])->toBe('2.4.71');
+
+    $nginx = Advisory::where('source', 'notice:nginx')->sole();
+    expect($nginx)
+        ->severity->toBe(Severity::High)
+        ->is_dismissed->toBeFalse()
+        ->and(collect($nginx->incident->confirmedPatches())->pluck('version', null)->sort()->values()->all())
+        ->toBe(['1.30.7', '1.31.9']);
 });
 
 it('keeps polling the other feeds when one fails, records the failure and alerts the admin once it is stale', function () {

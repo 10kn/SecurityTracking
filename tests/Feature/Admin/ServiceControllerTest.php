@@ -74,15 +74,34 @@ it('offers every known version of each technology, newest first', function () {
     $this->travelTo('2026-10-23 10:00:00');
     actingAsAdmin();
     $php = syncedTechnology(Technology::Php);
+    syncedTechnology(Technology::Nginx);
+    syncedTechnology(Technology::Apache);
     $project = Project::factory()->create();
 
     get("/admin/services/create?project={$project->id}")
         ->assertInertia(fn (Assert $page) => $page
             ->component('services/create')
             ->where('defaultProjectId', $project->id)
-            ->where('technologies.1.value', $php->value)
-            ->where('technologies.1.versions.0', '8.5.12')
-            ->where('technologies.1.versions', fn ($versions) => $versions->contains('8.3.36') && $versions->contains('8.1.34')));
+            ->where('technologies.0.value', 'apache')
+            ->where('technologies.0.versions.0', '2.4.51')
+            ->where('technologies.1.value', 'nginx')
+            ->where('technologies.1.versions.0', '1.31.0')
+            ->where('technologies.3.value', $php->value)
+            ->where('technologies.3.versions.0', '8.5.12')
+            ->where('technologies.3.versions', fn ($versions) => $versions->contains('8.3.36') && $versions->contains('8.1.34')));
+});
+
+it('saves the versions of the web servers a production service runs alongside its application runtime', function () {
+    actingAsAdmin();
+
+    post('/admin/services', serviceForm(['runtimes' => [
+        ['technology' => 'php', 'raw_version' => '8.5.12'],
+        ['technology' => 'nginx', 'raw_version' => '1.30.1'],
+        ['technology' => 'apache', 'raw_version' => '2.4.51'],
+    ]]))->assertSessionHasNoErrors();
+
+    expect(Service::sole()->productionDeployment->runtimes()->pluck('raw_version', 'technology')->all())
+        ->toEqual(['php' => '8.5.12', 'nginx' => '1.30.1', 'apache' => '2.4.51']);
 });
 
 it('accepts a version that no catalog lists', function () {
@@ -304,9 +323,9 @@ it('shows the package count and the vulnerable packages of each lockfile', funct
         ->where('services.data.1.name', 'shop-api')
         ->where('services.data.1.lockfiles.0.path', 'Gemfile.lock')
         ->where('services.data.1.lockfiles.0.packages', '6 package')
-        ->where('services.data.1.lockfiles.0.vulnerable.label', '2 có lỗ hổng')
+        ->where('services.data.1.lockfiles.0.vulnerable.label', '2 package có lỗ hổng')
         ->where('services.data.1.lockfiles.1.packages', '5 package')
-        ->where('services.data.1.lockfiles.1.vulnerable.label', '3 có lỗ hổng')
+        ->where('services.data.1.lockfiles.1.vulnerable.label', '3 package có lỗ hổng')
         ->where('services.data.2.lockfiles', [])
         ->where('services.data.3.lockfiles.0.state.label', 'Không đọc được')
         ->where('services.data.3.lockfiles.0.error', 'Not valid JSON: Syntax error.'));
@@ -324,9 +343,9 @@ it('counts a vulnerable package for every lockfile holding it', function () {
 
     get('/admin/services')->assertInertia(fn (Assert $page) => $page
         ->where('services.data.0.lockfiles.0.path', 'admin/composer.lock')
-        ->where('services.data.0.lockfiles.0.vulnerable.label', '3 có lỗ hổng')
+        ->where('services.data.0.lockfiles.0.vulnerable.label', '3 package có lỗ hổng')
         ->where('services.data.0.lockfiles.1.path', 'composer.lock')
-        ->where('services.data.0.lockfiles.1.vulnerable.label', '3 có lỗ hổng')
+        ->where('services.data.0.lockfiles.1.vulnerable.label', '3 package có lỗ hổng')
         ->where('services.data.0.open_findings_count', 4));
 });
 

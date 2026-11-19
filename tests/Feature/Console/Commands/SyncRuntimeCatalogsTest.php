@@ -15,12 +15,18 @@ it('syncs every technology and evaluates the runtimes that use it', function () 
     $this->travelTo('2026-10-23 10:00:00');
     fakeCatalogSources();
     $runtime = Runtime::factory()->create(['technology' => Technology::Nodejs, 'raw_version' => '20.18.0']);
+    $nginx = Runtime::factory()->create(['technology' => Technology::Nginx, 'raw_version' => '1.30.0']);
+    $apache = Runtime::factory()->create(['technology' => Technology::Apache, 'raw_version' => '2.4.50']);
+    $patched = Runtime::factory()->create(['technology' => Technology::Apache, 'raw_version' => '2.4.51']);
 
     artisan('psm:sync-runtimes')->assertSuccessful();
 
     expect(RuntimeBranch::toBase()->selectRaw('technology, count(*) as aggregate')->groupBy('technology')->pluck('aggregate', 'technology')->all())
-        ->toEqual(['nodejs' => 3, 'php' => 4, 'ruby' => 3])
-        ->and($runtime->refresh()->status)->toBe(RuntimeStatus::Eol);
+        ->toEqual(['apache' => 2, 'nginx' => 2, 'nodejs' => 3, 'php' => 4, 'ruby' => 3])
+        ->and($runtime->refresh()->status)->toBe(RuntimeStatus::Eol)
+        ->and($nginx->refresh()->status)->toBe(RuntimeStatus::OutdatedSecurity)
+        ->and($apache->refresh()->status)->toBe(RuntimeStatus::OutdatedSecurity)
+        ->and($patched->refresh()->status)->toBe(RuntimeStatus::Ok);
 });
 
 it('keeps syncing the other technologies when one source fails and exits with a failure', function () {

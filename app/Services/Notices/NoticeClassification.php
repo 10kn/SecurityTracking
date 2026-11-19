@@ -24,6 +24,8 @@ final readonly class NoticeClassification
      *                                   ["windows"]; empty when it states no limit.
      * @param  ?string  $platformsEvidence  The sentence of the entry that limits it, quoted. The limit only counts when
      *                                      it is in the entry (see NoticeEntry::quotes()).
+     * @param  array<string, mixed>  $answer  What the classifier answered, before anything was dropped from it, kept to
+     *                                        look into an answer that lost its branches or versions.
      */
     public function __construct(
         public bool $isSecurityNews,
@@ -38,5 +40,6 @@ final readonly class NoticeClassification
         public array $patchVersions = [],
         public array $platforms = [],
         public ?string $platformsEvidence = null,
+        public array $answer = [],
     ) {}
 }

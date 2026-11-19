@@ -231,7 +231,7 @@ export function ServiceFields({
                             ))}
                         </NativeSelect>
                     </Field>
-                    <Field label={t('Runtime / công nghệ')} error={errors.runtimes}>
+                    <Field label={t('Runtime / công nghệ')} error={errors.runtimes} help={t('Chọn NGINX hoặc Apache HTTP Server và nhập version production để theo dõi web server.')}>
                         <RuntimeRows form={form} technologies={options.technologies} errors={errors} />
                     </Field>
                     {syncsLockfiles && (

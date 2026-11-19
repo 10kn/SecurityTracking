@@ -35,15 +35,19 @@ class ClaudeNoticeClassifier implements NoticeClassifier
           rating. Use unknown when the entry gives neither, and for entries that are not security news. Do not guess.
         - planned_release_at: when the vendor says the fixes will be published, as an ISO 8601 time in UTC. Null when
           the entry gives no time, or the fixes are already out.
-        - affected_branches: the release branches the entry names as affected, as major.minor numbers such as "8.3".
-          Empty when it names none.
+        - affected_branches: the release branches the entry names as affected, numbered the way the technology numbers
+          its release lines: the major number for Node.js, e.g. "22" for "22.x" or "Node.js 22", and major.minor for
+          PHP and Ruby, e.g. "8.3" for "8.3.x" or "PHP 8.3". A release line the entry says gets fixes for its
+          vulnerabilities is named as affected, e.g. "Updates are now available for the 24.x, 22.x release lines" for
+          the issues it lists. Empty when it names none.
         - unaffected_branches: the release branches the entry explicitly says are not affected. Empty unless the entry
           says so in words; a list of fixed versions does not say which branches are unaffected.
         - patch_versions: the released versions the entry tells users to update to because they fix its
           vulnerabilities, as full version numbers such as "8.3.36", one per branch, e.g. "Update to PHP 8.5.12, 8.4.27
-          or 8.3.36" or "PHP 8.3.36 is a security release fixing CVE-…". Leave out versions it only mentions, versions
-          it says do not fix them, versions still to come and pre-releases (alpha, beta, release candidate). Empty
-          when it names none.
+          or 8.3.36" or "PHP 8.3.36 is a security release fixing CVE-…". Only versions of the technology itself: leave
+          out versions of a library, package or gem it bundles, e.g. "resolv 0.7.2" or "llhttp 9.3.0". Leave out
+          versions it only mentions, versions it says do not fix them, versions still to come and pre-releases (alpha,
+          beta, release candidate). Empty when it names none.
         - related_incident_id: the id of the listed incident this entry is about (the same vulnerabilities; a shared
           release or version number alone is not enough), or null when none clearly is. Only ids from <incidents>.
         - actively_exploited: true only when the entry states that the vulnerability is being exploited in real attacks.
@@ -97,9 +101,11 @@ class ClaudeNoticeClassifier implements NoticeClassifier
 
     /**
      * Raised whenever the prompt or the schema changes what is read from an entry, so the entries read before are
-     * read again (see SyncNoticeFeed). 2: the operating systems an entry is limited to (`platforms`).
+     * read again (see SyncNoticeFeed). 2: the operating systems an entry is limited to (`platforms`). 3: branches
+     * numbered the way the technology numbers its release lines (Node.js majors), release lines that get fixes named
+     * as affected, and versions of bundled libraries kept out of the patch versions.
      */
-    private const int REVISION = 2;
+    private const int REVISION = 3;
 
     /**
      * Letters only a summary in the language has, by alert locale: Vietnamese with its diacritics, Japanese kana or
@@ -331,15 +337,20 @@ class ClaudeNoticeClassifier implements NoticeClassifier
             patchVersions: $this->matching($answer['patch_versions'] ?? [], '/^\d+\.\d+\.\d+$/'),
             platforms: $platforms,
             platformsEvidence: $platformsEvidence === '' ? null : $platformsEvidence,
+            answer: $answer,
         );
     }
 
     /**
+     * The branches that are version numbers, a release line written as "22.x" or "8.3.x" read as "22" or "8.3".
+     *
      * @return list<string>
      */
     private function branches(mixed $branches): array
     {
-        return $this->matching($branches, '/^\d+(?:\.\d+)?$/');
+        $numbered = collect((array) $branches)->map(fn (mixed $branch): mixed => is_string($branch) ? preg_replace('/\.x$/i', '', trim($branch)) : $branch);
+
+        return $this->matching($numbered->all(), '/^\d+(?:\.\d+)?$/');
     }
 
     /**
