@@ -12,8 +12,17 @@ class PhpNetNoticeFeed implements NoticeFeed
 {
     public const string URL = 'https://www.php.net/feed.atom';
 
+    /**
+     * Match the notice polling interval. PHP.net's CDN can serve a valid but stale Atom feed at the fixed URL.
+     */
+    private const int CACHE_WINDOW_SECONDS = 15 * 60;
+
     public function entries(): array
     {
-        return NewsFeedParser::parse(CatalogHttp::client()->get(self::URL)->body());
+        $response = CatalogHttp::client()->get(self::URL, [
+            'psm_poll' => intdiv(now()->getTimestamp(), self::CACHE_WINDOW_SECONDS),
+        ]);
+
+        return NewsFeedParser::parse($response->body());
     }
 }

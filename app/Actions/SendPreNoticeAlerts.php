@@ -200,7 +200,8 @@ class SendPreNoticeAlerts
             foreach ($notices->isEmpty() ? [] : $technologyRuntimes['by_team'] as $teamId => $monitored) {
                 $monitored = $monitored->reject(fn (Runtime $runtime): bool => in_array($runtime->deployment->service->project_id, $pausedIds, true))->values();
                 $runtimes = ProjectIncidentSkip::withoutSkipped($incident, $all, $monitored, $confirmedPatches)
-                    ->reject(fn (Runtime $runtime): bool => $incident->excludedBy($runtime) !== null)
+                    ->reject(fn (Runtime $runtime): bool => $incident->excludedBy($runtime) !== null
+                        || ($incident->version_scopes !== null && $incident->scopeFor($runtime) === IncidentScope::NotAffected))
                     ->values();
 
                 if ($runtimes->isEmpty()) {
@@ -287,7 +288,7 @@ class SendPreNoticeAlerts
                 collect($notice->known_exploited ?? [])->map(fn (array $entry): string => implode(':', [$entry['cve'], $entry['date_added'], $entry['due_date'] ?? '', (int) ($entry['listed'] ?? false)]))->sort()->values()->all(),
                 KnownExploitation::isFresh($notice->known_exploited),
             ])->values()->all(),
-            [$incident->affected_branches, $incident->unaffected_branches, ...($incident->platform_scopes === null ? [] : [$incident->platform_scopes])],
+            [$incident->affected_branches, $incident->unaffected_branches, ...($incident->platform_scopes === null ? [] : [$incident->platform_scopes]), ...($incident->version_scopes === null ? [] : [$incident->version_scopes])],
             collect($patches)->map(fn (array $patch): string => "{$patch['notice']->id}:{$patch['version']}")->all(),
             $runtimeSignature,
             ProjectIncidentSkip::where('incident_id', $incident->id)->orderBy('id')->pluck('id')->all(),
@@ -342,7 +343,11 @@ class SendPreNoticeAlerts
         $isExposed = $this->isExposed($incident, $runtimes, $patches);
         $severity = Incident::highestSeverity($notices);
         $exploited = $notices->first(fn (Advisory $notice): bool => $notice->is_exploited);
-        $isRaised = $isExposed && $toldSeverity->rank() < $severity->rank();
+        $since = now()->subDays(config('psm.notices.relevant_days'));
+        $isRaised = $isExposed && $toldSeverity->rank() < $severity->rank()
+            && $notices->contains(fn (Advisory $notice): bool => $notice->severity === $severity
+                && ($notice->severity_basis !== SeverityBasis::CnaCvss
+                    || ($notice->published_at?->gte($since) && $this->policy->sendsPreNoticeSeverityRightAway($severity))));
         $newlyKnownExploited = $isExposed ? collect($knownExploited)->whereNotIn('cve', $this->toldKnownExploited($team))->values()->all() : [];
 
         $changes = array_filter([

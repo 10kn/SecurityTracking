@@ -11,19 +11,21 @@ enum SeverityBasis: string
 {
     case Vendor = 'vendor';
     case Cvss = 'cvss';
+    case CnaCvss = 'cna_cvss';
     case Classifier = 'classifier';
     case Kev = 'kev';
     case VendorAdvisory = 'vendor_advisory';
 
     /**
      * Which basis gives the severity when several rate the same pre-notice, the highest first: CISA KEV, then the
-     * vendor's advisories, then the CVSS score the entry gives, then the classifier, whatever severity each
+     * CNA's CVSS 4.0 score, the vendor's advisories, the CVSS score the entry gives, then the classifier, whatever severity each
      * gives (see SyncNoticeFeed).
      */
     public function precedence(): int
     {
         return match ($this) {
-            self::Kev => 4,
+            self::Kev => 5,
+            self::CnaCvss => 4,
             self::VendorAdvisory => 3,
             self::Cvss => 2,
             self::Classifier => 1,
@@ -39,6 +41,7 @@ enum SeverityBasis: string
         return match ($this) {
             self::Vendor => $technology === null ? __('Trang chính thức') : __('Trang chính thức :technology', ['technology' => $technology->getLabel()]),
             self::Cvss => __('Điểm CVSS'),
+            self::CnaCvss => 'CVSS 4.0 (CNA)',
             self::Classifier => __('Phân loại bởi AI'),
             self::Kev => 'CISA KEV',
             self::VendorAdvisory => __('Advisory chính thức của hãng'),
@@ -53,6 +56,7 @@ enum SeverityBasis: string
         return match ($this) {
             self::Vendor => $technology === null ? __('Mức theo trang chính thức') : __('Mức theo trang chính thức :technology', ['technology' => $technology->getLabel()]),
             self::Cvss => __('Mức theo điểm CVSS'),
+            self::CnaCvss => 'CVSS 4.0 (CNA)',
             self::Classifier => __('Mức do AI đánh giá'),
             self::Kev => __('Mức theo CISA KEV'),
             self::VendorAdvisory => __('Mức theo advisory chính thức của hãng'),

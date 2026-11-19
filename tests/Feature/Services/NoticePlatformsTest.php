@@ -14,7 +14,7 @@ beforeEach(function () {
 
 it('stores the operating systems the classifier read only when the sentence it quotes is in the entry', function (array $platforms, ?string $quote, ?array $stored) {
     $feed = str_replace('It addresses two critical vulnerabilities', 'Only the Windows builds 8.x.y-1 are affected; PHP runtime versions remain unchanged. It addresses two critical vulnerabilities', noticeFixture('php-feed.atom'));
-    Http::fake([PhpNetNoticeFeed::URL => Http::response($feed)]);
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response($feed)]);
     classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical, platforms: $platforms, platformsEvidence: $quote));
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
@@ -34,7 +34,7 @@ it('stores the operating systems the classifier read only when the sentence it q
 it('drops a limit read before once the vendor removes its sentence from the entry', function () {
     $sentence = 'Only the Windows builds 8.x.y-1 are affected.';
     $feed = str_replace('It addresses two critical vulnerabilities', "{$sentence} It addresses two critical vulnerabilities", noticeFixture('php-feed.atom'));
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical, platforms: ['windows'], platformsEvidence: $sentence));
@@ -48,7 +48,7 @@ it('drops a limit read before once the vendor removes its sentence from the entr
 });
 
 it('reads an unchanged entry again once the classifier\'s revision is newer, only within the collection window', function () {
-    Http::fake([PhpNetNoticeFeed::URL => Http::response(noticeFixture('php-feed.atom'))]);
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response(noticeFixture('php-feed.atom'))]);
     classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: false, severity: Severity::Unknown));
     app(SyncNoticeFeed::class)->handle(Technology::Php);
 

@@ -8,6 +8,7 @@ use App\Enums\RuntimeStatus;
 use App\Enums\Severity;
 use App\Enums\Technology;
 use App\Services\Kev\KnownExploitation;
+use App\Services\Notices\VendorVersionScope;
 use App\Support\Version;
 use Database\Factories\IncidentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,7 +25,7 @@ use Illuminate\Support\Facades\DB;
  * One security issue of a technology, told by one or more vendor pre-notices (see AssignNoticeToIncident). Its title,
  * severity, dates and branches are derived from its pre-notices that were not dismissed (see refreshFromNotices()).
  */
-#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platform_scopes', 'news_patches', 'merged_into_id', 'fingerprint', 'changed_at'])]
+#[Fillable(['technology', 'title', 'severity', 'first_published_at', 'last_published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platform_scopes', 'version_scopes', 'news_patches', 'merged_into_id', 'fingerprint', 'changed_at'])]
 class Incident extends Model
 {
     /** @use HasFactory<IncidentFactory> */
@@ -46,6 +47,7 @@ class Incident extends Model
             'affected_branches' => 'array',
             'unaffected_branches' => 'array',
             'platform_scopes' => 'array',
+            'version_scopes' => 'array',
             'news_patches' => 'array',
             'changed_at' => 'datetime',
         ];
@@ -118,6 +120,18 @@ class Incident extends Model
 
         if ($scope === false) {
             return IncidentScope::NotAffected;
+        }
+
+        if ($this->version_scopes !== null) {
+            $version = $runtime->version ?? Version::normalize($runtime->raw_version);
+
+            if ($version === null || preg_match('/^\d+\.\d+\.\d+$/D', $version) !== 1) {
+                return IncidentScope::Unknown;
+            }
+
+            return collect($this->version_scopes)->contains(fn (array $scope): bool => VendorVersionScope::affects($scope, $version))
+                ? IncidentScope::Confirmed
+                : IncidentScope::NotAffected;
         }
 
         $versions = array_values(array_filter([$runtime->branch, $runtime->version ?? $runtime->raw_version], filled(...)));
@@ -247,6 +261,8 @@ class Incident extends Model
             $affected = $this->branches($notices, 'affected_branches');
             $unaffected = $this->branches($notices, 'unaffected_branches');
             $platformScopes = $this->platformScopesOf($notices);
+            $scopes = $notices->map(fn (Advisory $notice): ?array => $notice->vendor_advisory['scope'] ?? null);
+            $versionScopes = $scopes->isNotEmpty() && ! $scopes->containsStrict(null) ? $scopes->uniqueStrict()->values()->all() : null;
 
             $this->fill([
                 'title' => $first?->title ?? $this->title,
@@ -257,10 +273,11 @@ class Incident extends Model
                 'affected_branches' => $affected,
                 'unaffected_branches' => $unaffected,
                 'platform_scopes' => $platformScopes,
+                'version_scopes' => $versionScopes,
             ]);
 
             $knownExploited = $notices->flatMap(fn (Advisory $notice): array => KnownExploitation::cves($notice->known_exploited))->unique()->sort()->values()->all();
-            $fingerprint = hash('sha256', (string) json_encode([$severity->value, $affected, $unaffected, ...($knownExploited === [] ? [] : [$knownExploited]), ...($platformScopes === null ? [] : [['platforms' => $platformScopes]])]));
+            $fingerprint = hash('sha256', (string) json_encode([$severity->value, $affected, $unaffected, ...($knownExploited === [] ? [] : [$knownExploited]), ...($platformScopes === null ? [] : [['platforms' => $platformScopes]]), ...($versionScopes === null ? [] : [['versions' => $versionScopes]])]));
 
             if ($this->fingerprint !== $fingerprint) {
                 $this->changed_at = $this->fingerprint === null ? ($this->changed_at ?? now()) : now();

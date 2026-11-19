@@ -15,6 +15,7 @@ final readonly class NoticeEntry
     /**
      * @param  list<string>  $links
      * @param  list<string>  $vendorPatchVersions  Releases explicitly identified as fixes by the vendor.
+     * @param  array{label: string, vulnerable: string, good: string, scope: ?array{ranges: list<array{from: ?string, through: ?string}>, fixes: list<string>}, branches: list<string>}|null  $vendorAdvisory
      */
     public function __construct(
         public string $externalId,
@@ -26,6 +27,7 @@ final readonly class NoticeEntry
         public ?string $vendorCveId = null,
         public ?Severity $vendorSeverity = null,
         public array $vendorPatchVersions = [],
+        public ?array $vendorAdvisory = null,
     ) {}
 
     /**

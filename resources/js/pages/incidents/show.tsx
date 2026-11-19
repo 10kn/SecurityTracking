@@ -40,15 +40,19 @@ import type { Option, StatusDotData } from '@/types';
 
 type Severity = { value: string; label: string };
 
+type Ratings = { vendor: string | null; source: string | null; provider: string | null; scores: Record<string, number> };
+
 interface Notice {
     id: number;
     title: string;
     url: string | null;
     severity: Severity;
+    ratings: Ratings;
     published: string | null;
     updated: string | null;
     affected_branches: string[];
     unaffected_branches: string[];
+    vulnerable_versions: string | null;
     patch_versions: string[];
     is_exploited: boolean;
     exploited_excerpt: string | null;
@@ -128,6 +132,7 @@ interface Props {
         affected_branches: string[];
         unaffected_branches: string[];
         severity_basis: string | null;
+        ratings: Ratings;
         is_exploited: boolean;
         known_exploited: KnownExploited[];
         merged_from: { id: number; title: string }[];
@@ -199,12 +204,13 @@ function SecurityDetails({ incident }: { incident: Props['incident'] }) {
             <Detail
                 label={t('Mức cảnh báo')}
                 hint={t(
-                    'Mức cao nhất trong các tin của sự kiện, không tính tin được xếp là “Không phải tin bảo mật”. Mỗi tin lấy mức theo thứ tự ưu tiên: CISA KEV, rồi điểm CVSS hãng ghi trong tin, rồi phân loại bởi AI. Nguồn của mức ghi ngay bên cạnh.',
+                    'Mức cao nhất trong các tin bảo mật của sự kiện. Thứ tự ưu tiên của mỗi tin là CISA KEV, CVSS 4.0 của CNA, mức advisory của hãng, CVSS ghi trong tin, rồi phân loại bởi AI.',
                 )}
             >
                 <SeverityBadge severity={incident.severity} />
                 {incident.severity_basis && <span className="ml-2 text-sm text-muted-foreground">{incident.severity_basis}</span>}
                 {incident.is_exploited && <StatusDot status={{ label: t('Đang bị khai thác'), tone: 'danger' }} className="ml-2" />}
+                <AdvisoryRatings ratings={incident.ratings} />
             </Detail>
             <Detail
                 label={t('Bản vá')}
@@ -239,6 +245,22 @@ function SecurityDetails({ incident }: { incident: Props['incident'] }) {
                 </Detail>
             )}
         </>
+    );
+}
+
+function AdvisoryRatings({ ratings }: { ratings: Ratings }) {
+    const scores = Object.entries(ratings.scores)
+        .sort(([left], [right]) => right.localeCompare(left))
+        .map(([version, score]) => `CVSS ${version} ${score.toFixed(1)}`);
+    const cna = scores.length > 0 ? `${scores.join(' · ')} (${ratings.provider})` : null;
+
+    if (!ratings.vendor && !cna) return null;
+
+    return (
+        <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
+            {ratings.vendor && <span>{ratings.vendor}</span>}
+            {cna && (ratings.source ? <ExternalLink href={ratings.source}>{cna}</ExternalLink> : <span>{cna}</span>)}
+        </span>
     );
 }
 
@@ -877,6 +899,7 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                         <Tr key={notice.id} className={cn('align-top', notice.is_dismissed && 'text-muted-foreground')}>
                             <Td className="align-top">
                                 <SeverityBadge severity={notice.severity} />
+                                <AdvisoryRatings ratings={notice.ratings} />
                             </Td>
                             <Td className="max-w-[380px] align-top">
                                 {notice.url ? <ExternalLink href={notice.url}>{notice.title}</ExternalLink> : <span className="font-medium">{notice.title}</span>}
@@ -900,11 +923,13 @@ function Notices({ incidentId, notices }: { incidentId: number; notices: Notice[
                                 <PublishedAt published={notice.published} updated={notice.updated} />
                             </Td>
                             <Td className="align-top text-sm">
-                                {notice.affected_branches.length > 0 && <span className="block">{t('Ảnh hưởng: :branches', { branches: notice.affected_branches.join(', ') })}</span>}
+                                {(notice.vulnerable_versions || notice.affected_branches.length > 0) && (
+                                    <span className="block">{t('Ảnh hưởng: :branches', { branches: notice.vulnerable_versions || notice.affected_branches.join(', ') })}</span>
+                                )}
                                 {notice.unaffected_branches.length > 0 && (
                                     <span className="block text-muted-foreground">{t('Không ảnh hưởng: :branches', { branches: notice.unaffected_branches.join(', ') })}</span>
                                 )}
-                                {notice.affected_branches.length === 0 && notice.unaffected_branches.length === 0 && <span className="text-muted-foreground">{t('Hãng chưa nêu')}</span>}
+                                {!notice.vulnerable_versions && notice.affected_branches.length === 0 && notice.unaffected_branches.length === 0 && <span className="text-muted-foreground">{t('Hãng chưa nêu')}</span>}
                             </Td>
                             <Td className="align-top font-mono text-sm">{notice.patch_versions.join(', ') || '—'}</Td>
                             <Td align="right" className="align-top">

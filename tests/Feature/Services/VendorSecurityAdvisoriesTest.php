@@ -136,7 +136,7 @@ it('reports a failed read and keeps the list read before', function () {
 it('gives a release announcement the ids and the severity of the advisories its version fixes', function () {
     Http::preventStrayRequests();
     Http::fake([
-        PhpNetNoticeFeed::URL => Http::response(noticeFixture('php-feed.atom')),
+        PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response(noticeFixture('php-feed.atom')),
         PHP_SRC_ADVISORIES => Http::response(phpSrcAdvisories()),
     ]);
     classifyReleaseAnnouncements();
@@ -165,7 +165,7 @@ it('gives a release announcement the ids and the severity of the advisories its 
 it('suggests putting the announcements of one release together through the advisories they share', function () {
     Http::preventStrayRequests();
     Http::fake([
-        PhpNetNoticeFeed::URL => Http::response(phpFeedWithTwoReleasesOfOneDay()),
+        PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response(phpFeedWithTwoReleasesOfOneDay()),
         PHP_SRC_ADVISORIES => Http::response(phpSrcAdvisories()),
     ]);
     classifyReleaseAnnouncements();
@@ -187,7 +187,7 @@ it('suggests putting the announcements of one release together through the advis
 it('keeps an announcement as it was when GitHub has no advisory for its version', function () {
     Http::preventStrayRequests();
     Http::fake([
-        PhpNetNoticeFeed::URL => Http::response(noticeFixture('php-feed.atom')),
+        PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response(noticeFixture('php-feed.atom')),
         PHP_SRC_ADVISORIES => Http::response([]),
     ]);
     classifyReleaseAnnouncements();

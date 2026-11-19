@@ -11,12 +11,14 @@ use App\Models\Incident;
 use App\Models\IncidentTeamNotice;
 use App\Models\SourceHeartbeat;
 use App\Services\Kev\KnownExploitation;
+use App\Services\Notices\CveCnaRecords;
 use App\Services\Notices\NoticeClassification;
 use App\Services\Notices\NoticeClassifier;
 use App\Services\Notices\NoticeEntry;
 use App\Services\Notices\NoticeFeed;
 use App\Services\Notices\VendorSecurityAdvisories;
 use App\Services\Notices\VendorSecurityAdvisory;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -40,6 +42,7 @@ class SyncNoticeFeed
         private KnownExploitation $knownExploitation,
         private ReportClassifierOutage $reportClassifierOutage,
         private VendorSecurityAdvisories $vendorAdvisories,
+        private CveCnaRecords $cnaRecords,
     ) {}
 
     /**
@@ -90,7 +93,11 @@ class SyncNoticeFeed
             ->unique(fn (NoticeEntry $entry): string => $this->externalId($entry))
             ->keyBy(fn (NoticeEntry $entry): string => $this->externalId($entry));
 
-        $polled = DB::transaction(function () use ($technology, $listed, $isFirstPoll): array {
+        $cnaRecords = $this->cnaRecords->forIds($listed
+            ->filter(fn (NoticeEntry $entry): bool => $entry->vendorAdvisory !== null && $this->isWithinCollectWindow($entry))
+            ->pluck('vendorCveId')->filter()->values()->all());
+
+        $polled = DB::transaction(function () use ($technology, $listed, $isFirstPoll, $cnaRecords): array {
             $this->assignNoticeToIncident->lock($technology);
 
             $stored = Advisory::where('source', $technology->noticeSourceKey())->whereIn('external_id', $listed->keys())->get()->keyBy('external_id');
@@ -99,7 +106,7 @@ class SyncNoticeFeed
                 ->filter(fn (NoticeEntry $entry, string $externalId): bool => $this->isWithinCollectWindow($entry) || $stored->has($externalId))
                 ->map(fn (NoticeEntry $entry, string $externalId): array => [
                     'entry' => $entry,
-                    'advisory' => $this->store($technology, $entry, $stored->get($externalId), null, $isFirstPoll),
+                    'advisory' => $this->store($technology, $entry, $stored->get($externalId), null, $isFirstPoll, $cnaRecords[$entry->vendorCveId] ?? null),
                 ])
                 ->all();
         });
@@ -159,9 +166,11 @@ class SyncNoticeFeed
         $isReadByEarlierRevision = $advisory->content_hash !== null
             && ($advisory->classifier_revision ?? 1) < $this->classifier->revision()
             && $this->isWithinCollectWindow($entry);
+        $hasNewVendorFacts = $entry->vendorAdvisory !== null && $this->isWithinCollectWindow($entry)
+            && $advisory->content_hash !== $this->contentHash($entry);
 
         if (! $this->classifier->isEnabled()
-            || (! $isReadByEarlierRevision
+            || (! $isReadByEarlierRevision && ! $hasNewVendorFacts
                 && ($advisory->content_hash === $this->contentHash($entry)
                     || (! $this->isFresh($entry) && ($advisory->content_hash !== null || ! $this->isWithinCollectWindow($entry)) && ! $this->isOfToldIncident($advisory))))) {
             return null;
@@ -190,9 +199,8 @@ class SyncNoticeFeed
      * such GHSA id is recorded as resolved, so ResolveNoticeCves does not ask GitHub for it again.
      *
      * The severity comes from the first that rates the entry of CISA KEV listing one of its CVE ids (see
-     * MatchKnownExploited), the highest of those vendor advisories, the CVSS score the entry gives and the classifier,
-     * even when a later one rates it higher (see SeverityBasis::precedence()); without a score of its own, the entry
-     * shows the highest score of the advisories. A severity that falls once the vendor adds a score tells no team again (see
+     * MatchKnownExploited), a CNA's CVSS 4.0 score for a structured advisory, the vendor advisories, the CVSS score the
+     * entry gives and the classifier, in that order (see SeverityBasis::precedence()). A severity that falls tells no team again (see
      * SendPreNoticeAlerts). An entry is security news when the classifier says so, or its CVSS score, a vendor
      * advisory or a KEV listing does: one the classifier never read is dismissed until it does, so it waits for it. Without a new
      * classification, the previous one is kept, the versions it read to update to included. The KEV evidence is kept
@@ -203,9 +211,11 @@ class SyncNoticeFeed
      *
      * Entries a feed already lists on its first successful poll are history and are never sent, except a critical one
      * that is still fresh: a new install must not miss an ongoing critical issue. An entry of the history that turns
-     * critical later, e.g. once classified, is sent too.
+     * critical while still fresh, e.g. after a CNA lookup, becomes eligible too.
+     *
+     * @param  array{provider: string, url: string, published_at: ?string, scores: array<string, float>}|null  $cnaRecord
      */
-    private function store(Technology $technology, NoticeEntry $entry, ?Advisory $stored, ?NoticeClassification $classification, bool $isFirstPoll): Advisory
+    private function store(Technology $technology, NoticeEntry $entry, ?Advisory $stored, ?NoticeClassification $classification, bool $isFirstPoll, ?array $cnaRecord = null): Advisory
     {
         $advisory = $stored ?? new Advisory([
             'source' => $technology->noticeSourceKey(),
@@ -233,6 +243,20 @@ class SyncNoticeFeed
             $advisory->patch_versions = $entry->vendorPatchVersions ?: null;
         }
 
+        if ($entry->vendorAdvisory !== null) {
+            $advisory->vendor_advisory = $entry->vendorAdvisory;
+            $advisory->cna_record = $cnaRecord ?? $advisory->cna_record;
+
+            if ($entry->vendorAdvisory['scope'] !== null) {
+                $advisory->affected_branches = $entry->vendorAdvisory['branches'];
+                $advisory->unaffected_branches = [];
+            }
+
+            if ($classification === null && $advisory->content_hash !== $this->contentHash($entry)) {
+                $advisory->localized_summary = null;
+            }
+        }
+
         $vendorAdvisories = collect($this->vendorAdvisories->fixedIn($technology, $advisory->patch_versions ?? []));
         $advisory->aliases = collect($entry->cveIds())
             ->merge($vendorAdvisories->pluck('cveId')->filter())
@@ -245,12 +269,16 @@ class SyncNoticeFeed
         $this->matchKnownExploited->fill($advisory);
 
         $cvssScore = $entry->cvssScore();
+        $cnaScore = $advisory->cna_record['scores'][CveCnaRecords::PRIORITY_VERSION] ?? null;
+        $cnaPublishedAt = $advisory->cna_record['published_at'] ?? null;
+        $publishedAt = $cnaPublishedAt === null ? $entry->publishedAt : CarbonImmutable::parse($cnaPublishedAt);
         $isDismissed = $advisory->classified_by === null || $advisory->is_dismissed;
         $ratings = collect([
             SeverityBasis::Kev->value => $advisory->isKnownExploited() ? $this->knownExploitation->severity() : Severity::Unknown,
+            SeverityBasis::CnaCvss->value => $cnaScore === null ? Severity::Unknown : Severity::fromCvss($cnaScore),
             SeverityBasis::VendorAdvisory->value => $entry->vendorSeverity ?? $vendorAdvisories->pluck('severity')->sortByDesc(fn (Severity $severity): int => $severity->rank())->first() ?? Severity::Unknown,
             SeverityBasis::Cvss->value => $cvssScore === null ? Severity::Unknown : Severity::fromCvss($cvssScore),
-            SeverityBasis::Classifier->value => $advisory->classified_severity ?? Severity::Unknown,
+            SeverityBasis::Classifier->value => strtolower($entry->vendorAdvisory['label'] ?? '') === 'none' ? Severity::Unknown : ($advisory->classified_severity ?? Severity::Unknown),
         ])
             ->reject(fn (Severity $severity): bool => $severity === Severity::Unknown)
             ->sortByDesc(fn (Severity $severity, string $basis): int => SeverityBasis::from($basis)->precedence());
@@ -266,18 +294,23 @@ class SyncNoticeFeed
             'severity_basis' => $basis,
             'severity_before_kev' => $basis === SeverityBasis::Kev->value ? $withoutKev : null,
             'is_dismissed' => $isDismissed && $entry->vendorCveId === null && ! $ratings->has(SeverityBasis::Cvss->value) && $vendorAdvisories->isEmpty() && ! $advisory->isKnownExploited(),
-            'cvss_score' => $cvssScore ?? $vendorAdvisories->pluck('cvssScore')->filter(fn (?float $score): bool => $score !== null)->max(),
+            'cvss_score' => $cnaScore ?? $cvssScore ?? $vendorAdvisories->pluck('cvssScore')->filter(fn (?float $score): bool => $score !== null)->max(),
             'technology' => $technology,
             'url' => $entry->url !== null && strlen($entry->url) <= 255 ? $entry->url : null,
             'links' => $entry->links,
-            'published_at' => $entry->publishedAt,
+            'published_at' => $publishedAt,
             ...$this->exploitation($entry, $advisory, $classification),
             ...$this->platforms($entry, $advisory, $classification),
         ]);
 
+        if ($cnaPublishedAt !== null) {
+            $advisory->first_published_at = $publishedAt?->toMutable();
+        }
+
         $this->trackRevision($advisory, $entry);
 
-        $isOngoingCritical = ($severity === Severity::Critical && $this->isFresh($entry)) || KnownExploitation::isFresh($advisory->known_exploited);
+        $isOngoingCritical = ($severity === Severity::Critical && $publishedAt !== null && $publishedAt->gte(now()->subDays(config('psm.notices.relevant_days'))))
+            || KnownExploitation::isFresh($advisory->known_exploited);
 
         if (! $advisory->exists) {
             $advisory->is_backfill = $isFirstPoll && ! $isOngoingCritical;
@@ -388,7 +421,9 @@ class SyncNoticeFeed
     {
         $entryHash = $this->contentHash($entry);
 
-        if ($advisory->entry_hash !== null && $advisory->entry_hash !== $entryHash) {
+        $isAddingVendorFacts = $entry->vendorAdvisory !== null && $advisory->getOriginal('vendor_advisory') === null;
+
+        if ($advisory->entry_hash !== null && $advisory->entry_hash !== $entryHash && ! $isAddingVendorFacts) {
             $advisory->content_changed_at = now();
         }
 

@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\Catalog\WebServerReleaseFeed;
 use App\Services\IncidentTeamExposure;
 use App\Services\Notices\ApacheHttpdNoticeFeed;
+use App\Services\Notices\CveCnaRecords;
 use App\Services\Notices\NginxNoticeFeed;
 use App\Services\Notices\NodejsNoticeFeed;
 use App\Services\Notices\NoticeClassification;
@@ -243,7 +244,7 @@ function fakeNoticeFeeds(): void
 
     Http::preventStrayRequests();
     Http::fake([
-        PhpNetNoticeFeed::URL => $feed('php-feed.atom'),
+        PhpNetNoticeFeed::URL.'?psm_poll=*' => $feed('php-feed.atom'),
         NodejsNoticeFeed::URL => $feed('nodejs-vulnerability.xml'),
         NodejsNoticeFeed::POSTS.'*' => fn (Request $request) => Http::response(nodejsPostFixture($request->url()) ?? 'Not Found', nodejsPostFixture($request->url()) === null ? 404 : 200),
         RubyLangNoticeFeed::URL => $feed('ruby-news.rss'),
@@ -257,6 +258,7 @@ function fakeWebServerNotices(): void
         ApacheHttpdNoticeFeed::URL => Http::response(file_get_contents(base_path('tests/Fixtures/notices/apache-httpd-advisories.json'))),
         NginxNoticeFeed::URL => Http::response(file_get_contents(base_path('tests/Fixtures/notices/nginx-advisories.xml'))),
         NginxNoticeFeed::CHANGELOG => Http::response("Changes with nginx 1.31.0                                        13 May 2026\n"),
+        CveCnaRecords::URL.'/*' => Http::response(null, 404),
     ]);
 }
 

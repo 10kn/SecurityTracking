@@ -43,10 +43,12 @@ class NginxNoticeFeed implements NoticeFeed
             }
 
             $cve = 'CVE-'.$id[1];
+            $label = trim($item->getAttribute('severity'));
             $good = $item->getAttribute('good');
             $vulnerable = $item->getAttribute('vulnerable');
             preg_match_all('/(?:^|,\s*)(\d+\.\d+\.\d+)\+(?=,|$)/', $good, $fixes);
             $patchVersions = array_values(array_unique($fixes[1]));
+            $scope = $this->versionScope($vulnerable, $patchVersions);
             $publishedAt = collect($patchVersions)
                 ->map(fn (string $version): ?CarbonImmutable => isset($dates[$version]) ? CarbonImmutable::parse($dates[$version]) : null)
                 ->filter()
@@ -55,11 +57,11 @@ class NginxNoticeFeed implements NoticeFeed
             $entries[] = new NoticeEntry(
                 externalId: $cve,
                 title: $item->getAttribute('name'),
-                text: "Affected NGINX versions: {$vulnerable}. Vendor lists as not vulnerable: {$good}.",
+                text: "{$cve}. NGINX advisory severity: {$label}. Affected NGINX versions: {$vulnerable}. Vendor lists as not vulnerable: {$good}.",
                 url: NoticeUrl::normalize($item->getAttribute('advisory')) ?? 'https://www.cve.org/CVERecord?id='.$cve,
                 publishedAt: $publishedAt,
                 vendorCveId: $cve,
-                vendorSeverity: match ($item->getAttribute('severity')) {
+                vendorSeverity: match (strtolower($label)) {
                     'critical' => Severity::Critical,
                     'major', 'high' => Severity::High,
                     'medium' => Severity::Medium,
@@ -67,6 +69,13 @@ class NginxNoticeFeed implements NoticeFeed
                     default => null,
                 },
                 vendorPatchVersions: $patchVersions,
+                vendorAdvisory: [
+                    'label' => $label,
+                    'vulnerable' => $vulnerable,
+                    'good' => $good,
+                    'scope' => $scope,
+                    'branches' => $scope === null || $vulnerable === 'all' ? [] : VendorVersionScope::affectedBranches($scope, array_keys($dates)),
+                ],
             );
         }
 
@@ -75,5 +84,30 @@ class NginxNoticeFeed implements NoticeFeed
         }
 
         return $entries;
+    }
+
+    /**
+     * Only unqualified upstream spans are decisive. Preserve other spellings (e.g. nginx/Windows) verbatim.
+     *
+     * @param  list<string>  $fixes
+     * @return array{ranges: list<array{from: ?string, through: ?string}>, fixes: list<string>}|null
+     */
+    private function versionScope(string $vulnerable, array $fixes): ?array
+    {
+        if ($vulnerable === 'all') {
+            return ['ranges' => [['from' => null, 'through' => null]], 'fixes' => $fixes];
+        }
+
+        $ranges = [];
+
+        foreach (explode(',', $vulnerable) as $span) {
+            if (preg_match('/^(\d+\.\d+\.\d+)(?:\s*-\s*(\d+\.\d+\.\d+))?$/D', trim($span), $match) !== 1) {
+                return null;
+            }
+
+            $ranges[] = ['from' => $match[1], 'through' => $match[2] ?? $match[1]];
+        }
+
+        return ['ranges' => $ranges, 'fixes' => $fixes];
     }
 }

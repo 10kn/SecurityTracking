@@ -61,6 +61,32 @@ it('stores every entry of php.net published within the collection window as a pr
         ->summary->toHaveLength(503);
 });
 
+it('collects a PHP pre-notice on the next poll when the CDN still caches the previous response', function () {
+    $this->travelTo('2026-10-20T20:30:00Z');
+    $staleFeed = noticeFixture('php-feed.atom', '2026-10-20T20:30:00Z');
+    $refreshedFeed = noticeFixture('php-feed.atom', '2026-10-20T20:45:00Z');
+    $noticeUrl = 'https://www.php.net/archive/2026.php#2026-10-20-1';
+
+    Http::preventStrayRequests();
+    Http::fake([
+        PhpNetNoticeFeed::URL => Http::response($staleFeed),
+        PhpNetNoticeFeed::URL.'?psm_poll=1991698' => Http::response($staleFeed),
+        PhpNetNoticeFeed::URL.'?psm_poll=1991699' => Http::response($refreshedFeed),
+    ]);
+
+    $sync = app(SyncNoticeFeed::class);
+    $sync->handle(Technology::Php);
+
+    expect(Advisory::where('url', $noticeUrl)->exists())->toBeFalse();
+
+    $this->travel(15)->minutes();
+    $sync->handle(Technology::Php);
+
+    expect(Advisory::where('url', $noticeUrl)->sole())
+        ->external_id->toBe($noticeUrl)
+        ->severity->toBe(Severity::Critical);
+});
+
 it('reads each nodejs.org entry of the collection window from its post, as the feed gives its title alone', function () {
     fakeNoticeFeeds();
     $texts = [];
@@ -133,7 +159,7 @@ it('reads nothing from the words without the classifier: an entry without a CVSS
 
 it('is idempotent and follows edits the vendor makes to an entry', function () {
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $php = Technology::Php;
@@ -155,7 +181,7 @@ it('is idempotent and follows edits the vendor makes to an entry', function () {
 
 it('keeps the date an entry was first published and records when the vendor edits it', function () {
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $externalId = 'https://www.php.net/archive/2026.php#2026-10-20-1';
@@ -188,7 +214,7 @@ it('keeps the date an entry was first published and records when the vendor edit
 it('rates an entry by its CVSS score when the vendor gives no rating, and records what gave the severity', function () {
     $feed = str_replace('Upcoming Critical PHP Security Release', 'Upcoming PHP Security Release', noticeFixture('php-feed.atom'));
     $feed = str_replace('critical', 'serious', $feed);
-    Http::fake([PhpNetNoticeFeed::URL => Http::response($feed)]);
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response($feed)]);
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
 
@@ -303,7 +329,7 @@ it('tells the admin again when the classifier fails after it worked again', func
     Exceptions::fake();
     fakeGoogleChat();
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $fails = true;
@@ -331,7 +357,7 @@ it('tells the admin again when the classifier fails after it worked again', func
 it('keeps a dismissal when the vendor edits the entry and the classifier cannot read the new text', function () {
     Exceptions::fake();
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $fails = false;
@@ -365,7 +391,7 @@ it('records a successful poll on the feed heartbeat', function () {
 
 it('records a failed poll on the feed heartbeat and rethrows', function () {
     Sleep::fake();
-    Http::fake([PhpNetNoticeFeed::URL => Http::response('Service Unavailable', 503)]);
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response('Service Unavailable', 503)]);
     $php = Technology::Php;
 
     expect(fn () => app(SyncNoticeFeed::class)->handle($php))->toThrow(RequestException::class);
@@ -430,7 +456,7 @@ it('neither stores nor reads an entry published before the collection window, ne
 
 it('keeps following the edits of an entry it stored before it left the collection window', function () {
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     app(SyncNoticeFeed::class)->handle(Technology::Php);
@@ -445,7 +471,7 @@ it('keeps following the edits of an entry it stored before it left the collectio
 
 it('classifies an entry again only when the vendor edits it', function () {
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $classified = classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical));
@@ -466,7 +492,7 @@ it('classifies an entry again only when the vendor edits it', function () {
 });
 
 it('rates an entry by its CVSS score before the classifier, higher or lower, and by the classifier without one', function (string $score, Severity $classified, Severity $severity) {
-    Http::fake([PhpNetNoticeFeed::URL => Http::response(str_replace('CVSS v4.0 9.2', "CVSS v4.0 {$score}", noticeFixture('php-feed.atom')))]);
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => Http::response(str_replace('CVSS v4.0 9.2', "CVSS v4.0 {$score}", noticeFixture('php-feed.atom')))]);
     classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: $classified));
 
     app(SyncNoticeFeed::class)->handle(Technology::Php);
@@ -503,7 +529,7 @@ it('lets the classifier rate an entry, but not lower its CVSS score', function (
 it('keeps the severity the classifier gave when the vendor edits the entry and the classifier cannot read the new text', function () {
     Exceptions::fake();
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $fails = false;
@@ -583,7 +609,7 @@ it('does not call the classifier when no API key is configured', function () {
 it('classifies an old pre-notice that was never classified, and an edited one when a team was sent a card about its incident', function (bool $wasSent, ?string $contentHash, array $classified, array $branches) {
     $this->travelTo('2026-11-30 10:00:00');
     $feed = noticeFixture('php-feed.atom');
-    Http::fake([PhpNetNoticeFeed::URL => function () use (&$feed) {
+    Http::fake([PhpNetNoticeFeed::URL.'?psm_poll=*' => function () use (&$feed) {
         return Http::response($feed);
     }]);
     $titles = classifyNoticesWith(fn (): NoticeClassification => new NoticeClassification(isSecurityNews: true, severity: Severity::Critical, affectedBranches: ['8.3']));

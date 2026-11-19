@@ -139,6 +139,7 @@ class IncidentController extends Controller
         $teams = $state['teams'];
         $teamId = $request->integer('team') ?: null;
         $findings = $this->findings->of($incident, $notices);
+        $lead = $this->overview->lead($state);
 
         return Inertia::render('incidents/show', [
             'incident' => [
@@ -148,21 +149,24 @@ class IncidentController extends Controller
                 'affected_branches' => $incident->affected_branches ?? [],
                 'unaffected_branches' => $incident->unaffected_branches ?? [],
                 'severity_basis' => $this->severityBasis($incident, $notices),
+                'ratings' => $this->ratings($lead),
                 'is_exploited' => $notices->contains(fn (Advisory $notice): bool => ! $notice->is_dismissed && $notice->is_exploited === true),
                 'known_exploited' => $this->knownExploited($notices->where('is_dismissed', false)->flatMap(fn (Advisory $notice): array => $notice->known_exploited ?? [])->sortByDesc(fn (array $entry): bool => (bool) ($entry['listed'] ?? false))->unique('cve')->sortBy('cve')->values()->all()),
                 'merged_from' => Incident::where('merged_into_id', $incident->id)->orderBy('id')->get()->map(fn (Incident $merged): array => ['id' => $merged->id, 'title' => $merged->title])->all(),
-                'lead_notice' => $this->leadNotice($this->overview->lead($state)),
+                'lead_notice' => $this->leadNotice($lead),
                 'not_told_reason' => $this->notToldReason($notices, $teams->contains('is_told', true)),
             ],
             'notices' => $notices->map(fn (Advisory $notice): array => [
                 'id' => $notice->id,
                 'title' => $notice->title,
                 'url' => $notice->url,
-                'severity' => $this->severity($notice->severity),
-                'published' => LocalTime::format($notice->firstPublishedAt()),
+                'severity' => $this->severity($notice->severity, $notice),
+                'ratings' => $this->ratings($notice),
+                'published' => $this->noticePublication($notice),
                 'updated' => LocalTime::format($notice->updatedByVendorAt()),
                 'affected_branches' => $notice->affected_branches ?? [],
                 'unaffected_branches' => $notice->unaffected_branches ?? [],
+                'vulnerable_versions' => $notice->vendor_advisory['vulnerable'] ?? null,
                 'patch_versions' => $notice->patch_versions ?? [],
                 'is_exploited' => $notice->is_exploited === true,
                 'exploited_excerpt' => $notice->exploited_basis['excerpt'] ?? null,
@@ -255,10 +259,12 @@ class IncidentController extends Controller
             'title' => $incident->title,
             'lead' => $lead?->title,
             'technology' => ['value' => $incident->technology->value, 'label' => $incident->technology->getLabel()],
-            'severity' => $this->severity($incident->severity),
+            'severity' => $this->severity($incident->severity, $lead),
             'is_dismissed' => $notices->isNotEmpty() && $notices->every(fn (Advisory $notice): bool => $notice->is_dismissed && $notice->classified_by !== null),
             'is_known_exploited' => $notices->where('is_dismissed', false)->contains(fn (Advisory $notice): bool => collect($notice->known_exploited ?? [])->contains(fn (mixed $entry): bool => is_array($entry) && ($entry['listed'] ?? false) === true)),
-            'first_published' => LocalTime::format($incident->first_published_at),
+            'first_published' => $lead?->vendor_advisory === null
+                ? LocalTime::format($incident->first_published_at)
+                : $this->publishedDates($incident, $notices)['first_published'],
             'notices_count' => $notices->count(),
             'teams_told_count' => $state['teams']->where('is_told', true)->count(),
             'teams_delivered_count' => $state['teams']->filter(fn (array $team): bool => $team['delivery']['last_sent_at'] !== null)->count(),
@@ -358,16 +364,24 @@ class IncidentController extends Controller
                 $system = OperatingSystem::tryFrom((string) ($service['os'] ?? ''));
                 $isExcluded = $incident->excludes($system);
                 $systems = OperatingSystem::labels($incident->platforms());
+                $scope = IncidentScope::from($service['scope']);
+                $matchesVersion = $incident->version_scopes !== null && $scope === IncidentScope::Confirmed;
 
                 return [
                     'name' => $service['service'],
                     'branch' => $service['branch'],
                     'versions' => $versions,
-                    'scope' => $isExcluded ? __('đã xác nhận không ảnh hưởng (chỉ :systems)', ['systems' => $systems]) : IncidentScope::from($service['scope'])->getLabel(),
-                    'scope_hint' => $isExcluded
-                        ? __('Tin trên trang chính thức ghi rõ chỉ ảnh hưởng :systems, còn service chạy :system.', ['systems' => $systems, 'system' => $system?->getLabel()])
-                        : IncidentScope::from($service['scope'])->getDescription(),
-                    'is_not_affected' => $service['scope'] === IncidentScope::NotAffected->value,
+                    'scope' => match (true) {
+                        $isExcluded => __('đã xác nhận không ảnh hưởng (chỉ :systems)', ['systems' => $systems]),
+                        $matchesVersion => __('phiên bản trong dải ảnh hưởng'),
+                        default => $scope->getLabel(),
+                    },
+                    'scope_hint' => match (true) {
+                        $isExcluded => __('Tin trên trang chính thức ghi rõ chỉ ảnh hưởng :systems, còn service chạy :system.', ['systems' => $systems, 'system' => $system?->getLabel()]),
+                        $matchesVersion => __('Phiên bản runtime nằm trong dải hãng công bố. Hãy kiểm tra các điều kiện về cấu hình hoặc module mà advisory nêu.'),
+                        default => $scope->getDescription(),
+                    },
+                    'is_not_affected' => $scope === IncidentScope::NotAffected,
                     'patch' => $service['patch'],
                     'is_patched' => $service['patch'] !== null && $versions !== [] && collect($versions)->every(fn (string $version): bool => ! Version::isNewer($service['patch'], $version)),
                 ];
@@ -537,10 +551,34 @@ class IncidentController extends Controller
     private function publishedDates(Incident $incident, Collection $notices): array
     {
         $counted = $notices->where('is_dismissed', false);
+        $first = $counted->filter(fn (Advisory $notice): bool => $notice->firstPublishedAt() !== null)
+            ->sortBy(fn (Advisory $notice) => $notice->firstPublishedAt())->first();
 
         return [
-            'first_published' => LocalTime::format($counted->map(fn (Advisory $notice) => $notice->firstPublishedAt())->filter()->min() ?? $incident->first_published_at),
+            'first_published' => $first === null ? LocalTime::format($incident->first_published_at) : $this->noticePublication($first),
             'updated' => LocalTime::format($counted->map(fn (Advisory $notice) => $notice->updatedByVendorAt())->filter()->max()),
+        ];
+    }
+
+    private function noticePublication(Advisory $notice): ?string
+    {
+        $date = $notice->firstPublishedAt();
+
+        return $notice->vendor_advisory !== null && empty($notice->cna_record['published_at'])
+            ? $date?->translatedFormat(__('d/m/Y'))
+            : LocalTime::format($date);
+    }
+
+    /** @return array{vendor: ?string, source: ?string, provider: ?string, scores: array<string, float>} */
+    private function ratings(?Advisory $notice): array
+    {
+        $label = $notice?->vendor_advisory['label'] ?? null;
+
+        return [
+            'vendor' => filled($label) ? $notice->technology?->getLabel().' '.ucfirst($label) : null,
+            'source' => $notice?->cna_record['url'] ?? null,
+            'provider' => $notice?->cna_record['provider'] ?? null,
+            'scores' => $notice?->cna_record['scores'] ?? [],
         ];
     }
 
@@ -582,9 +620,13 @@ class IncidentController extends Controller
     /**
      * @return array{value: string, label: string}
      */
-    private function severity(Severity $severity): array
+    private function severity(Severity $severity, ?Advisory $notice = null): array
     {
-        return ['value' => $severity->value, 'label' => $severity->getLabel()];
+        $label = $severity === Severity::Unknown && strtolower($notice?->vendor_advisory['label'] ?? '') === 'none'
+            ? 'None'
+            : $severity->getLabel();
+
+        return ['value' => $severity->value, 'label' => $label];
     }
 
     /**

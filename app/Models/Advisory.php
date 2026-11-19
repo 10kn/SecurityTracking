@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'first_published_at', 'content_changed_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'affected_ranges', 'content_hash', 'entry_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'classifier_answer', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary'])]
+#[Fillable(['source', 'external_id', 'kind', 'incident_id', 'incident_basis', 'incident_evidence', 'aliases', 'title', 'summary', 'severity', 'severity_basis', 'cvss_score', 'technology', 'url', 'links', 'published_at', 'first_published_at', 'content_changed_at', 'source_modified_at', 'withdrawn_at', 'fixed_versions', 'affected_ranges', 'content_hash', 'entry_hash', 'classified_by', 'classified_severity', 'classification_failed_at', 'is_dismissed', 'is_backfill', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'platforms_evidence', 'classifier_revision', 'classifier_answer', 'patch_versions', 'is_exploited', 'exploited_basis', 'known_exploited', 'known_exploited_at', 'severity_before_kev', 'resolved_cve_ids', 'cves_resolved_at', 'localized_summary', 'vendor_advisory', 'cna_record'])]
 class Advisory extends Model
 {
     /** @use HasFactory<AdvisoryFactory> */
@@ -32,7 +32,7 @@ class Advisory extends Model
      *
      * @var list<string>
      */
-    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'known_exploited'];
+    public const array INCIDENT_ATTRIBUTES = ['incident_id', 'title', 'severity', 'is_dismissed', 'is_backfill', 'published_at', 'planned_release_at', 'affected_branches', 'unaffected_branches', 'platforms', 'known_exploited', 'vendor_advisory'];
 
     /**
      * Get the attributes that should be cast.
@@ -49,6 +49,8 @@ class Advisory extends Model
             'severity' => Severity::class,
             'severity_basis' => SeverityBasis::class,
             'cvss_score' => 'decimal:1',
+            'cna_record' => 'array',
+            'vendor_advisory' => 'array',
             'technology' => Technology::class,
             'links' => 'array',
             'published_at' => 'datetime',
