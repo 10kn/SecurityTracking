@@ -123,7 +123,7 @@ export default function Overview({ checked, sources, delivery, coverage, finding
                     title={t('Incident cần xem')}
                     description={t('Cần đánh giá hoặc đánh giá lại ảnh hưởng, hoặc có gợi ý gộp đang chờ')}
                     list={incidents}
-                    href={incidentsIndex.url({ query: { attention: 1 } })}
+                    href={incidentsIndex.url({ query: { attention: 1, severity: 'all' } })}
                     more={(count) => t('+:count incident khác', { count })}
                     error={{ title: t('Không tải được incident cần xem'), description: t('Số đếm không được coi là 0. Các phần tải được vẫn hiển thị.') }}
                     empty={{ title: t('Không có incident cần xem'), description: t('Incident khác vẫn có ở màn Incidents.'), action: t('Mở Incidents'), href: incidentsIndex.url() }}

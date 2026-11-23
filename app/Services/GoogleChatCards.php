@@ -665,7 +665,7 @@ class GoogleChatCards
         if ($digest['incident_reminders']->isNotEmpty()) {
             $sections[] = ['widgets' => [
                 ['textParagraph' => ['text' => e(__('Nhắc lại mỗi ngày cho tới khi admin đánh dấu đã đọc và đánh giá ảnh hưởng tới team.'))]],
-                $this->buttons([__('Đánh giá ảnh hưởng') => $this->incidentsUrl(['team' => $team->id, 'attention' => 1])]),
+                $this->buttons([__('Đánh giá ảnh hưởng') => $this->incidentsUrl(['team' => $team->id, 'attention' => 1, 'severity' => 'all'])]),
             ]];
         }
 

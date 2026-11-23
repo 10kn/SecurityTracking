@@ -60,13 +60,22 @@ class IncidentController extends Controller
      */
     private const int FINDINGS_LINKED = 200;
 
+    /**
+     * The severities the list shows when the query string names none: what a team may have to act on, and what no
+     * source rated yet.
+     *
+     * @var list<Severity>
+     */
+    private const array DEFAULT_SEVERITIES = [Severity::Critical, Severity::High, Severity::Unknown];
+
     public function __construct(private IncidentOverview $overview, private IncidentFindings $findings) {}
 
     /**
      * Current incidents, newest first, searched by their title and their pre-notices' titles and CVE / GHSA ids (see
      * Advisory::matching()), filtered by technology, by a team told about them, and on those needing an admin (see
      * IncidentOverview::needsAttention()) or marked as read with "Chưa rõ" (`unknown`, see
-     * IncidentOverview::hasUnknownImpact()), for the filtered team only when there is one. The page is read from the
+     * IncidentOverview::hasUnknownImpact()), for the filtered team only when there is one, and by severity (`severity`,
+     * see severitiesOf()), Critical, High and not rated yet unless the query string says otherwise. The page is read from the
      * database first; only these two filters read the incidents the database cannot rule out, all at once (see
      * IncidentOverview::states()).
      *
@@ -81,12 +90,14 @@ class IncidentController extends Controller
         $isAttention = $request->boolean('attention');
         $isDismissed = $request->boolean('dismissed');
         $isUnknown = $request->boolean('unknown');
+        $severities = $this->severitiesOf($request);
 
         $query = $table->search(Incident::current(), ['title'], fn (Builder $query, string $pattern) => $query->orWhereIn('id', Advisory::matching($pattern)->whereNotNull('incident_id')->select('incident_id')))
             ->when($isDismissed, fn (Builder $query) => $query->dismissed())
             ->when(! $isDismissed && ! $isAttention, fn (Builder $query) => $query->whereNot(fn (Builder $query) => $query->dismissed()))
             ->when($technology !== null, fn (Builder $query) => $query->where('technology', $technology))
             ->when($teamId !== null, fn (Builder $query) => $query->whereIn('id', Advisory::whereKey(IncidentTeamNotice::noticeIdsSentTo($teamId))->whereNotNull('incident_id')->select('incident_id')))
+            ->when(count($severities) < count(Severity::cases()), fn (Builder $query) => $query->whereIn('severity', $severities))
             ->when(
                 $table->sort === 'severity',
                 fn (Builder $query) => $query->orderByRaw($this->severityOrder().' '.($table->descending ? 'asc' : 'desc')),
@@ -113,7 +124,8 @@ class IncidentController extends Controller
 
         return Inertia::render('incidents/index', [
             'incidents' => JsonResource::collection($incidents),
-            'table' => [...$table->toArray(), 'technology' => $technology?->value, 'team' => $teamId, 'attention' => $isAttention ? 1 : null, 'unknown' => $isUnknown ? 1 : null, 'dismissed' => $isDismissed ? 1 : null],
+            'table' => [...$table->toArray(), 'technology' => $technology?->value, 'team' => $teamId, 'attention' => $isAttention ? 1 : null, 'unknown' => $isUnknown ? 1 : null, 'dismissed' => $isDismissed ? 1 : null, ...$this->severityFilter($request, $severities)],
+            'severities' => array_map(fn (Severity $severity): array => ['value' => $severity->value, 'label' => $severity->getLabel()], Severity::cases()),
             'technologies' => array_map(fn (Technology $technology): array => ['value' => $technology->value, 'label' => $technology->getLabel()], Technology::cases()),
             'teams' => Team::orderBy('name')->get()->map(fn (Team $team): array => ['value' => $team->id, 'label' => $team->name])->all(),
         ]);
@@ -667,6 +679,48 @@ class IncidentController extends Controller
     /**
      * Critical first by default.
      */
+    /**
+     * The severities the list is filtered on: `all`, or those named in `severity` separated by commas, e.g.
+     * "critical,high". Unknown names are skipped; none at all falls back to DEFAULT_SEVERITIES.
+     *
+     * @return list<Severity>
+     */
+    private function severitiesOf(Request $request): array
+    {
+        $names = $request->string('severity')->trim()->toString();
+
+        if ($names === 'all') {
+            return Severity::cases();
+        }
+
+        $named = array_map(fn (string $name): ?Severity => Severity::tryFrom(trim($name)), explode(',', $names));
+        $severities = array_values(array_filter(Severity::cases(), fn (Severity $severity): bool => in_array($severity, $named, true)));
+
+        return $severities === [] ? self::DEFAULT_SEVERITIES : $severities;
+    }
+
+    /**
+     * The severity filter as the page keeps it: `severity` as the query string will carry it (null for the default, so
+     * "Bỏ lọc" goes back to it), and `severities`, the values ticked.
+     *
+     * @param  list<Severity>  $severities
+     * @return array{severity: string|null, severities: list<string>}
+     */
+    private function severityFilter(Request $request, array $severities): array
+    {
+        $values = array_map(fn (Severity $severity): string => $severity->value, $severities);
+        $isDefault = ! $request->filled('severity') || $values === array_map(fn (Severity $severity): string => $severity->value, self::DEFAULT_SEVERITIES);
+
+        return [
+            'severity' => match (true) {
+                $isDefault => null,
+                count($severities) === count(Severity::cases()) => 'all',
+                default => implode(',', $values),
+            },
+            'severities' => $values,
+        ];
+    }
+
     private function severityOrder(): string
     {
         $cases = collect(Severity::cases())->map(fn (Severity $severity): string => "when '{$severity->value}' then {$severity->rank()}")->join(' ');

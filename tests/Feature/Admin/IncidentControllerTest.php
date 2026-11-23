@@ -119,6 +119,27 @@ it('filters on a technology, a team told and what needs an admin', function () {
     get('/admin/incidents?attention=1')->assertInertia(fn (Assert $page) => $page->has('incidents.data', 0));
 });
 
+it('shows Critical, High and not rated incidents unless filtered on other severities', function () {
+    actingAsAdmin();
+    $critical = Incident::factory()->create(['severity' => Severity::Critical, 'first_published_at' => now()->subHour()]);
+    $medium = Incident::factory()->create(['severity' => Severity::Medium, 'first_published_at' => now()->subHours(2)]);
+    $low = Incident::factory()->create(['severity' => Severity::Low, 'first_published_at' => now()->subHours(3)]);
+    $unknown = Incident::factory()->create(['severity' => Severity::Unknown, 'first_published_at' => now()->subHours(4)]);
+    $idsOf = fn (string $url): array => collect(get($url)->viewData('page')['props']['incidents']['data'])->pluck('id')->all();
+
+    get('/admin/incidents')->assertInertia(fn (Assert $page) => $page
+        ->where('table.severity', null)
+        ->where('table.severities', ['critical', 'high', 'unknown'])
+        ->has('severities', 5));
+    expect($idsOf('/admin/incidents'))->toBe([$this->incident->id, $critical->id, $unknown->id])
+        ->and($idsOf('/admin/incidents?severity=medium,low'))->toBe([$medium->id, $low->id])
+        ->and($idsOf('/admin/incidents?severity=all'))->toBe([$this->incident->id, $critical->id, $medium->id, $low->id, $unknown->id])
+        ->and($idsOf('/admin/incidents?severity=bogus'))->toBe([$this->incident->id, $critical->id, $unknown->id]);
+
+    get('/admin/incidents?severity=low,medium,nope')->assertInertia(fn (Assert $page) => $page->where('table.severity', 'medium,low')->where('table.severities', ['medium', 'low']));
+    get('/admin/incidents?severity=all')->assertInertia(fn (Assert $page) => $page->where('table.severity', 'all'));
+});
+
 it('leaves out incidents whose every pre-notice is no security news, unless filtered on them', function () {
     actingAsAdmin();
     $conference = Advisory::factory()->preNotice(Technology::Php)->create(['title' => 'Dutch PHP Conference 2023 - Call for Papers', 'severity' => Severity::Unknown, 'is_dismissed' => true, 'published_at' => '2023-05-23 10:52:58']);

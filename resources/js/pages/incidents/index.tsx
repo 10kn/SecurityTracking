@@ -4,7 +4,7 @@ import { useRef } from 'react';
 
 import { show } from '@/actions/App/Http/Controllers/Admin/IncidentController';
 import { Card, CardHeader } from '@/components/admin/card';
-import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TablePagination, TableSearch, Td, Th, Tr, type TableSearchHandle } from '@/components/admin/data-table';
+import { CellTitle, EmptyState, SortableTh, Table, TableFilter, TableMultiFilter, TablePagination, TableSearch, Td, Th, Tr, type TableSearchHandle } from '@/components/admin/data-table';
 import { FixStatus, type IncidentSummary } from '@/components/admin/incidents/fix-status';
 import { PageHeader } from '@/components/admin/page-header';
 import { SeverityBadge } from '@/components/admin/severity-badge';
@@ -18,17 +18,29 @@ import type { Option, Paginated, TableState } from '@/types';
 
 interface Props {
     incidents: Paginated<IncidentSummary>;
-    table: TableState & { technology: string | null; team: number | null; attention: number | null; unknown: number | null; dismissed: number | null };
+    table: TableState & {
+        technology: string | null;
+        team: number | null;
+        attention: number | null;
+        unknown: number | null;
+        dismissed: number | null;
+        severity: string | null;
+        severities: string[];
+    };
+    severities: Option<string>[];
     technologies: Option<string>[];
     teams: Option<number>[];
 }
 
-export default function IncidentsIndex({ incidents, table, technologies, teams }: Props) {
+export default function IncidentsIndex({ incidents, table, severities, technologies, teams }: Props) {
     const t = useTranslation();
     const query = useTableQuery(table, ['incidents']);
     const searchRef = useRef<TableSearchHandle>(null);
     const urlOf = (incident: IncidentSummary) => show.url(incident.id, { query: table.team === null ? undefined : { team: table.team } });
-    const isFiltered = table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.unknown !== null || table.dismissed !== null;
+    const isFiltered =
+        table.search !== '' || table.technology !== null || table.team !== null || table.attention !== null || table.unknown !== null || table.dismissed !== null || table.severity !== null;
+    // The default severities hide some incidents too, so an empty list says so instead of "no incident yet".
+    const isNarrowed = isFiltered || table.severities.length < severities.length;
     const technologyNames = technologies.map((technology) => technology.label).join(', ');
 
     return (
@@ -43,6 +55,13 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                 <CardHeader>
                     <div className="flex flex-1 flex-wrap items-center gap-2">
                         <TableSearch ref={searchRef} value={table.search} placeholder={t('Tìm sự kiện')} onSearch={(search) => query({ search })} />
+                        <TableMultiFilter
+                            values={table.severities}
+                            label={t('Mức')}
+                            allLabel={t('Mọi mức')}
+                            options={severities}
+                            onChange={(values) => query({ severity: values.length === severities.length ? 'all' : values.join(',') })}
+                        />
                         <TableFilter value={table.technology} label={t('Công nghệ')} allLabel={t('Mọi công nghệ')} options={technologies} onChange={(technology) => query({ technology })} />
                         <TableFilter value={table.team} label={t('Team')} allLabel={t('Mọi team')} options={teams} onChange={(team) => query({ team })} />
                         <TableFilter
@@ -72,7 +91,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                                 size="sm"
                                 onClick={() => {
                                     searchRef.current?.clear();
-                                    query({ search: null, technology: null, team: null, attention: null, unknown: null, dismissed: null });
+                                    query({ search: null, technology: null, team: null, attention: null, unknown: null, dismissed: null, severity: null });
                                 }}
                             >
                                 {t('Bỏ lọc')}
@@ -83,7 +102,7 @@ export default function IncidentsIndex({ incidents, table, technologies, teams }
                     <span className="text-sm text-faint max-sm:hidden">{t(':count sự kiện', { count: incidents.meta.total })}</span>
                 </CardHeader>
                 {incidents.data.length === 0 ? (
-                    isFiltered ? (
+                    isNarrowed ? (
                         <EmptyState title={t('Không có sự kiện phù hợp')} description={t('Thử từ khóa hoặc bộ lọc khác.')} />
                     ) : (
                         <EmptyState

@@ -273,7 +273,7 @@ describe('the daily digest', function () {
 
     it('reminds every day of an incident told at an immediate severity until an admin marks it as read', function () {
         expect(app(SendDailyDigest::class)->handle())->toBe(1)
-            ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Sự kiện chờ admin đánh giá ảnh hưởng', '🟠 [High] Upcoming Critical PHP Security Release', 'Đánh giá ảnh hưởng', "/admin/incidents?team={$this->commerce->id}&attention=1")
+            ->and(chatJson(chatMessagesTo('COMMERCE')->last()))->toContain('Sự kiện chờ admin đánh giá ảnh hưởng', '🟠 [High] Upcoming Critical PHP Security Release', 'Đánh giá ảnh hưởng', "/admin/incidents?team={$this->commerce->id}&attention=1&severity=all")
             ->not->toContain('Đang chờ bản vá');
 
         $this->travelTo('2026-10-23 01:00:00');

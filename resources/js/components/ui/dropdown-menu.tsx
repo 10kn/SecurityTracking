@@ -55,6 +55,20 @@ function DropdownMenuRadioItem({ className, children, ...props }: React.Componen
     );
 }
 
+/** A choice that toggles, with a box ticked on the left like the form checkboxes, e.g. one value of a multi-select filter. */
+function DropdownMenuCheckboxItem({ className, children, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+    return (
+        <DropdownMenuPrimitive.CheckboxItem data-slot="dropdown-menu-checkbox-item" className={cn(itemClassName, 'group', className)} {...props}>
+            <span className="flex size-4 items-center justify-center rounded-sm border border-border-strong bg-surface group-data-[state=checked]:border-primary group-data-[state=checked]:bg-primary group-data-[state=checked]:text-primary-foreground">
+                <DropdownMenuPrimitive.ItemIndicator>
+                    <CheckIcon className="size-3.5" strokeWidth={2.5} />
+                </DropdownMenuPrimitive.ItemIndicator>
+            </span>
+            {children}
+        </DropdownMenuPrimitive.CheckboxItem>
+    );
+}
+
 function DropdownMenuLabel({ className, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Label>) {
     return <DropdownMenuPrimitive.Label data-slot="dropdown-menu-label" className={cn('px-2.5 py-1.5 text-xs text-muted-foreground', className)} {...props} />;
 }
@@ -63,4 +77,4 @@ function DropdownMenuSeparator({ className, ...props }: React.ComponentProps<typ
     return <DropdownMenuPrimitive.Separator data-slot="dropdown-menu-separator" className={cn('-mx-1 my-1 h-px bg-border', className)} {...props} />;
 }
 
-export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger };
+export { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger };

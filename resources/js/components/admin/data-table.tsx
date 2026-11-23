@@ -1,8 +1,10 @@
 import { Link, router } from '@inertiajs/react';
-import { ArrowDownIcon, ArrowUpIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react';
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { inputClassName } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback';
 import { useTranslation } from '@/lib/i18n';
@@ -207,6 +209,66 @@ export function TableFilter<TValue extends string | number>({
                 </option>
             ))}
         </NativeSelect>
+    );
+}
+
+/**
+ * A table filter that ticks several values, e.g. the severities, drawn like TableFilter: "Mức: Critical, High", or the
+ * all label when every value is ticked. The menu stays open while ticking, each tick filters at once, and the last
+ * ticked value cannot be unticked. The ticks follow the clicks while the reload is on its way.
+ */
+export function TableMultiFilter<TValue extends string>({
+    values,
+    label,
+    allLabel,
+    options,
+    onChange,
+}: {
+    values: TValue[];
+    label: string;
+    allLabel: string;
+    options: { value: TValue; label: string }[];
+    onChange: (values: TValue[]) => void;
+}) {
+    const [ticked, setTicked] = useState(values);
+    const valuesKey = values.join(',');
+
+    useEffect(() => setTicked(valuesKey === '' ? [] : (valuesKey.split(',') as TValue[])), [valuesKey]);
+
+    const summary = ticked.length === options.length ? allLabel : `${label}: ${options.filter((option) => ticked.includes(option.value)).map((option) => option.label).join(', ')}`;
+    const toggle = (value: TValue, isTicked: boolean) => {
+        const next = options.map((option) => option.value).filter((option) => (option === value ? isTicked : ticked.includes(option)));
+
+        setTicked(next);
+        onChange(next);
+    };
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <button type="button" aria-label={label} className={cn(inputClassName, 'relative h-9 w-auto max-w-[260px] truncate border-border pr-8 text-left text-sm')}>
+                    {summary}
+                    <ChevronDownIcon className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-faint" aria-hidden />
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+                {options.map((option) => {
+                    const isTicked = ticked.includes(option.value);
+
+                    return (
+                        <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={isTicked}
+                            disabled={isTicked && ticked.length === 1}
+                            onCheckedChange={(checked) => toggle(option.value, checked)}
+                            onSelect={(event) => event.preventDefault()}
+                        >
+                            {option.label}
+                        </DropdownMenuCheckboxItem>
+                    );
+                })}
+            </DropdownMenuContent>
+        </DropdownMenu>
     );
 }
 
