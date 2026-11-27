@@ -150,6 +150,7 @@ class OverviewController extends Controller
             ->whereNotExists(fn (QueryBuilder $query) => $query
                 ->from('chat_notifications as delivered')
                 ->whereRaw('delivered.team_id is not distinct from chat_notifications.team_id')
+                ->whereRaw('delivered.project_id is not distinct from chat_notifications.project_id')
                 ->whereColumn('delivered.sent_at', '>', 'chat_notifications.created_at'))
             ->orderBy('id')
             ->get(['id', 'team_id', 'kind', 'incident_team_id', 'created_at', 'failed_at', 'last_error'])

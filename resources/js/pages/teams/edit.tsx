@@ -22,7 +22,7 @@ import type { StatusDotData } from '@/types';
 interface Props {
     team: { id: number; name: string; slug: string };
     googleChat: { masked_webhook_url: string | null; status: StatusDotData; detail: string | null };
-    projects: { data: { id: number; name: string; slug: string; services_count: number }[] };
+    projects: { data: { id: number; name: string; slug: string; services_count: number; has_own_webhook: boolean }[] };
 }
 
 export default function TeamsEdit({ team, googleChat, projects }: Props) {
@@ -31,6 +31,7 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
     const [isSendingTest, setIsSendingTest] = useState(false);
     const form = useForm<TeamFormData>({ name: team.name, slug: team.slug });
     const projectCount = projects.data.length;
+    const ownWebhookProjects = projects.data.filter((project) => project.has_own_webhook).map((project) => project.name);
 
     return (
         <>
@@ -94,6 +95,11 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
                                         <WebhookDialog action={updateWebhook(team.id)} hasWebhook={false} />
                                     </div>
                                 )}
+                                {ownWebhookProjects.length > 0 && (
+                                    <p className="mt-3 text-sm text-muted-foreground">
+                                        {t('Project gửi về webhook riêng, team không nhận tin: :projects', { projects: ownWebhookProjects.join(', ') })}
+                                    </p>
+                                )}
                             </FormSection>
                             <FormActions>
                                 <Button type="submit" loading={form.processing}>
@@ -138,7 +144,7 @@ export default function TeamsEdit({ team, googleChat, projects }: Props) {
                                 {projects.data.map((project) => (
                                     <Tr key={project.id} href={showProject.url(project.id)}>
                                         <Td>
-                                            <CellTitle title={project.name} sub={project.slug} href={showProject.url(project.id)} />
+                                            <CellTitle title={project.name} sub={project.has_own_webhook ? `${project.slug} · ${t('Webhook riêng')}` : project.slug} href={showProject.url(project.id)} />
                                         </Td>
                                         <Td align="right">{project.services_count}</Td>
                                     </Tr>

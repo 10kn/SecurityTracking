@@ -13,7 +13,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Log of Google Chat messages. A null team means the message goes to the admin space.
+ * Log of Google Chat messages. A null team means the message goes to the admin space; a project means it goes to the
+ * project's own webhook (see ChatRecipient), while its team stays set.
  *
  * Named chat_notifications so it does not clash with Laravel's database `notifications` table.
  *
@@ -21,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `thread_role` is what it was queued as, `sent_as` what it is sent as, fixed before its first HTTP attempt (a reply
  * whose thread could not be opened sends `opening_payload` and opens it). `attempts` counts HTTP attempts only.
  */
-#[Fillable(['team_id', 'incident_team_id', 'thread_key', 'generation', 'thread_role', 'sent_as', 'dedupe_key', 'kind', 'requested_by', 'payload', 'opening_payload', 'covers_until', 'attempts', 'sent_at', 'google_message_name', 'google_thread_name', 'failed_at', 'last_error'])]
+#[Fillable(['team_id', 'project_id', 'incident_team_id', 'thread_key', 'generation', 'thread_role', 'sent_as', 'dedupe_key', 'kind', 'requested_by', 'payload', 'opening_payload', 'covers_until', 'attempts', 'sent_at', 'google_message_name', 'google_thread_name', 'failed_at', 'last_error'])]
 class ChatNotification extends Model
 {
     /** @use HasFactory<ChatNotificationFactory> */
@@ -69,7 +70,7 @@ class ChatNotification extends Model
             return false;
         }
 
-        $row = IncidentTeam::find($this->incident_team_id)?->canonical();
+        $row = IncidentTeam::find($this->incident_team_id)?->canonical()->teamRow();
 
         return $row?->impact === IncidentImpact::No && $row->incident !== null && $row->isRuledOut(IncidentTeamExposure::for($row->incident, $row->team_id));
     }
@@ -87,13 +88,15 @@ class ChatNotification extends Model
     }
 
     /**
-     * The team's webhook, or the admin space's for a message without a team: security news goes to its own space,
-     * or to the admin space when none is set. Null when none is configured; an admin webhook without the Google Chat
-     * prefix counts as none.
+     * The project's own webhook for a message to a project, the team's for one to a team, or the admin space's for a
+     * message without a team: security news goes to its own space, or to the admin space when none is set. Null when
+     * none is configured; an admin webhook without the Google Chat prefix counts as none. A project's message never
+     * falls back to its team, even once the project went back to its team.
      */
     public function webhookUrl(): ?string
     {
         $url = match (true) {
+            $this->project_id !== null => $this->project?->google_chat_webhook_url,
             $this->team_id !== null => $this->team?->google_chat_webhook_url,
             $this->kind === ChatNotificationKind::SecurityNews => self::securityNewsWebhookUrl(),
             default => config('psm.alerts.admin_webhook'),
@@ -124,6 +127,22 @@ class ChatNotification extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * The team, or the team and project for a message to a project's own webhook, e.g. "Team A · Project X".
+     */
+    public function recipientName(): string
+    {
+        return $this->project === null ? (string) $this->team?->name : "{$this->team?->name} · {$this->project->name}";
     }
 
     /**

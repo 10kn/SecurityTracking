@@ -15,6 +15,7 @@ use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Kev\KnownExploitation;
+use App\Support\ChatRecipient;
 use App\Support\LocalTime;
 use App\Support\Version;
 use Carbon\CarbonInterface;
@@ -26,6 +27,22 @@ use Illuminate\Support\Collection;
  */
 class GoogleChatCards
 {
+    /**
+     * The recipient the cards are for, whose name the headers show (see for()).
+     */
+    private ?ChatRecipient $recipient = null;
+
+    /**
+     * The cards for one recipient: a project on its own webhook is named next to its team in the headers.
+     */
+    public function for(ChatRecipient $recipient): static
+    {
+        $cards = clone $this;
+        $cards->recipient = $recipient;
+
+        return $cards;
+    }
+
     /**
      * One card for one issue at one team, listing every affected service. Services added since the previous card are
      * marked new. When CISA KEV lists a CVE id of the issue, the card says so first, with the severity its source gave.
@@ -76,7 +93,7 @@ class GoogleChatCards
             $this->buttons($links),
         ]];
 
-        return $this->card("finding-{$first->id}", "{$this->severityTag($first->severity)} {$first->title}", $team->name, $sections, $first->severity);
+        return $this->card("finding-{$first->id}", "{$this->severityTag($first->severity)} {$first->title}", $this->audience($team), $sections, $first->severity);
     }
 
     /**
@@ -104,7 +121,7 @@ class GoogleChatCards
         return $this->card(
             "lockfile-summary-{$service->id}",
             $this->severityTitle($first->severity, __(':service: phát hiện :count lỗ hổng trong lockfile', ['service' => $service->name, 'count' => $advisories])),
-            $team->name,
+            $this->audience($team),
             [['widgets' => [
                 ...array_map(fn (string $line): array => ['textParagraph' => ['text' => e($line)]], array_values($lines)),
                 $this->buttons([
@@ -194,7 +211,7 @@ class GoogleChatCards
             $sections[] = ['widgets' => [$this->buttons([__('Mở nguồn tin') => $advisory->url])]];
         }
 
-        return $this->card("incident-{$incident->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Cảnh báo chuẩn bị · :team', ['team' => $team->name]), $sections, $advisory->severity);
+        return $this->card("incident-{$incident->id}", $this->severityTitle($advisory->severity, $advisory->title), __('Cảnh báo chuẩn bị · :team', ['team' => $this->audience($team)]), $sections, $advisory->severity);
     }
 
     /**
@@ -317,7 +334,7 @@ class GoogleChatCards
             $unreadableLockfiles === 0 ? null : ['textParagraph' => ['text' => e(__(':count lockfile không đọc được.', ['count' => $unreadableLockfiles]))]],
         ]);
 
-        return $this->card("project-{$project->id}", __('Project :project được theo dõi lại', ['project' => $project->name]), __('Theo dõi lại project · :team', ['team' => $project->team->name]), [
+        return $this->card("project-{$project->id}", __('Project :project được theo dõi lại', ['project' => $project->name]), __('Theo dõi lại project · :team', ['team' => $this->audience($project->team)]), [
             ['widgets' => array_values($widgets)],
             ['header' => __('Sự kiện bảo mật đang ảnh hưởng'), 'widgets' => [
                 ...$incidents
@@ -401,7 +418,7 @@ class GoogleChatCards
 
         $title = $this->severityTitle($severity, __('Đã có bản vá, nâng lên :versions', ['versions' => $versions]));
 
-        return $this->card("incident-{$incident->id}", $title, __(':technology · :team', ['technology' => $technology->getLabel(), 'team' => $team->name]), $sections, $severity);
+        return $this->card("incident-{$incident->id}", $title, __(':technology · :team', ['technology' => $technology->getLabel(), 'team' => $this->audience($team)]), $sections, $severity);
     }
 
     /**
@@ -461,7 +478,7 @@ class GoogleChatCards
             ? $this->severityTitle($advisory->severity, $advisory->title)
             : $this->severityTitle($advisory->severity, __('Đã có bản vá, nâng lên :versions', ['versions' => implode(', ', array_values($patches))]));
 
-        return $this->card("incident-{$incident->id}", $title, __('Cập nhật · :team', ['team' => $team->name]), $sections, $advisory->severity);
+        return $this->card("incident-{$incident->id}", $title, __('Cập nhật · :team', ['team' => $this->audience($team)]), $sections, $advisory->severity);
     }
 
     /**
@@ -688,7 +705,7 @@ class GoogleChatCards
 
         $title = $digest['weekly'] ? __('Tổng kết tuần bảo mật :date', ['date' => $date]) : __('Bản tổng hợp bảo mật :date', ['date' => $date]);
 
-        return $this->card("digest-{$team->id}", $title, $team->name, $sections);
+        return $this->card("digest-{$team->id}", $title, $this->audience($team), $sections);
     }
 
     /**
@@ -891,6 +908,14 @@ class GoogleChatCards
      * @param  list<array<string, mixed>>  $sections
      * @return array<string, mixed>
      */
+    /**
+     * The team's name, or the team and project for the cards of a project on its own webhook.
+     */
+    private function audience(Team $team): string
+    {
+        return $this->recipient !== null && $this->recipient->team->is($team) ? $this->recipient->name() : $team->name;
+    }
+
     private function card(string $cardId, string $title, string $subtitle, array $sections, ?Severity $severity = null): array
     {
         $color = $severity === null ? null : $this->severityColor($severity);

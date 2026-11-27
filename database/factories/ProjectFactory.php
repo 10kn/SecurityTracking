@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\NotificationTarget;
 use App\Models\Project;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -26,6 +27,17 @@ class ProjectFactory extends Factory
             'name' => Str::title($name),
             'slug' => Str::slug($name),
         ];
+    }
+
+    /**
+     * A project whose messages go to a Google Chat webhook of its own instead of its team's.
+     */
+    public function withOwnWebhook(?string $webhookUrl = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'notification_target' => NotificationTarget::Project,
+            'google_chat_webhook_url' => $webhookUrl ?? 'https://chat.googleapis.com/v1/spaces/'.Str::upper(Str::random(11)).'/messages?key=test&token=test',
+        ]);
     }
 
     /**

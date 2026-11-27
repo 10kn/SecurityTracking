@@ -23,6 +23,7 @@ use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
 use App\Services\IncidentTeamExposure;
 use App\Services\Kev\KnownExploitation;
+use App\Support\ChatRecipient;
 use App\Support\IncidentLock;
 use App\Support\Version;
 use Carbon\CarbonInterface;
@@ -377,6 +378,10 @@ class SendPreNoticeAlerts
      * also stands for the team's "thiếu bản vá" findings of those branches (see CoverPatchedFindings), with the
      * deadline they share: that of the incident's severity from now, or the earliest of those findings.
      *
+     * The team decides as a whole; each recipient (see ChatRecipient) gets the message in its own thread, about its own
+     * services, when it concerns them (see concerns()): the team's webhook for the projects that follow it, and each
+     * project on its own webhook. What the team was told is recorded once, linked to the first of those messages.
+     *
      * @param  Collection<int, Advisory>  $notices
      * @param  Collection<int, Runtime>  $runtimes  One team's runtimes of the technology.
      * @param  Severity|null  $previousSeverity  What the team was told before, when the incident rose since.
@@ -392,45 +397,68 @@ class SendPreNoticeAlerts
         $lead = $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first();
         $others = $notices->reject(fn (Advisory $notice): bool => $notice->is($lead))->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->take(config('psm.alerts.max_listed_items'))->values();
         $severity = Incident::highestSeverity($notices);
-        $role = $thread->nextRole();
-        $isReply = $isUpdate && $role === ChatThreadRole::Reply;
-        $shown = $isReply ? collect([$lead]) : collect([$lead, ...$others]);
-        $versions = collect($duePatches)->map(fn (array $patch, string $branch): string => "{$branch}:{$patch['version']}")->sort()->join(',');
         $projectIds = collect($duePatches)->map(fn (array $patch, string $branch): array => $runtimes->where('branch', $branch)->map(fn (Runtime $runtime): int => $runtime->deployment->service->project_id)->unique()->sort()->values()->all());
         $covered = collect($duePatches)->map(fn (array $patch, string $branch) => $this->coverPatchedFindings->findingsFor($team->id, $projectIds[$branch], $incident->technology, $branch, $patch['version']));
         $dueDate = KnownExploitation::dueDate($this->knownExploited($notices));
         $deadline = $this->coverPatchedFindings->deadlineFor($severity, new EloquentCollection($covered->collapse()->all()), $dueDate);
         $versionsOf = fn (array $patches): array => collect($patches)->map(fn (array $patch): string => $patch['version'])->all();
         $cardChanges = array_values(array_intersect_key($changes, array_flip([IncidentAlertReason::KnownExploited->value, IncidentAlertReason::Exploited->value, IncidentAlertReason::ScopeExtended->value])));
-
-        $opening = $this->withLocale(config('psm.alerts.locale'), fn (): array => $duePatches === []
-            ? $this->cards->preNotice($team, $incident, $lead, $others, $runtimes, $previousSeverity, $cardChanges)
-            : $this->cards->patchAvailable($team, $incident, $lead, $others, $runtimes, $versionsOf($duePatches), $versionsOf($patches), $previousSeverity, $deadline, $cardChanges));
-
-        $payload = $isReply
-            ? $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->incidentUpdate($team, $incident, $lead, array_values($changes), $runtimes, $this->action($reason), $versionsOf($duePatches), $versionsOf($patches), $deadline))
-            : $opening;
-
         $state = $isUpdate ? ':update:'.json_encode([array_keys($changes), $severity->value, $extended, $thread->last_notification_id]) : '';
-        $dedupeKey = "pre_notice:incident:{$incident->id}:{$team->id}:".hash('sha256', $shown->map(fn (Advisory $notice): string => "{$notice->id}:{$notice->severity->value}")->sort()->join(',')."|{$versions}{$state}");
+        $first = null;
+        $told = collect();
 
-        $notification = $this->queueChatNotification->handle($team, ChatNotificationKind::PreNotice, $dedupeKey, $payload, attributes: [
-            ...$thread->threadAttributes($role),
-            'opening_payload' => $role === ChatThreadRole::Reply ? $opening : null,
-        ]);
+        foreach (ChatRecipient::split($team, $runtimes, fn (Runtime $runtime): int => $runtime->deployment->service->project_id) as ['recipient' => $recipient, 'items' => $recipientRuntimes]) {
+            $recipientRuntimes = new EloquentCollection($recipientRuntimes->all());
+            $recipientPatches = $this->duePatchesOf($recipientRuntimes, $duePatches);
 
-        if ($notification === null) {
+            if (! $this->concerns($incident, $recipientRuntimes, $changes, $recipientPatches, $patches, $extended)) {
+                continue;
+            }
+
+            [$recipientThread] = $recipient->isProject() ? IncidentTeam::lockForRecipient($incident, $recipient) : [$thread];
+            $recipientThread->moveTo($recipient->webhookUrl());
+            $role = $recipientThread->nextRole();
+            $isReply = $isUpdate && $role === ChatThreadRole::Reply;
+            $shown = $isReply ? collect([$lead]) : collect([$lead, ...$others]);
+            $versions = collect($recipientPatches)->map(fn (array $patch, string $branch): string => "{$branch}:{$patch['version']}")->sort()->join(',');
+            $cards = $this->cards->for($recipient);
+
+            $opening = $this->withLocale(config('psm.alerts.locale'), fn (): array => $recipientPatches === []
+                ? $cards->preNotice($team, $incident, $lead, $others, $recipientRuntimes, $previousSeverity, $cardChanges)
+                : $cards->patchAvailable($team, $incident, $lead, $others, $recipientRuntimes, $versionsOf($recipientPatches), $versionsOf($patches), $previousSeverity, $deadline, $cardChanges));
+
+            $payload = $isReply
+                ? $this->withLocale(config('psm.alerts.locale'), fn (): array => $cards->incidentUpdate($team, $incident, $lead, array_values($changes), $recipientRuntimes, $this->action($reason), $versionsOf($recipientPatches), $versionsOf($patches), $deadline))
+                : $opening;
+
+            $dedupeKey = "pre_notice:incident:{$incident->id}:{$team->id}:".hash('sha256', $shown->map(fn (Advisory $notice): string => "{$notice->id}:{$notice->severity->value}")->sort()->join(',')."|{$versions}{$state}").$recipient->dedupeSuffix();
+
+            $notification = $this->queueChatNotification->handle($recipient, ChatNotificationKind::PreNotice, $dedupeKey, $payload, attributes: [
+                ...$recipientThread->threadAttributes($role),
+                'opening_payload' => $role === ChatThreadRole::Reply ? $opening : null,
+            ]);
+
+            if ($notification === null) {
+                continue;
+            }
+
+            $recipientThread->recordQueued($notification);
+            $first ??= $notification;
+            $told = $told->merge($shown)->unique('id');
+        }
+
+        if ($first === null) {
             return false;
         }
 
-        IncidentTeamNotice::insertOrIgnore($shown->map(fn (Advisory $notice): array => [
+        IncidentTeamNotice::insertOrIgnore($told->map(fn (Advisory $notice): array => [
             'team_id' => $team->id,
             'advisory_id' => $notice->id,
             'severity' => $notice->severity->value,
             'reason' => $reason->value,
-            'chat_notification_id' => $notification->id,
+            'chat_notification_id' => $first->id,
             'created_at' => now(),
-        ])->all());
+        ])->values()->all());
 
         foreach ($duePatches as $branch => $patch) {
             $this->coverPatchedFindings->handle(IncidentTeamPatch::create([
@@ -441,7 +469,7 @@ class SendPreNoticeAlerts
                 'version' => $patch['version'],
                 'severity' => $severity,
                 'project_ids' => $projectIds[$branch],
-                'chat_notification_id' => $notification->id,
+                'chat_notification_id' => $first->id,
             ]), $covered[$branch], $dueDate);
         }
 
@@ -456,9 +484,46 @@ class SendPreNoticeAlerts
             $thread->told_known_exploited = collect([...($thread->told_known_exploited ?? []), ...array_column($knownExploited, 'cve')])->unique()->sort()->values()->all();
         }
 
-        $thread->recordQueued($notification);
+        $thread->last_notification_id = $first->id;
+        $thread->save();
 
         return true;
+    }
+
+    /**
+     * The fixes due to the team that a recipient's services need: a branch it runs below the fixed version.
+     *
+     * @param  Collection<int, Runtime>  $runtimes  The recipient's runtimes of the technology.
+     * @param  array<string, array{version: string, notice: Advisory}>  $duePatches  The team's (see duePatches()).
+     * @return array<string, array{version: string, notice: Advisory}>
+     */
+    private function duePatchesOf(Collection $runtimes, array $duePatches): array
+    {
+        return collect($duePatches)
+            ->filter(fn (array $patch, string $branch): bool => $runtimes->contains(fn (Runtime $runtime): bool => $runtime->branch === $branch && ($runtime->version === null || Version::isNewer($patch['version'], $runtime->version))))
+            ->all();
+    }
+
+    /**
+     * Whether a recipient's services are concerned by the team's message: a first card concerns every recipient that
+     * runs the technology; an update, only those it asks to act: a fix due for a branch they run below it, a branch newly
+     * confirmed that they run, or exploitation and a rise in severity while they are still exposed (see isExposed()).
+     *
+     * @param  Collection<int, Runtime>  $runtimes  The recipient's runtimes of the technology.
+     * @param  array<string, string>  $changes
+     * @param  array<string, array{version: string, notice: Advisory}>  $recipientPatches  The fixes due to the recipient (see duePatchesOf()).
+     * @param  array<string, array{version: string, notice: Advisory}>  $patches
+     * @param  list<string>|null  $extended
+     */
+    private function concerns(Incident $incident, Collection $runtimes, array $changes, array $recipientPatches, array $patches, ?array $extended): bool
+    {
+        if ($extended === null) {
+            return true;
+        }
+
+        return ($recipientPatches !== [] && isset($changes[IncidentAlertReason::PatchConfirmed->value]))
+            || (isset($changes[IncidentAlertReason::ScopeExtended->value]) && array_intersect($extended, $runtimes->pluck('branch')->filter()->all()) !== [])
+            || (array_intersect_key($changes, array_flip([IncidentAlertReason::KnownExploited->value, IncidentAlertReason::Exploited->value, IncidentAlertReason::SeverityRise->value])) !== [] && $this->isExposed($incident, $runtimes, $patches));
     }
 
     /**
@@ -479,7 +544,7 @@ class SendPreNoticeAlerts
      */
     private function toldKnownExploited(Team $team): array
     {
-        return IncidentTeam::where('team_id', $team->id)->pluck('told_known_exploited')->flatten()->filter(fn (mixed $cve): bool => is_string($cve))->unique()->values()->all();
+        return IncidentTeam::where('team_id', $team->id)->teamRows()->pluck('told_known_exploited')->flatten()->filter(fn (mixed $cve): bool => is_string($cve))->unique()->values()->all();
     }
 
     /**

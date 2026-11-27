@@ -17,6 +17,7 @@ interface ProjectRow {
     slug: string;
     services_count: number;
     is_paused: boolean;
+    has_own_webhook: boolean;
     team: { id: number; name: string };
 }
 
@@ -97,7 +98,10 @@ export default function ProjectsIndex({ projects, table, teams }: { projects: Pa
                                             href={show.url(project.id)}
                                         />
                                     </Td>
-                                    <Td>{project.team.name}</Td>
+                                    <Td>
+                                        {project.team.name}
+                                        {project.has_own_webhook && <span className="block text-sm text-muted-foreground">{t('Webhook riêng')}</span>}
+                                    </Td>
                                     <Td align="right">{project.services_count}</Td>
                                     <Td align="right">
                                         <Button variant="ghost" size="sm" asChild>

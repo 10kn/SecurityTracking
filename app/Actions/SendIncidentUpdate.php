@@ -14,7 +14,9 @@ use App\Models\Runtime;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\GoogleChatCards;
+use App\Support\ChatRecipient;
 use App\Support\IncidentLock;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -81,6 +83,10 @@ class SendIncidentUpdate
     }
 
     /**
+     * Sends the update to each recipient of the team (see ChatRecipient) that runs the technology, in its own thread,
+     * about its own services: the team's webhook when no service of the team runs it any more. What the team was told
+     * is recorded once, linked to the first message.
+     *
      * @param  Collection<int, Advisory>  $notices  The incident's pre-notices that were not dismissed, oldest first.
      */
     private function queue(Incident $incident, Collection $notices, Team $team, string $message, ?User $actor, string $requestId): bool
@@ -92,48 +98,68 @@ class SendIncidentUpdate
             ->get();
 
         [$thread] = IncidentTeam::lockFor($incident, $team);
-        $thread->moveTo($team->google_chat_webhook_url);
-        $role = $thread->nextRole();
 
         $lead = $notices->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->first();
         $others = $notices->reject(fn (Advisory $notice): bool => $notice->is($lead))->sortByDesc(fn (Advisory $notice): int => $notice->severity->rank())->take(config('psm.alerts.max_listed_items'))->values();
+        $recipients = $runtimes->isEmpty()
+            ? collect([['recipient' => ChatRecipient::team($team), 'items' => collect()]])
+            : ChatRecipient::split($team, $runtimes, fn (Runtime $runtime): int => $runtime->deployment->service->project_id);
+        $first = null;
+        $hasOpened = false;
+        $told = collect();
 
-        [$opening, $reply] = $this->withLocale(config('psm.alerts.locale'), fn (): array => [
-            $this->cards->preNotice($team, $incident, $lead, $others, $runtimes, null, [__('Cập nhật từ admin: :message', ['message' => $message])]),
-            $this->cards->incidentUpdate($team, $incident, $lead, [__('Cập nhật từ admin')], $runtimes, __('Đọc cập nhật và xử lý theo hướng dẫn.'), adminMessage: $message),
-        ]);
+        foreach ($recipients as ['recipient' => $recipient, 'items' => $recipientRuntimes]) {
+            $recipientRuntimes = new EloquentCollection($recipientRuntimes->all());
+            [$recipientThread] = $recipient->isProject() ? IncidentTeam::lockForRecipient($incident, $recipient) : [$thread];
+            $recipientThread->moveTo($recipient->webhookUrl());
+            $role = $recipientThread->nextRole();
+            $cards = $this->cards->for($recipient);
 
-        $notification = $this->queueChatNotification->handle($team, ChatNotificationKind::IncidentUpdate, "incident_update:{$requestId}:{$team->id}", $role === ChatThreadRole::Reply ? $reply : $opening, attributes: [
-            ...$thread->threadAttributes($role),
-            'opening_payload' => $role === ChatThreadRole::Reply ? $opening : null,
-            'requested_by' => $actor === null ? 'cli' : "user:{$actor->id}",
-        ]);
+            [$opening, $reply] = $this->withLocale(config('psm.alerts.locale'), fn (): array => [
+                $cards->preNotice($team, $incident, $lead, $others, $recipientRuntimes, null, [__('Cập nhật từ admin: :message', ['message' => $message])]),
+                $cards->incidentUpdate($team, $incident, $lead, [__('Cập nhật từ admin')], $recipientRuntimes, __('Đọc cập nhật và xử lý theo hướng dẫn.'), adminMessage: $message),
+            ]);
 
-        if ($notification === null) {
+            $notification = $this->queueChatNotification->handle($recipient, ChatNotificationKind::IncidentUpdate, "incident_update:{$requestId}:{$team->id}".$recipient->dedupeSuffix(), $role === ChatThreadRole::Reply ? $reply : $opening, attributes: [
+                ...$recipientThread->threadAttributes($role),
+                'opening_payload' => $role === ChatThreadRole::Reply ? $opening : null,
+                'requested_by' => $actor === null ? 'cli' : "user:{$actor->id}",
+            ]);
+
+            if ($notification === null) {
+                continue;
+            }
+
+            $recipientThread->recordQueued($notification);
+            $first ??= $notification;
+            $hasOpened = $hasOpened || $role === ChatThreadRole::Opener;
+            $told = $told->merge($role === ChatThreadRole::Reply ? [$lead] : [$lead, ...$others])->unique('id');
+        }
+
+        if ($first === null) {
             return false;
         }
 
-        $shown = $role === ChatThreadRole::Reply ? collect([$lead]) : collect([$lead, ...$others]);
-
-        IncidentTeamNotice::insertOrIgnore($shown->map(fn (Advisory $notice): array => [
+        IncidentTeamNotice::insertOrIgnore($told->map(fn (Advisory $notice): array => [
             'team_id' => $team->id,
             'advisory_id' => $notice->id,
             'severity' => $notice->severity->value,
             'reason' => IncidentAlertReason::Manual->value,
-            'chat_notification_id' => $notification->id,
+            'chat_notification_id' => $first->id,
             'created_at' => now(),
-        ])->all());
+        ])->values()->all());
 
-        if ($role === ChatThreadRole::Opener) {
+        if ($hasOpened) {
             $thread->told_confirmed_branches = $incident->confirmedBranches($runtimes);
         }
 
-        $thread->recordQueued($notification);
+        $thread->last_notification_id = $first->id;
+        $thread->save();
 
         $thread->events()->create([
             'type' => IncidentTeamEventType::UpdateSent,
             'user_id' => $actor?->id,
-            'data' => ['request_id' => $requestId, 'chat_notification_id' => $notification->id, 'message' => $message],
+            'data' => ['request_id' => $requestId, 'chat_notification_id' => $first->id, 'message' => $message],
         ]);
 
         return true;

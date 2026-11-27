@@ -6,6 +6,7 @@ use App\Enums\ChatNotificationKind;
 use App\Jobs\SendChatNotification;
 use App\Models\ChatNotification;
 use App\Models\Team;
+use App\Support\ChatRecipient;
 use Illuminate\Support\Facades\Bus;
 
 /**
@@ -17,16 +18,19 @@ use Illuminate\Support\Facades\Bus;
 class QueueChatNotification
 {
     /**
-     * @param  Team|null  $team  Null sends to the admin space.
+     * @param  ChatRecipient|Team|null  $recipient  A team's or a project's own webhook (see ChatRecipient); null sends to the admin space.
      * @param  array<string, mixed>  $payload
      * @param  array<string, mixed>  $attributes  Other columns to record, e.g. `covers_until`.
      * @return ChatNotification|null The new message, or null when one with the same dedupe key already exists.
      */
-    public function handle(?Team $team, ChatNotificationKind $kind, string $dedupeKey, array $payload, bool $sendNow = false, array $attributes = []): ?ChatNotification
+    public function handle(ChatRecipient|Team|null $recipient, ChatNotificationKind $kind, string $dedupeKey, array $payload, bool $sendNow = false, array $attributes = []): ?ChatNotification
     {
+        $recipient = $recipient instanceof Team ? ChatRecipient::team($recipient) : $recipient;
+
         $notification = ChatNotification::createOrFirst(['dedupe_key' => $dedupeKey], [
             ...$attributes,
-            'team_id' => $team?->id,
+            'team_id' => $recipient?->team->id,
+            'project_id' => $recipient?->projectId(),
             'kind' => $kind,
             'payload' => $payload,
         ]);

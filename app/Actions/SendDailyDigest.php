@@ -24,6 +24,7 @@ use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
 use App\Services\IncidentTeamExposure;
+use App\Support\ChatRecipient;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -65,7 +66,9 @@ class SendDailyDigest
     ) {}
 
     /**
-     * @return int The number of digests queued. A team gets at most one per day.
+     * Each project on its own webhook gets a digest of its own services, left out of its team's (see ChatRecipient).
+     *
+     * @return int The number of digests queued. A team, and each project on its own webhook, gets at most one per day.
      */
     public function handle(): int
     {
@@ -77,30 +80,36 @@ class SendDailyDigest
         return $this->withLocale(config('psm.alerts.locale'), fn (): int => Team::query()->orderBy('id')->get()->sum(fn (Team $team): int => DB::transaction(function () use ($team, $today, $isWeekly): int {
             Project::where('team_id', $team->id)->orderBy('id')->sharedLock()->pluck('id');
 
-            $coversUntil = now();
-            $digest = $this->digestFor($team, $isWeekly);
+            return ChatRecipient::allOf($team)->sum(function (ChatRecipient $recipient) use ($team, $today, $isWeekly): int {
+                $coversUntil = now();
+                $digest = $this->digestFor($team, $isWeekly, $recipient);
 
-            if ($isWeekly ? $this->isEmpty($digest) : ! $this->hasNews($digest)) {
-                return 0;
-            }
+                if ($isWeekly ? $this->isEmpty($digest) : ! $this->hasNews($digest)) {
+                    return 0;
+                }
 
-            $payload = $this->cards->digest($team, $digest, $today->translatedFormat(__('d/m/Y')));
-            $dedupeKey = $isWeekly ? "digest-weekly:{$team->id}:{$today->format('o-\WW')}" : "digest:{$team->id}:{$today->toDateString()}";
+                $payload = $this->cards->for($recipient)->digest($team, $digest, $today->translatedFormat(__('d/m/Y')));
+                $dedupeKey = ($isWeekly ? "digest-weekly:{$team->id}:{$today->format('o-\WW')}" : "digest:{$team->id}:{$today->toDateString()}").$recipient->dedupeSuffix();
 
-            return $this->queueChatNotification->handle($team, ChatNotificationKind::Digest, $dedupeKey, $payload, attributes: ['covers_until' => $coversUntil]) === null ? 0 : 1;
+                return $this->queueChatNotification->handle($recipient, ChatNotificationKind::Digest, $dedupeKey, $payload, attributes: ['covers_until' => $coversUntil]) === null ? 0 : 1;
+            });
         })));
     }
 
     /**
      * @return array{weekly: bool, new: Collection<int, Finding>, reminders: Collection<int, Finding>, overdue: Collection<int, Finding>, open: Collection<int, Finding>, resolved: Collection<int, Finding>, pre_notices: Collection<int, Advisory>, ending: Collection<int, array{runtime: Runtime, date: string}>, unknown: int, outdated: int, missing_lockfiles: int, unreadable_lockfiles: int, new_unreadable_lockfiles: int, awaiting_patch: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>, awaiting_patch_news: bool, incident_reminders: Collection<int, array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}>}
      */
-    public function digestFor(Team $team, bool $isWeekly = false): array
+    public function digestFor(Team $team, bool $isWeekly = false, ?ChatRecipient $recipient = null): array
     {
-        $since = $this->windowStart($team);
+        $recipient ??= ChatRecipient::team($team);
+        $ownProjects = ChatRecipient::ownProjectsOf($team);
+        $ofRecipient = fn ($query) => $recipient->isProject() ? $query->where('project_id', $recipient->projectId()) : $query->whereNotIn('project_id', $ownProjects->keys()->all());
+        $since = $this->windowStart($recipient);
         $resolvedSince = $isWeekly ? now()->subWeek() : $since;
 
         $findings = $team->findings()
             ->monitored()
+            ->whereHas('deployment.service', $ofRecipient)
             ->with('deployment.service.project')
             ->where(fn ($query) => $query->where('state', FindingState::Open)->orWhere('resolved_at', '>=', $resolvedSince))
             ->orderByRaw("case severity when 'critical' then 4 when 'high' then 3 when 'medium' then 2 when 'low' then 1 else 0 end desc")
@@ -116,13 +125,15 @@ class SendDailyDigest
         $reminders = $notNew->filter(fn (Finding $finding): bool => $this->policy->isImmediate($finding->severity) && ! $finding->isAcknowledged());
         $overdue = $notNew->diffKeys($reminders)->filter(fn (Finding $finding): bool => $finding->sla_due_at !== null && $finding->sla_due_at->between($since, now()));
 
-        $runtimes = Runtime::with('deployment.service.project')
+        $teamRuntimes = Runtime::with('deployment.service.project')
             ->monitored()
             ->whereHas('deployment.service.project', fn ($query) => $query->where('team_id', $team->id))
             ->get();
+        $runtimes = $teamRuntimes->filter(fn (Runtime $runtime): bool => $recipient->includes($runtime->deployment->service->project_id, $ownProjects))->values();
 
         $services = Service::with('productionDeployment.lockfiles')
             ->whereHas('project', fn ($query) => $query->where('team_id', $team->id)->whereNull('monitoring_paused_at'))
+            ->where($ofRecipient)
             ->get();
         $unreadable = $services->flatMap(function (Service $service): Collection {
             $lockfiles = $service->productionDeployment->lockfiles ?? collect();
@@ -130,7 +141,7 @@ class SendDailyDigest
 
             return $lockfiles->filter(fn (Lockfile $lockfile): bool => $lockfile->isUnreadable() && ! isset($superseded[$lockfile->path]));
         });
-        $awaitingPatch = $this->awaitingPatch($team, $runtimes, $since);
+        $awaitingPatch = $this->awaitingPatch($team, $runtimes, $since, $teamRuntimes);
 
         return [
             'weekly' => $isWeekly,
@@ -154,11 +165,12 @@ class SendDailyDigest
 
     /**
      * Where the last delivered digest ended. Before any was delivered, a day before the first one tried, so digests
-     * failing from the start lose nothing either; a team that never had one starts a day back.
+     * failing from the start lose nothing either; a team that never had one starts a day back. Each recipient counts its
+     * own digests: a project that moved to its own webhook starts a day back too.
      */
-    private function windowStart(Team $team): CarbonInterface
+    private function windowStart(ChatRecipient $recipient): CarbonInterface
     {
-        $digests = $team->chatNotifications()->where('kind', ChatNotificationKind::Digest);
+        $digests = $recipient->team->chatNotifications()->where('project_id', $recipient->projectId())->where('kind', ChatNotificationKind::Digest);
         $delivered = (clone $digests)->whereNotNull('sent_at')->latest('id')->first();
 
         if ($delivered !== null) {
@@ -247,10 +259,11 @@ class SendDailyDigest
      * its version, as no fix can be matched to it; it does not put an incident on the awaiting list by itself. The
      * services of a project resumed without telling the team about the incident are left out (see ProjectIncidentSkip).
      *
-     * @param  Collection<int, Runtime>  $runtimes
+     * @param  Collection<int, Runtime>  $runtimes  The recipient's runtimes (see ChatRecipient).
+     * @param  Collection<int, Runtime>|null  $teamRuntimes  All of the team's, which an admin's assessment is checked on; the recipient's when null.
      * @return Collection<int, array{item: array{incident: Incident, notice: Advisory, branches: list<string>, candidates: array<string, string>, needs_review: bool}, is_news: bool, is_reminder: bool}>
      */
-    private function awaitingPatch(Team $team, Collection $runtimes, CarbonInterface $since): Collection
+    private function awaitingPatch(Team $team, Collection $runtimes, CarbonInterface $since, ?Collection $teamRuntimes = null): Collection
     {
         if ($runtimes->isEmpty()) {
             return collect();
@@ -265,7 +278,7 @@ class SendDailyDigest
         $securityReleases = Incident::laterSecurityReleases($incidents);
 
         return $incidents
-            ->map(function (Incident $incident) use ($team, $runtimes, $since, $reviewAfter, $securityReleases): ?array {
+            ->map(function (Incident $incident) use ($team, $runtimes, $teamRuntimes, $since, $reviewAfter, $securityReleases): ?array {
                 $all = $incident->notices()->get();
                 $notices = $all->where('is_dismissed', false)->where('is_backfill', false);
                 $firstTold = IncidentTeamNotice::firstToldAt($team->id, $all->modelKeys());
@@ -276,8 +289,8 @@ class SendDailyDigest
 
                 $patches = $incident->confirmedPatches($all);
                 $technologyRuntimes = $runtimes->where('technology', $incident->technology)->values();
-                $exposure = IncidentTeamExposure::of($incident, $all, $technologyRuntimes, $patches);
-                $assessment = IncidentTeam::where('incident_id', $incident->id)->where('team_id', $team->id)->first();
+                $exposure = IncidentTeamExposure::of($incident, $all, ($teamRuntimes ?? $runtimes)->where('technology', $incident->technology)->values(), $patches);
+                $assessment = IncidentTeam::where('incident_id', $incident->id)->where('team_id', $team->id)->teamRows()->first();
                 $isAssessed = $assessment?->hasValidAssessment($exposure) ?? false;
 
                 if ($isAssessed && $assessment->isRuledOut($exposure)) {

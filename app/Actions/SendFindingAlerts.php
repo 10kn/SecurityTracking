@@ -16,6 +16,7 @@ use App\Models\Team;
 use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
 use App\Services\Kev\KnownExploitation;
+use App\Support\ChatRecipient;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,8 @@ use Illuminate\Support\Traits\Localizable;
 
 /**
  * Sends the immediate alerts of handover 5.5: one card per team and issue, listing every service the issue affects.
+ * A project on its own webhook gets its own card, listing only its services, and is left out of its team's (see
+ * ChatRecipient).
  *
  * A finding is sent once at each severity. A team hears about an issue again only when its severity rises or another
  * service gets the same issue; the daily digest is the reminder. Running it again sends nothing new. A "thiếu bản vá"
@@ -64,7 +67,7 @@ class SendFindingAlerts
             ->monitored()
             ->whereIn('severity', config('psm.alerts.immediate_severities'))
             ->where(fn ($query) => $query->whereNull('notified_severity')->orWhereColumn('notified_severity', '!=', 'severity'))
-            ->with(['runtime', 'deployment'])
+            ->with(['runtime', 'deployment.service'])
             ->get()
             ->filter(fn (Finding $finding): bool => $this->policy->awaitsImmediateAlert($finding))
             ->partition(fn (Finding $finding): bool => $this->isToldByIncident($finding));
@@ -75,6 +78,8 @@ class SendFindingAlerts
             ->update(['notified_severity' => $finding->severity, 'notified_at' => now()]));
 
         $pending = $pending->reject(fn (Finding $finding): bool => $this->isHeldForVendorPatch($finding));
+        $ownProjectIds = Project::owningChatChannel()->pluck('id')->flip();
+        $projectOf = fn (Finding $finding): ?int => $ownProjectIds->has($finding->deployment->service->project_id) ? $finding->deployment->service->project_id : null;
 
         $summaries = $pending
             ->filter(fn (Finding $finding): bool => $this->isSummarizable($finding))
@@ -83,9 +88,9 @@ class SendFindingAlerts
             ->sum(fn (Collection $findings): int => (int) $this->sendLockfileSummary($findings->first()->team_id, $findings->first()->deployment->service_id));
 
         // The findings a summary stood for are sent now, so their issues' cards leave them out of what is new (see send()).
-        $groups = $pending->groupBy(fn (Finding $finding): string => "{$finding->team_id}|{$finding->group_key}");
+        $groups = $pending->groupBy(fn (Finding $finding): string => "{$finding->team_id}|{$projectOf($finding)}|{$finding->group_key}");
 
-        return $summaries + $groups->sum(fn (Collection $findings): int => (int) $this->send($findings->first()->team_id, $findings->first()->group_key));
+        return $summaries + $groups->sum(fn (Collection $findings): int => (int) $this->send($findings->first()->team_id, $projectOf($findings->first()), $findings->first()->group_key));
     }
 
     /**
@@ -116,15 +121,17 @@ class SendFindingAlerts
 
             $team = Team::findOrFail($teamId);
             $service = Service::with('project')->findOrFail($serviceId);
+            $service->project->setRelation('team', $team);
+            $recipient = ChatRecipient::of($service->project);
 
-            $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->lockfileSummary(
+            $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->for($recipient)->lockfileSummary(
                 $team,
                 $service,
                 $summarized,
                 $knownExploited->pluck('group_key')->unique()->count(),
             ));
 
-            $this->queueChatNotification->handle($team, ChatNotificationKind::Immediate, $this->dedupeKey($teamId, "lockfile-summary:{$serviceId}", $summarized), $payload);
+            $this->queueChatNotification->handle($recipient, ChatNotificationKind::Immediate, $this->dedupeKey($teamId, "lockfile-summary:{$serviceId}", $summarized).$recipient->dedupeSuffix(), $payload);
 
             $summarized->each(fn (Finding $finding) => $finding->update(['notified_severity' => $finding->severity, 'notified_at' => now()]));
 
@@ -154,14 +161,29 @@ class SendFindingAlerts
         return $threshold > 0 && $findings->pluck('group_key')->unique()->count() >= $threshold;
     }
 
-    private function send(int $teamId, string $groupKey): bool
+    /**
+     * One card for an issue at one recipient: the team, for its projects that follow it, or a project on its own
+     * webhook. The team's projects are share-locked first, so a project that moved between the two meanwhile is read
+     * as it is now: its findings wait for the next run, which sends them where they go now.
+     */
+    private function send(int $teamId, ?int $projectId, string $groupKey): bool
     {
-        return DB::transaction(function () use ($teamId, $groupKey): bool {
+        return DB::transaction(function () use ($teamId, $projectId, $groupKey): bool {
             Project::where('team_id', $teamId)->orderBy('id')->sharedLock()->pluck('id');
+
+            $team = Team::findOrFail($teamId);
+            $ownProjects = ChatRecipient::ownProjectsOf($team);
+
+            if ($projectId !== null && ! $ownProjects->has($projectId)) {
+                return false;
+            }
+
+            $recipient = new ChatRecipient($team, $projectId === null ? null : $ownProjects->get($projectId));
 
             $findings = Finding::open()
                 ->monitored()
                 ->where('team_id', $teamId)
+                ->whereHas('deployment.service', fn ($query) => $projectId === null ? $query->whereNotIn('project_id', $ownProjects->keys()->all()) : $query->where('project_id', $projectId))
                 ->where('group_key', $groupKey)
                 ->with(['deployment.service.project', 'runtime'])
                 ->orderBy('id')
@@ -176,11 +198,9 @@ class SendFindingAlerts
                 return false;
             }
 
-            $team = Team::findOrFail($teamId);
+            $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->for($recipient)->findingAlert($team, $findings, $pending->modelKeys()));
 
-            $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->findingAlert($team, $findings, $pending->modelKeys()));
-
-            $this->queueChatNotification->handle($team, ChatNotificationKind::Immediate, $this->dedupeKey($teamId, $groupKey, $pending), $payload);
+            $this->queueChatNotification->handle($recipient, ChatNotificationKind::Immediate, $this->dedupeKey($teamId, $groupKey, $pending).$recipient->dedupeSuffix(), $payload);
 
             $pending->each(fn (Finding $finding) => $finding->update(['notified_severity' => $finding->severity, 'notified_at' => now()]));
 
@@ -200,6 +220,7 @@ class SendFindingAlerts
         }
 
         $this->toldKnownExploited[$finding->team_id] ??= IncidentTeam::where('team_id', $finding->team_id)
+            ->teamRows()
             ->pluck('told_known_exploited')
             ->flatten()
             ->filter(fn (mixed $cve): bool => is_string($cve))

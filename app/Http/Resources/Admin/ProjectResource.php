@@ -24,6 +24,7 @@ class ProjectResource extends JsonResource
             'slug' => $this->slug,
             'services_count' => $this->services_count,
             'is_paused' => $this->isPaused(),
+            'has_own_webhook' => $this->ownsChatChannel(),
             'team' => $this->whenLoaded('team', fn (): array => ['id' => $this->team->id, 'name' => $this->team->name]),
         ];
     }

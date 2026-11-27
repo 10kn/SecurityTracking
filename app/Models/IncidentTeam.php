@@ -6,8 +6,10 @@ use App\Enums\ChatThreadRole;
 use App\Enums\IncidentImpact;
 use App\Enums\IncidentTeamEventType;
 use App\Services\IncidentTeamExposure;
+use App\Support\ChatRecipient;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,12 +25,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * (see moveTo()), as Google Chat scopes thread keys to the webhook's app: its next alert opens a new thread with a full
  * card. An incident merged into another hands its messages to the row it points at (see canonical()).
  *
+ * A project of the team on its own webhook (see ChatRecipient) has a row of its own per incident (`project_id`) that
+ * holds only its thread: what the team was told and the assessment are only ever read and written on the team's row
+ * (see teamRows() and teamRow()), as the alerts decide for the team as a whole.
+ *
  * It also holds an admin's assessment of the incident for the team ("Đã đọc", see AcknowledgeIncidentTeams),
  * independent of the thread: the impact, a note and the exposure the admin saw. The assessment holds only while that
  * exposure still covers the team's current one (see hasValidAssessment()); its history is in IncidentTeamEvent.
  */
 #[Table('incident_team')]
-#[Fillable(['incident_id', 'team_id', 'generation', 'thread_key', 'space', 'webhook_hash', 'thread_name', 'opening_notification_id', 'last_notification_id', 'merged_into_id', 'told_confirmed_branches', 'exploited_told_at', 'told_known_exploited', 'acknowledged_at', 'acknowledged_by', 'impact', 'impact_note', 'acknowledged_exposure', 'acknowledged_exposure_hash', 'assessment_revision'])]
+#[Fillable(['incident_id', 'team_id', 'project_id', 'generation', 'thread_key', 'space', 'webhook_hash', 'thread_name', 'opening_notification_id', 'last_notification_id', 'merged_into_id', 'told_confirmed_branches', 'exploited_told_at', 'told_known_exploited', 'acknowledged_at', 'acknowledged_by', 'impact', 'impact_note', 'acknowledged_exposure', 'acknowledged_exposure_hash', 'assessment_revision'])]
 class IncidentTeam extends Model
 {
     /**
@@ -51,35 +57,71 @@ class IncidentTeam extends Model
     }
 
     /**
-     * The row of the incident and team, created when there is none, locked until the transaction ends. Callers hold
-     * the incident's IncidentLock and row lock first.
+     * The row of the incident and team, or of the thread in a project's own space, created when there is none, locked
+     * until the transaction ends. Callers hold the incident's IncidentLock and row lock first.
      *
      * @return array{0: self, 1: bool} The row, and whether it was just created.
      */
-    public static function lockFor(Incident $incident, Team $team): array
+    public static function lockFor(Incident $incident, Team $team, ?Project $project = null): array
     {
         $isNew = self::query()->insertOrIgnore([
             'incident_id' => $incident->id,
             'team_id' => $team->id,
+            'project_id' => $project?->id,
             'generation' => 1,
-            'thread_key' => self::threadKeyFor($incident->id, $team->id, 1),
+            'thread_key' => self::threadKeyFor($incident->id, $team->id, 1, $project?->id),
             'told_confirmed_branches' => '[]',
             'created_at' => now(),
             'updated_at' => now(),
         ]) === 1;
 
-        return [self::where('incident_id', $incident->id)->where('team_id', $team->id)->lockForUpdate()->firstOrFail(), $isNew];
+        return [self::where('incident_id', $incident->id)->where('team_id', $team->id)->where('project_id', $project?->id)->lockForUpdate()->firstOrFail(), $isNew];
+    }
+
+    /**
+     * The thread row of a recipient (see ChatRecipient), locked like lockFor().
+     *
+     * @return array{0: self, 1: bool}
+     */
+    public static function lockForRecipient(Incident $incident, ChatRecipient $recipient): array
+    {
+        return self::lockFor($incident, $recipient->team, $recipient->project);
     }
 
     /**
      * A thread key no other installation posting to the same space uses: a namespace derived from the application key,
-     * the incident, the team and the generation.
+     * the incident, the team, the project for a project's own space, and the generation.
      */
-    public static function threadKeyFor(int $incidentId, int $teamId, int $generation): string
+    public static function threadKeyFor(int $incidentId, int $teamId, int $generation, ?int $projectId = null): string
     {
         $namespace = substr(hash('sha256', 'psm-thread:'.config('app.key')), 0, 12);
+        $project = $projectId === null ? '' : "-project-{$projectId}";
 
-        return "psm-{$namespace}-incident-{$incidentId}-team-{$teamId}-g{$generation}";
+        return "psm-{$namespace}-incident-{$incidentId}-team-{$teamId}{$project}-g{$generation}";
+    }
+
+    /**
+     * The rows of teams, which hold what each team was told and the assessment, without the threads of projects on
+     * their own webhook.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeTeamRows(Builder $query): void
+    {
+        $query->whereNull('project_id');
+    }
+
+    /**
+     * The team's row of the same incident, for a row of a project's thread; this row for a team's. Null when the team
+     * has none yet.
+     */
+    public function teamRow(): ?self
+    {
+        if ($this->project_id === null) {
+            return $this;
+        }
+
+        return self::where('incident_id', $this->incident_id)->where('team_id', $this->team_id)->teamRows()->first();
     }
 
     /**
@@ -102,7 +144,7 @@ class IncidentTeam extends Model
 
         if ($this->webhook_hash !== null || $this->space !== null) {
             $this->generation++;
-            $this->thread_key = self::threadKeyFor($this->incident_id, $this->team_id, $this->generation);
+            $this->thread_key = self::threadKeyFor($this->incident_id, $this->team_id, $this->generation, $this->project_id);
             $this->thread_name = null;
             $this->opening_notification_id = null;
         }
@@ -230,7 +272,7 @@ class IncidentTeam extends Model
      */
     public static function isRuledOutFor(Incident $incident, int $teamId): bool
     {
-        $row = self::where('incident_id', $incident->id)->where('team_id', $teamId)->first();
+        $row = self::where('incident_id', $incident->id)->where('team_id', $teamId)->teamRows()->first();
 
         return $row?->impact === IncidentImpact::No && $row->isRuledOut(IncidentTeamExposure::for($incident, $teamId));
     }
@@ -339,6 +381,14 @@ class IncidentTeam extends Model
     public function acknowledgedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'acknowledged_by');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
     }
 
     /**

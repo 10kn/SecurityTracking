@@ -5,6 +5,7 @@ import { Card, CardBody } from '@/components/admin/card';
 import { ConfirmButton } from '@/components/admin/confirm-button';
 import { FormActions, FormSection } from '@/components/admin/form-section';
 import { PageHeader } from '@/components/admin/page-header';
+import { NotificationChannel, type ProjectGoogleChat } from '@/components/admin/projects/notification-channel';
 import { ProjectFields, type ProjectFormData } from '@/components/admin/projects/project-fields';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/lib/i18n';
@@ -13,9 +14,10 @@ import type { Option } from '@/types';
 interface Props {
     project: { id: number; team_id: number; name: string; slug: string };
     teams: Option<number>[];
+    googleChat: ProjectGoogleChat;
 }
 
-export default function ProjectsEdit({ project, teams }: Props) {
+export default function ProjectsEdit({ project, teams, googleChat }: Props) {
     const t = useTranslation();
     const form = useForm<ProjectFormData>({
         team_id: project.team_id,
@@ -49,6 +51,11 @@ export default function ProjectsEdit({ project, teams }: Props) {
                     </FormActions>
                 </CardBody>
             </form>
+            <Card className="mt-6">
+                <CardBody>
+                    <NotificationChannel key={`${googleChat.target}:${googleChat.masked_webhook_url ?? ''}`} projectId={project.id} googleChat={googleChat} />
+                </CardBody>
+            </Card>
             <Card className="mt-6">
                 <CardBody>
                     <FormSection title={t('Xóa project')} description={t('Xóa project cũng xóa mọi service, version runtime và lockfile của project.')}>

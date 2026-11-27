@@ -69,18 +69,21 @@ class MergeIncidents
      * A team with a thread only on the merged incident keeps it: the row of the incident it went into takes it over,
      * so updates go on in the thread the team knows. A team with a thread on both keeps the one of the incident it
      * went into. What the team was told about either incident (confirmed branches, exploitation, the CVE ids CISA KEV
-     * lists) counts for both. The rows are locked after the incidents, as SendPreNoticeAlerts locks them.
+     * lists) counts for both. The rows are locked after the incidents, as SendPreNoticeAlerts locks them. The thread of a
+     * project on its own webhook (see ChatRecipient) is merged the same way, with the project's thread of the incident
+     * it went into; what the team was told stays on the team's rows.
      */
     private function mergeThreads(Incident $from, Incident $into): void
     {
-        $targets = IncidentTeam::where('incident_id', $into->id)->orderBy('id')->lockForUpdate()->get()->keyBy('team_id');
+        $targets = IncidentTeam::where('incident_id', $into->id)->orderBy('id')->lockForUpdate()->get()->keyBy(fn (IncidentTeam $row): string => "{$row->team_id}:{$row->project_id}");
 
         IncidentTeam::where('incident_id', $from->id)->orderBy('id')->lockForUpdate()->get()->each(function (IncidentTeam $row) use ($into, $targets): void {
-            $target = $targets->get($row->team_id) ?? new IncidentTeam([
+            $target = $targets->get("{$row->team_id}:{$row->project_id}") ?? new IncidentTeam([
                 'incident_id' => $into->id,
                 'team_id' => $row->team_id,
+                'project_id' => $row->project_id,
                 'generation' => 1,
-                'thread_key' => IncidentTeam::threadKeyFor($into->id, $row->team_id, 1),
+                'thread_key' => IncidentTeam::threadKeyFor($into->id, $row->team_id, 1, $row->project_id),
             ]);
 
             if (! $target->hasThread() && $row->hasThread()) {

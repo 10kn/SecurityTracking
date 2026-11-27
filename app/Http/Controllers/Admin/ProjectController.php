@@ -65,7 +65,7 @@ class ProjectController extends Controller
 
     public function show(Project $project): Response
     {
-        $project->load(['team.latestChatNotification', 'pausedBy', 'events' => fn ($query) => $query->with('user')->latest('id')->limit(10)]);
+        $project->load(['team.latestChatNotification', 'latestChatNotification', 'pausedBy', 'events' => fn ($query) => $query->with('user')->latest('id')->limit(10)]);
 
         $services = $project->services()
             ->with(ServiceResource::EAGER_LOADS)
@@ -73,7 +73,7 @@ class ProjectController extends Controller
             ->orderBy('name')
             ->get();
 
-        $chatStatus = $project->team->googleChatStatus();
+        $chatStatus = $project->ownsChatChannel() ? $project->googleChatStatus() : $project->team->googleChatStatus();
 
         return Inertia::render('projects/show', [
             'project' => [
@@ -81,7 +81,7 @@ class ProjectController extends Controller
                 'name' => $project->name,
                 'slug' => $project->slug,
                 'team' => ['id' => $project->team->id, 'name' => $project->team->name],
-                'alert_channel' => ['label' => __('Google Chat của team').' · '.$chatStatus->getLabel(), 'tone' => $chatStatus->dotTone()],
+                'alert_channel' => ['label' => ($project->ownsChatChannel() ? __('Webhook riêng của project') : __('Google Chat của team')).' · '.$chatStatus->getLabel(), 'tone' => $chatStatus->dotTone()],
                 'created_at' => LocalTime::date($project->created_at),
                 'monitoring' => $project->isPaused() ? [
                     'paused_at' => LocalTime::format($project->monitoring_paused_at),
@@ -108,9 +108,18 @@ class ProjectController extends Controller
 
     public function edit(Project $project): Response
     {
+        $project->load(['team', 'latestChatNotification']);
+
         return Inertia::render('projects/edit', [
             'project' => $project->only(['id', 'team_id', 'name', 'slug']),
             'teams' => $this->teamOptions(),
+            'googleChat' => [
+                'target' => $project->notification_target->value,
+                'team' => $project->team->name,
+                'masked_webhook_url' => $project->maskedGoogleChatWebhookUrl(),
+                'status' => $project->googleChatStatus()->dot(),
+                'detail' => $this->latestDeliveryDetail($project),
+            ],
         ]);
     }
 
@@ -133,6 +142,22 @@ class ProjectController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Đã xóa project :project.', ['project' => $project->name])]);
 
         return to_route('admin.projects.index');
+    }
+
+    /**
+     * E.g. "tin gần nhất 23/10/2026 08:00 GMT+7", or the error of the last failed delivery to the project's own webhook.
+     */
+    private function latestDeliveryDetail(Project $project): ?string
+    {
+        $latest = $project->latestChatNotification;
+
+        if (blank($project->google_chat_webhook_url) || $latest === null) {
+            return null;
+        }
+
+        return $latest->failed_at !== null
+            ? __('lỗi lúc :time: :error', ['time' => LocalTime::format($latest->failed_at), 'error' => $latest->last_error])
+            : __('tin gần nhất :time', ['time' => LocalTime::format($latest->sent_at)]);
     }
 
     /**

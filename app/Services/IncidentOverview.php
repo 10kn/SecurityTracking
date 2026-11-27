@@ -89,6 +89,7 @@ class IncidentOverview
         $securityReleases = Incident::laterSecurityReleases($incidents);
         $ledger = IncidentTeamNotice::ledgerFor($noticeIds);
         $rows = IncidentTeam::whereIn('incident_id', $incidentIds)
+            ->teamRows()
             ->with($withHistory ? ['acknowledgedBy', 'openingNotification', 'events.user'] : ['acknowledgedBy', 'openingNotification'])
             ->get()
             ->groupBy('incident_id');
@@ -191,6 +192,7 @@ class IncidentOverview
     public function mayHaveUnknownImpact(Builder $query, ?int $teamId = null): Builder
     {
         return $query->whereIn('id', IncidentTeam::where('impact', IncidentImpact::Unknown)
+            ->teamRows()
             ->when($teamId !== null, fn (Builder $query) => $query->where('team_id', $teamId))
             ->select('incident_id'));
     }

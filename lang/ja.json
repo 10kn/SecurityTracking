@@ -1452,5 +1452,20 @@
     "Mặc định: :value": "既定値: :value",
     "Dùng mặc định": "既定値に戻す",
     "Thêm": "追加",
-    "Tóm tắt": "概要"
+    "Tóm tắt": "概要",
+    "Kênh thông báo": "通知先",
+    "Cảnh báo, bản tổng hợp và thread sự kiện của project gửi về đâu.": "プロジェクトのアラート、ダイジェスト、インシデントのスレッドの送信先です。",
+    "Gửi về": "送信先",
+    "Theo team": "チームに送信",
+    "Gửi về Google Chat của team :team, chung với các project khác.": "チーム :team の Google Chat に、他のプロジェクトと一緒に送信します。",
+    "Webhook riêng của project": "プロジェクト専用の Webhook",
+    "Chỉ gửi về webhook của project; team không nhận tin về project này nữa.": "プロジェクトの Webhook にだけ送信します。チームにはこのプロジェクトの通知が届かなくなります。",
+    "Chưa có webhook riêng. Thông báo vẫn gửi về team cho tới khi lưu webhook.": "専用の Webhook がありません。Webhook を保存するまで、通知はチームに送信されます。",
+    "Webhook riêng": "専用 Webhook",
+    "Project gửi về webhook riêng, team không nhận tin: :projects": "専用 Webhook に送信するプロジェクト（チームには届きません）: :projects",
+    "Project chưa có webhook riêng.": "このプロジェクトには専用の Webhook が設定されていません。",
+    "Tin thử từ Security Manager: space này sẽ nhận cảnh báo bảo mật của project :project (team :team).": "Security Manager からのテストメッセージ: このスペースでプロジェクト :project（チーム :team）のセキュリティ通知を受け取ります。",
+    "Thêm webhook riêng cho project trước.": "先にプロジェクト専用の Webhook を追加してください。",
+    "Thông báo của project sẽ gửi về webhook riêng.": "プロジェクトの通知を専用の Webhook に送信します。",
+    "Thông báo của project sẽ gửi về team.": "プロジェクトの通知をチームに送信します。"
 }

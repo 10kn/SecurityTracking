@@ -3,6 +3,7 @@
 namespace App\Actions;
 
 use App\Enums\ChatNotificationKind;
+use App\Models\Project;
 use App\Models\Team;
 use App\Services\GoogleChatClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -14,29 +15,33 @@ class SendTestChatMessage
     public function __construct(private GoogleChatClient $client) {}
 
     /**
-     * Send a test message to the team's saved webhook, or to a candidate webhook before it is saved.
+     * Send a test message to the saved webhook of a team or of a project with its own, or to a candidate webhook
+     * before it is saved.
      *
      * Every attempt on the saved webhook is logged in chat_notifications. A failed candidate is not logged,
-     * so checking a mistyped URL does not mark the team's working webhook as failing.
+     * so checking a mistyped URL does not mark the working webhook as failing.
      *
      * @return string|null The error shown to the admin, or null when Google Chat accepted the message.
      */
-    public function handle(Team $team, ?string $candidateWebhookUrl = null): ?string
+    public function handle(Team|Project $owner, ?string $candidateWebhookUrl = null): ?string
     {
-        $webhookUrl = $candidateWebhookUrl ?? $team->google_chat_webhook_url;
+        $webhookUrl = $candidateWebhookUrl ?? $owner->google_chat_webhook_url;
 
         if (blank($webhookUrl)) {
-            return __('Team chưa có webhook.');
+            return $owner instanceof Project ? __('Project chưa có webhook riêng.') : __('Team chưa có webhook.');
         }
 
         $message = [
-            'text' => __('Tin thử từ Security Manager: space này sẽ nhận cảnh báo bảo mật của team :team.', ['team' => $team->name]),
+            'text' => $owner instanceof Project
+                ? __('Tin thử từ Security Manager: space này sẽ nhận cảnh báo bảo mật của project :project (team :team).', ['project' => $owner->name, 'team' => $owner->team->name])
+                : __('Tin thử từ Security Manager: space này sẽ nhận cảnh báo bảo mật của team :team.', ['team' => $owner->name]),
         ];
 
         $error = $this->deliver($webhookUrl, $message);
 
         if ($candidateWebhookUrl === null || $error === null) {
-            $team->chatNotifications()->create([
+            $owner->chatNotifications()->create([
+                'team_id' => $owner instanceof Project ? $owner->team_id : $owner->id,
                 'dedupe_key' => 'test:'.Str::uuid(),
                 'kind' => ChatNotificationKind::Test,
                 'payload' => $message,

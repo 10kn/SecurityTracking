@@ -107,6 +107,7 @@ class SendChatNotification implements ShouldQueue
 
         if ($webhookUrl === null) {
             $this->markFailed($sendAdminAlert, match (true) {
+                $notification->project_id !== null => __('Project chưa có webhook riêng.'),
                 $notification->team_id !== null => __('Team chưa có webhook.'),
                 $notification->kind === ChatNotificationKind::SecurityNews => __('Chưa cấu hình PSM_ADMIN_NEWS_WEBHOOK hay PSM_ADMIN_CHAT_WEBHOOK.'),
                 default => __('Chưa cấu hình PSM_ADMIN_CHAT_WEBHOOK.'),
@@ -424,13 +425,13 @@ class SendChatNotification implements ShouldQueue
             return;
         }
 
-        $notification->loadMissing('team');
+        $notification->loadMissing(['team', 'project']);
 
         $this->afterUnlock[] = fn () => $sendAdminAlert->handle(
             "thread-missing:{$space}:".now(config('psm.digest.timezone'))->toDateString(),
             __('Google Chat không trả về thread'),
             [
-                __('Team: :team', ['team' => $notification->team->name]),
+                __('Team: :team', ['team' => $notification->recipientName()]),
                 __('Tin đã gửi nhưng không mở được thread; cập nhật quan trọng tiếp theo sẽ gửi card đầy đủ.'),
                 __('Kiểm tra webhook của space có hỗ trợ thread không.'),
             ],
@@ -574,11 +575,11 @@ class SendChatNotification implements ShouldQueue
             return;
         }
 
-        $notification->loadMissing('team');
+        $notification->loadMissing(['team', 'project']);
 
         $this->afterUnlock[] = fn () => $sendAdminAlert->handle(
             "undelivered:{$notification->id}:{$notification->failed_at->getTimestamp()}",
-            __('Không gửi được tin tới team :team', ['team' => $notification->team->name]),
+            __('Không gửi được tin tới team :team', ['team' => $notification->recipientName()]),
             [
                 __('Lỗi: :error', ['error' => $error]),
                 __('Loại tin: :kind', ['kind' => $notification->kind->getLabel()]),

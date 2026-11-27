@@ -21,6 +21,7 @@ use App\Services\AlertPolicy;
 use App\Services\GoogleChatCards;
 use App\Services\IncidentTeamExposure;
 use App\Services\Kev\KnownExploitation;
+use App\Support\ChatRecipient;
 use App\Support\IncidentLock;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -159,6 +160,7 @@ class ResumeProjectMonitoring
 
                 IncidentTeam::where('incident_id', $incident->id)
                     ->where('team_id', $project->team_id)
+                    ->teamRows()
                     ->lockForUpdate()
                     ->first()
                     ?->resetForResumedProject($project, $user, IncidentTeamExposure::of($incident, $notices, IncidentTeamExposure::runtimesOf($incident, $project->team_id), $patches));
@@ -190,7 +192,9 @@ class ResumeProjectMonitoring
                 return $lockfiles->filter(fn (Lockfile $lockfile): bool => $lockfile->isUnreadable() && ! isset($superseded[$lockfile->path]))->count();
             });
 
-        $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->projectResumed(
+        $recipient = ChatRecipient::of($project);
+
+        $payload = $this->withLocale(config('psm.alerts.locale'), fn (): array => $this->cards->for($recipient)->projectResumed(
             $project,
             $user,
             $note,
@@ -200,6 +204,6 @@ class ResumeProjectMonitoring
             $unreadable,
         ));
 
-        $this->queueChatNotification->handle($project->team, ChatNotificationKind::ProjectResumed, "project-resumed:{$project->id}:{$event->id}", $payload);
+        $this->queueChatNotification->handle($recipient, ChatNotificationKind::ProjectResumed, "project-resumed:{$project->id}:{$event->id}", $payload);
     }
 }

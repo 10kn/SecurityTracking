@@ -63,6 +63,8 @@ class Team extends Model
     }
 
     /**
+     * Every message of the team, those to its projects' own webhooks included (`project_id`).
+     *
      * @return HasMany<ChatNotification, $this>
      */
     public function chatNotifications(): HasMany
@@ -71,13 +73,14 @@ class Team extends Model
     }
 
     /**
-     * The latest message that was delivered or gave up; one still being retried does not count yet.
+     * The latest message to the team's own webhook that was delivered or gave up; one still being retried does not
+     * count yet, nor does one to a project's own webhook (see ChatRecipient).
      *
      * @return HasOne<ChatNotification, $this>
      */
     public function latestChatNotification(): HasOne
     {
-        return $this->hasOne(ChatNotification::class)->ofMany(['id' => 'max'], fn (Builder $query) => $query->where(
+        return $this->hasOne(ChatNotification::class)->ofMany(['id' => 'max'], fn (Builder $query) => $query->whereNull('project_id')->where(
             fn (Builder $query) => $query->whereNotNull('sent_at')->orWhereNotNull('failed_at'),
         ));
     }
